@@ -1,0 +1,31 @@
+import { Routes, Route } from 'react-router-dom'
+import { Layout } from '@/components/layout/Layout'
+import { Dashboard } from '@/pages/Dashboard'
+import { Factors } from '@/pages/models/Factors'
+import { Training } from '@/pages/models/Training'
+import { Positions } from '@/pages/portfolio/Positions'
+import { Performance } from '@/pages/portfolio/Performance'
+import { DataStatus } from '@/pages/system/DataStatus'
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Layout />}>
+        <Route index element={<Dashboard />} />
+        <Route path="models">
+          <Route path="factors" element={<Factors />} />
+          <Route path="training" element={<Training />} />
+        </Route>
+        <Route path="portfolio">
+          <Route path="positions" element={<Positions />} />
+          <Route path="performance" element={<Performance />} />
+        </Route>
+        <Route path="system">
+          <Route path="data-status" element={<DataStatus />} />
+        </Route>
+      </Route>
+    </Routes>
+  )
+}
+
+export default App

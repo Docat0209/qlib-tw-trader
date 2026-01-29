@@ -104,6 +104,13 @@ class StockDailyRepository(BaseRepository[T, M]):
         existing = set(self._session.execute(stmt).scalars().all())
         return [d for d in trading_dates if start_date <= d <= end_date and d not in existing]
 
+    def count(self, stock_id: str) -> int:
+        """取得某股票總資料筆數"""
+        from sqlalchemy import func
+
+        stmt = select(func.count()).where(self._model.stock_id == stock_id)
+        return self._session.execute(stmt).scalar() or 0
+
 
 class MarketDailyRepository(BaseRepository[T, M]):
     """市場日頻資料 Repository（date 為主鍵）"""
