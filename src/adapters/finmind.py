@@ -182,21 +182,54 @@ class FinMindInstitutionalAdapter(FinMindBaseAdapter, StockDataAdapter[Instituti
             },
         )
 
-        results = []
+        # FinMind 每種法人一列，需要聚合
+        # name: Foreign_Investor, Investment_Trust, Dealer_self, Dealer_Hedging, Foreign_Dealer_Self
+        grouped: dict[tuple, dict] = {}
         for row in rows:
+            key = (row["stock_id"], row["date"])
+            if key not in grouped:
+                grouped[key] = {
+                    "stock_id": row["stock_id"],
+                    "date": row["date"],
+                    "foreign_buy": 0,
+                    "foreign_sell": 0,
+                    "trust_buy": 0,
+                    "trust_sell": 0,
+                    "dealer_buy": 0,
+                    "dealer_sell": 0,
+                }
+
+            name = row.get("name", "")
+            buy = safe_int(row.get("buy"))
+            sell = safe_int(row.get("sell"))
+
+            if name == "Foreign_Investor":
+                grouped[key]["foreign_buy"] += buy
+                grouped[key]["foreign_sell"] += sell
+            elif name == "Investment_Trust":
+                grouped[key]["trust_buy"] += buy
+                grouped[key]["trust_sell"] += sell
+            elif name in ("Dealer_self", "Dealer_Hedging"):
+                grouped[key]["dealer_buy"] += buy
+                grouped[key]["dealer_sell"] += sell
+
+        results = []
+        for data in grouped.values():
             results.append(
                 Institutional(
-                    date=date.fromisoformat(row["date"]),
-                    stock_id=row["stock_id"],
-                    foreign_buy=safe_int(row.get("Foreign_Investor_Buy")),
-                    foreign_sell=safe_int(row.get("Foreign_Investor_Sell")),
-                    trust_buy=safe_int(row.get("Investment_Trust_Buy")),
-                    trust_sell=safe_int(row.get("Investment_Trust_Sell")),
-                    dealer_buy=safe_int(row.get("Dealer_Buy")),
-                    dealer_sell=safe_int(row.get("Dealer_Sell")),
+                    date=date.fromisoformat(data["date"]),
+                    stock_id=data["stock_id"],
+                    foreign_buy=data["foreign_buy"],
+                    foreign_sell=data["foreign_sell"],
+                    trust_buy=data["trust_buy"],
+                    trust_sell=data["trust_sell"],
+                    dealer_buy=data["dealer_buy"],
+                    dealer_sell=data["dealer_sell"],
                 )
             )
 
+        # 按日期排序
+        results.sort(key=lambda x: x.date)
         return results
 
 
