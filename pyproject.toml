@@ -1,0 +1,9 @@
+[project]
+name = "qlib-tw-trader"
+version = "0.1.0"
+description = "台灣股票交易與預測系統"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
