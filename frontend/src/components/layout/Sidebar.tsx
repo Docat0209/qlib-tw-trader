@@ -7,49 +7,59 @@ import {
   TrendingUp,
   Database,
   Settings,
+  Zap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   {
-    name: '模型管理',
+    name: 'Models',
     items: [
-      { name: '因子清單', href: '/models/factors', icon: Brain },
-      { name: '訓練記錄', href: '/models/training', icon: LineChart },
+      { name: 'Factors', href: '/models/factors', icon: Brain },
+      { name: 'Training', href: '/models/training', icon: LineChart },
     ],
   },
   {
-    name: '持倉控管',
+    name: 'Portfolio',
     items: [
-      { name: '當前持倉', href: '/portfolio/positions', icon: Briefcase },
-      { name: '收益分析', href: '/portfolio/performance', icon: TrendingUp },
+      { name: 'Positions', href: '/portfolio/positions', icon: Briefcase },
+      { name: 'Performance', href: '/portfolio/performance', icon: TrendingUp },
     ],
   },
   {
-    name: '系統監控',
+    name: 'System',
     items: [
-      { name: '資料狀態', href: '/system/data-status', icon: Database },
+      { name: 'Data Status', href: '/system/data-status', icon: Database },
     ],
   },
 ]
 
 export function Sidebar() {
   return (
-    <div className="flex w-64 flex-col border-r bg-card">
-      <div className="flex h-16 items-center border-b px-6">
-        <h1 className="text-xl font-bold">qlib-tw-trader</h1>
+    <div className="sidebar flex w-60 flex-col">
+      {/* Header */}
+      <div className="px-4 py-5 border-b border-border">
+        <div className="flex items-center gap-3">
+          <div className="icon-box icon-box-blue">
+            <Zap className="h-4 w-4" />
+          </div>
+          <div>
+            <h1 className="text-sm font-semibold">QLIB-TW</h1>
+            <p className="text-[10px] text-muted-foreground">Trader</p>
+          </div>
+        </div>
       </div>
-      <nav className="flex-1 space-y-1 px-3 py-4">
+
+      {/* Navigation */}
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {navigation.map((item) => (
           'href' in item ? (
             <NavItem key={item.name} item={item} />
           ) : (
-            <div key={item.name} className="pt-4">
-              <p className="px-3 text-xs font-semibold uppercase text-muted-foreground">
-                {item.name}
-              </p>
-              <div className="mt-2 space-y-1">
+            <div key={item.name} className="pt-5">
+              <p className="nav-section">{item.name}</p>
+              <div className="mt-1 space-y-1">
                 {item.items.map((subItem) => (
                   <NavItem key={subItem.name} item={subItem} />
                 ))}
@@ -58,21 +68,25 @@ export function Sidebar() {
           )
         ))}
       </nav>
-      <div className="border-t p-3">
+
+      {/* Footer */}
+      <div className="p-3 border-t border-border">
         <NavLink
           to="/settings"
           className={({ isActive }) =>
-            cn(
-              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-              isActive
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-            )
+            cn('nav-item', isActive && 'active')
           }
         >
           <Settings className="h-4 w-4" />
-          設定
+          Settings
         </NavLink>
+
+        <div className="mt-3 px-3 py-2 rounded-lg bg-secondary">
+          <div className="flex justify-between text-xs">
+            <span className="text-muted-foreground">Version</span>
+            <span className="mono text-blue">v1.0.0</span>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -84,16 +98,11 @@ function NavItem({ item }: { item: { name: string; href: string; icon: React.Com
     <NavLink
       to={item.href}
       className={({ isActive }) =>
-        cn(
-          'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-          isActive
-            ? 'bg-primary text-primary-foreground'
-            : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-        )
+        cn('nav-item', isActive && 'active')
       }
     >
       <Icon className="h-4 w-4" />
-      {item.name}
+      <span>{item.name}</span>
     </NavLink>
   )
 }
