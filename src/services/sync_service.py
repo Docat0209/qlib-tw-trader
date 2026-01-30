@@ -152,6 +152,18 @@ class SyncService:
         result = self._session.execute(stmt).fetchone()
         return result[0] if result else None
 
+    def get_previous_trading_date(self) -> date | None:
+        """取得今天之前的最新交易日（用於 bulk sync）"""
+        stmt = (
+            select(TradingCalendar.date)
+            .where(TradingCalendar.is_trading_day == True)
+            .where(TradingCalendar.date < date.today())
+            .order_by(TradingCalendar.date.desc())
+            .limit(1)
+        )
+        result = self._session.execute(stmt).fetchone()
+        return result[0] if result else None
+
     def count_trading_days(self, start_date: date, end_date: date) -> int:
         """計算指定區間的交易日數"""
         from sqlalchemy import func

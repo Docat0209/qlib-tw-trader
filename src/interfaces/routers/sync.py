@@ -205,10 +205,10 @@ async def sync_bulk(
     session: Session = Depends(get_db),
 ):
     """同步全市場當日資料（TWSE RWD bulk）"""
-    if target_date is None:
-        target_date = date.today()
-
     service = SyncService(session)
+    if target_date is None:
+        target_date = service.get_previous_trading_date() or date.today()
+
     result = await service.sync_stock_daily_bulk(target_date)
 
     return SyncBulkResponse(
@@ -335,10 +335,10 @@ async def sync_per_bulk(
     session: Session = Depends(get_db),
 ):
     """同步全市場 PER/PBR/殖利率（TWSE RWD bulk）"""
-    if target_date is None:
-        target_date = date.today()
-
     service = SyncService(session)
+    if target_date is None:
+        target_date = service.get_previous_trading_date() or date.today()
+
     result = await service.sync_per_bulk(target_date)
 
     return SyncBulkResponse(
@@ -439,10 +439,10 @@ async def sync_institutional_bulk(
     session: Session = Depends(get_db),
 ):
     """同步全市場三大法人買賣超（TWSE RWD）"""
-    if target_date is None:
-        target_date = date.today()
-
     service = SyncService(session)
+    if target_date is None:
+        target_date = service.get_previous_trading_date() or date.today()
+
     result = await service.sync_institutional_bulk(target_date)
 
     return SyncBulkResponse(
@@ -543,10 +543,10 @@ async def sync_margin_bulk(
     session: Session = Depends(get_db),
 ):
     """同步全市場融資融券（TWSE RWD）"""
-    if target_date is None:
-        target_date = date.today()
-
     service = SyncService(session)
+    if target_date is None:
+        target_date = service.get_previous_trading_date() or date.today()
+
     result = await service.sync_margin_bulk(target_date)
 
     return SyncBulkResponse(
@@ -647,10 +647,10 @@ async def sync_adj_bulk(
     session: Session = Depends(get_db),
 ):
     """同步全市場還原股價（yfinance 批次）"""
-    if target_date is None:
-        target_date = date.today()
-
     service = SyncService(session)
+    if target_date is None:
+        target_date = service.get_previous_trading_date() or date.today()
+
     result = await service.sync_adj_bulk(target_date)
 
     return SyncBulkResponse(
@@ -751,10 +751,10 @@ async def sync_shareholding_bulk(
     session: Session = Depends(get_db),
 ):
     """同步全市場外資持股（TWSE RWD）"""
-    if target_date is None:
-        target_date = date.today()
-
     service = SyncService(session)
+    if target_date is None:
+        target_date = service.get_previous_trading_date() or date.today()
+
     result = await service.sync_shareholding_bulk(target_date)
 
     return SyncBulkResponse(
