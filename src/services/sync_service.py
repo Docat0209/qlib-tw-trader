@@ -32,26 +32,20 @@ class SyncService:
 
     async def sync_trading_calendar(self, start_date: date, end_date: date) -> int:
         """
-        同步交易日曆（用 0050 ETF 推算交易日）
+        同步交易日曆（用 0050 ETF 推算交易日，使用 yfinance）
         Returns: 新增的交易日數量
         """
-        # 從 FinMind 取得 0050 的日K資料
-        params = {
-            "dataset": "TaiwanStockPrice",
-            "data_id": "0050",
-            "start_date": start_date.isoformat(),
-            "end_date": end_date.isoformat(),
-        }
+        # 從 yfinance 取得 0050 的交易日
+        ticker = yf.Ticker("0050.TW")
+        df = ticker.history(
+            start=start_date.isoformat(),
+            end=(end_date + timedelta(days=1)).isoformat(),
+        )
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(self.FINMIND_URL, params=params, timeout=60)
-            data = resp.json()
+        if df.empty:
+            return 0
 
-        if data.get("status") != 200:
-            raise RuntimeError(f"FinMind API error: {data.get('msg')}")
-
-        records = data.get("data", [])
-        trading_dates = {date.fromisoformat(r["date"]) for r in records}
+        trading_dates = {idx.date() for idx in df.index}
 
         # 取得已存在的交易日
         stmt = select(TradingCalendar.date).where(
