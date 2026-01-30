@@ -1,0 +1,507 @@
+{
+  "name": "tw100",
+  "description": "台股市值前100（排除ETF、KY股）",
+  "updated_at": "20260129",
+  "stocks": [
+    {
+      "stock_id": "2330",
+      "name": "台積電",
+      "market_cap": 468082
+    },
+    {
+      "stock_id": "2308",
+      "name": "台達電",
+      "market_cap": 32599
+    },
+    {
+      "stock_id": "2317",
+      "name": "鴻海",
+      "market_cap": 31280
+    },
+    {
+      "stock_id": "2454",
+      "name": "聯發科",
+      "market_cap": 28550
+    },
+    {
+      "stock_id": "3711",
+      "name": "日月光投控",
+      "market_cap": 13709
+    },
+    {
+      "stock_id": "2881",
+      "name": "富邦金",
+      "market_cap": 12929
+    },
+    {
+      "stock_id": "2882",
+      "name": "國泰金",
+      "market_cap": 11207
+    },
+    {
+      "stock_id": "2382",
+      "name": "廣達",
+      "market_cap": 10931
+    },
+    {
+      "stock_id": "2412",
+      "name": "中華電",
+      "market_cap": 10356
+    },
+    {
+      "stock_id": "2891",
+      "name": "中信金",
+      "market_cap": 10232
+    },
+    {
+      "stock_id": "2408",
+      "name": "南亞科",
+      "market_cap": 9203
+    },
+    {
+      "stock_id": "2303",
+      "name": "聯電",
+      "market_cap": 8610
+    },
+    {
+      "stock_id": "6669",
+      "name": "緯穎",
+      "market_cap": 6913
+    },
+    {
+      "stock_id": "7769",
+      "name": "鴻勁",
+      "market_cap": 6747
+    },
+    {
+      "stock_id": "2345",
+      "name": "智邦",
+      "market_cap": 6565
+    },
+    {
+      "stock_id": "2383",
+      "name": "台光電",
+      "market_cap": 6207
+    },
+    {
+      "stock_id": "1303",
+      "name": "南亞",
+      "market_cap": 6115
+    },
+    {
+      "stock_id": "2344",
+      "name": "華邦電",
+      "market_cap": 5850
+    },
+    {
+      "stock_id": "2886",
+      "name": "兆豐金",
+      "market_cap": 5837
+    },
+    {
+      "stock_id": "3017",
+      "name": "奇鋐",
+      "market_cap": 5803
+    },
+    {
+      "stock_id": "2885",
+      "name": "元大金",
+      "market_cap": 5726
+    },
+    {
+      "stock_id": "2887",
+      "name": "台新新光金",
+      "market_cap": 5682
+    },
+    {
+      "stock_id": "2884",
+      "name": "玉山金",
+      "market_cap": 5451
+    },
+    {
+      "stock_id": "3037",
+      "name": "欣興",
+      "market_cap": 5428
+    },
+    {
+      "stock_id": "6505",
+      "name": "台塑化",
+      "market_cap": 4992
+    },
+    {
+      "stock_id": "2880",
+      "name": "華南金",
+      "market_cap": 4697
+    },
+    {
+      "stock_id": "2360",
+      "name": "致茂",
+      "market_cap": 4316
+    },
+    {
+      "stock_id": "2890",
+      "name": "永豐金",
+      "market_cap": 4227
+    },
+    {
+      "stock_id": "3231",
+      "name": "緯創",
+      "market_cap": 4214
+    },
+    {
+      "stock_id": "2892",
+      "name": "第一金",
+      "market_cap": 4192
+    },
+    {
+      "stock_id": "3653",
+      "name": "健策",
+      "market_cap": 4138
+    },
+    {
+      "stock_id": "1216",
+      "name": "統一",
+      "market_cap": 4114
+    },
+    {
+      "stock_id": "2603",
+      "name": "長榮",
+      "market_cap": 4114
+    },
+    {
+      "stock_id": "3045",
+      "name": "台灣大",
+      "market_cap": 3928
+    },
+    {
+      "stock_id": "2301",
+      "name": "光寶科",
+      "market_cap": 3869
+    },
+    {
+      "stock_id": "2357",
+      "name": "華碩",
+      "market_cap": 3766
+    },
+    {
+      "stock_id": "5880",
+      "name": "合庫金",
+      "market_cap": 3740
+    },
+    {
+      "stock_id": "2449",
+      "name": "京元電子",
+      "market_cap": 3729
+    },
+    {
+      "stock_id": "3443",
+      "name": "創意",
+      "market_cap": 3612
+    },
+    {
+      "stock_id": "2368",
+      "name": "金像電",
+      "market_cap": 3404
+    },
+    {
+      "stock_id": "2002",
+      "name": "中鋼",
+      "market_cap": 3257
+    },
+    {
+      "stock_id": "3008",
+      "name": "大立光",
+      "market_cap": 3237
+    },
+    {
+      "stock_id": "4904",
+      "name": "遠傳",
+      "market_cap": 3210
+    },
+    {
+      "stock_id": "1519",
+      "name": "華城",
+      "market_cap": 3206
+    },
+    {
+      "stock_id": "1301",
+      "name": "台塑",
+      "market_cap": 3138
+    },
+    {
+      "stock_id": "2883",
+      "name": "凱基金",
+      "market_cap": 3081
+    },
+    {
+      "stock_id": "2059",
+      "name": "川湖",
+      "market_cap": 3054
+    },
+    {
+      "stock_id": "2207",
+      "name": "和泰車",
+      "market_cap": 3014
+    },
+    {
+      "stock_id": "6446",
+      "name": "藥華藥",
+      "market_cap": 2777
+    },
+    {
+      "stock_id": "6770",
+      "name": "力積電",
+      "market_cap": 2726
+    },
+    {
+      "stock_id": "2395",
+      "name": "研華",
+      "market_cap": 2636
+    },
+    {
+      "stock_id": "2379",
+      "name": "瑞昱",
+      "market_cap": 2634
+    },
+    {
+      "stock_id": "1326",
+      "name": "台化",
+      "market_cap": 2579
+    },
+    {
+      "stock_id": "8046",
+      "name": "南電",
+      "market_cap": 2417
+    },
+    {
+      "stock_id": "2801",
+      "name": "彰銀",
+      "market_cap": 2406
+    },
+    {
+      "stock_id": "3034",
+      "name": "聯詠",
+      "market_cap": 2340
+    },
+    {
+      "stock_id": "2912",
+      "name": "統一超",
+      "market_cap": 2225
+    },
+    {
+      "stock_id": "2313",
+      "name": "華通",
+      "market_cap": 2121
+    },
+    {
+      "stock_id": "2615",
+      "name": "萬海",
+      "market_cap": 2085
+    },
+    {
+      "stock_id": "2618",
+      "name": "長榮航",
+      "market_cap": 2049
+    },
+    {
+      "stock_id": "3044",
+      "name": "健鼎",
+      "market_cap": 2034
+    },
+    {
+      "stock_id": "3036",
+      "name": "文曄",
+      "market_cap": 2012
+    },
+    {
+      "stock_id": "1504",
+      "name": "東元",
+      "market_cap": 2008
+    },
+    {
+      "stock_id": "1101",
+      "name": "台泥",
+      "market_cap": 2001
+    },
+    {
+      "stock_id": "1605",
+      "name": "華新",
+      "market_cap": 1950
+    },
+    {
+      "stock_id": "6239",
+      "name": "力成",
+      "market_cap": 1940
+    },
+    {
+      "stock_id": "5876",
+      "name": "上海商銀",
+      "market_cap": 1932
+    },
+    {
+      "stock_id": "2609",
+      "name": "陽明",
+      "market_cap": 1910
+    },
+    {
+      "stock_id": "4938",
+      "name": "和碩",
+      "market_cap": 1880
+    },
+    {
+      "stock_id": "2404",
+      "name": "漢唐",
+      "market_cap": 1811
+    },
+    {
+      "stock_id": "2337",
+      "name": "旺宏",
+      "market_cap": 1709
+    },
+    {
+      "stock_id": "3481",
+      "name": "群創",
+      "market_cap": 1702
+    },
+    {
+      "stock_id": "3533",
+      "name": "嘉澤",
+      "market_cap": 1643
+    },
+    {
+      "stock_id": "2356",
+      "name": "英業達",
+      "market_cap": 1616
+    },
+    {
+      "stock_id": "2376",
+      "name": "技嘉",
+      "market_cap": 1591
+    },
+    {
+      "stock_id": "2633",
+      "name": "台灣高鐵",
+      "market_cap": 1553
+    },
+    {
+      "stock_id": "1402",
+      "name": "遠東新",
+      "market_cap": 1512
+    },
+    {
+      "stock_id": "2834",
+      "name": "臺企銀",
+      "market_cap": 1511
+    },
+    {
+      "stock_id": "1802",
+      "name": "台玻",
+      "market_cap": 1448
+    },
+    {
+      "stock_id": "6139",
+      "name": "亞翔",
+      "market_cap": 1433
+    },
+    {
+      "stock_id": "6515",
+      "name": "穎崴",
+      "market_cap": 1406
+    },
+    {
+      "stock_id": "2324",
+      "name": "仁寶",
+      "market_cap": 1401
+    },
+    {
+      "stock_id": "2610",
+      "name": "華航",
+      "market_cap": 1357
+    },
+    {
+      "stock_id": "6442",
+      "name": "光聖",
+      "market_cap": 1347
+    },
+    {
+      "stock_id": "1503",
+      "name": "士電",
+      "market_cap": 1258
+    },
+    {
+      "stock_id": "1102",
+      "name": "亞泥",
+      "market_cap": 1255
+    },
+    {
+      "stock_id": "8464",
+      "name": "億豐",
+      "market_cap": 1213
+    },
+    {
+      "stock_id": "2812",
+      "name": "台中銀",
+      "market_cap": 1210
+    },
+    {
+      "stock_id": "2474",
+      "name": "可成",
+      "market_cap": 1199
+    },
+    {
+      "stock_id": "8210",
+      "name": "勤誠",
+      "market_cap": 1165
+    },
+    {
+      "stock_id": "2451",
+      "name": "創見",
+      "market_cap": 1116
+    },
+    {
+      "stock_id": "2347",
+      "name": "聯強",
+      "market_cap": 1114
+    },
+    {
+      "stock_id": "1476",
+      "name": "儒鴻",
+      "market_cap": 1114
+    },
+    {
+      "stock_id": "3702",
+      "name": "大聯大",
+      "market_cap": 1096
+    },
+    {
+      "stock_id": "3706",
+      "name": "神達",
+      "market_cap": 1062
+    },
+    {
+      "stock_id": "3189",
+      "name": "景碩",
+      "market_cap": 1049
+    },
+    {
+      "stock_id": "2409",
+      "name": "友達",
+      "market_cap": 1041
+    },
+    {
+      "stock_id": "2027",
+      "name": "大成鋼",
+      "market_cap": 1039
+    },
+    {
+      "stock_id": "6805",
+      "name": "富世達",
+      "market_cap": 1018
+    },
+    {
+      "stock_id": "2105",
+      "name": "正新",
+      "market_cap": 998
+    }
+  ]
+}
