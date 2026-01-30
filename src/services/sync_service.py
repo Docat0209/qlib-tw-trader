@@ -9,7 +9,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.repositories.models import StockDaily, StockUniverse, TradingCalendar
+from src.repositories.models import StockDaily, StockDailyPER, StockUniverse, TradingCalendar
 
 
 class SyncService:
@@ -17,6 +17,7 @@ class SyncService:
 
     FINMIND_URL = "https://api.finmindtrade.com/api/v4/data"
     TWSE_RWD_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL"
+    TWSE_PER_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/BWIBBU_ALL"
 
     def __init__(self, session: Session):
         self._session = session
@@ -294,6 +295,230 @@ class SyncService:
             "stocks": len(stock_ids),
             "total_inserted": total_inserted,
             "errors": errors,
+        }
+
+    # =========================================================================
+    # PER/PBR/殖利率
+    # =========================================================================
+
+    async def sync_per_bulk(self, target_date: date) -> dict:
+        """
+        同步全市場 PER/PBR/殖利率（用 TWSE RWD bulk API）
+        只儲存股票池內的股票
+        Returns: {"date": str, "total": int, "inserted": int}
+        """
+        # 取得股票池
+        stmt = select(StockUniverse.stock_id)
+        universe = {row[0] for row in self._session.execute(stmt).fetchall()}
+
+        if not universe:
+            return {"date": target_date.isoformat(), "total": 0, "inserted": 0}
+
+        # 呼叫 TWSE RWD API
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(self.TWSE_PER_URL, timeout=30)
+            data = resp.json()
+
+        if data.get("stat") != "OK":
+            return {"date": target_date.isoformat(), "total": 0, "inserted": 0, "error": "TWSE API failed"}
+
+        # 檢查日期
+        data_date_str = data.get("date", "")
+        if data_date_str:
+            data_date = date(
+                int(data_date_str[:4]),
+                int(data_date_str[4:6]),
+                int(data_date_str[6:8]),
+            )
+            if data_date != target_date:
+                return {
+                    "date": target_date.isoformat(),
+                    "total": 0,
+                    "inserted": 0,
+                    "error": f"Data date mismatch: {data_date} != {target_date}",
+                }
+
+        # 取得已有資料
+        stmt = select(StockDailyPER.stock_id).where(StockDailyPER.date == target_date)
+        existing_stocks = {row[0] for row in self._session.execute(stmt).fetchall()}
+
+        rows = data.get("data", [])
+        inserted = 0
+
+        for row in rows:
+            if len(row) < 5:
+                continue
+
+            stock_id = row[0].strip()
+
+            # 只儲存股票池內的股票
+            if stock_id not in universe:
+                continue
+            # 跳過已存在的
+            if stock_id in existing_stocks:
+                continue
+
+            # BWIBBU_ALL 欄位: [股票代號, 股票名稱, 本益比, 殖利率(%), 股價淨值比]
+            pe_ratio = self._safe_decimal(row[2])
+            dividend_yield = self._safe_decimal(row[3])
+            pb_ratio = self._safe_decimal(row[4])
+
+            # 至少要有一個值
+            if pe_ratio is None and pb_ratio is None and dividend_yield is None:
+                continue
+
+            self._session.add(
+                StockDailyPER(
+                    stock_id=stock_id,
+                    date=target_date,
+                    pe_ratio=pe_ratio,
+                    pb_ratio=pb_ratio,
+                    dividend_yield=dividend_yield,
+                )
+            )
+            inserted += 1
+
+        self._session.commit()
+
+        return {
+            "date": target_date.isoformat(),
+            "total": len(rows),
+            "inserted": inserted,
+        }
+
+    async def sync_per(self, stock_id: str, start_date: date, end_date: date) -> dict:
+        """
+        同步單一股票的 PER/PBR/殖利率（使用 FinMind）
+        Returns: {"fetched": int, "inserted": int, "missing_dates": list}
+        """
+        # 取得交易日
+        trading_dates = set(self.get_trading_dates(start_date, end_date))
+        if not trading_dates:
+            return {"fetched": 0, "inserted": 0, "missing_dates": []}
+
+        # 取得已有資料的日期
+        stmt = select(StockDailyPER.date).where(
+            StockDailyPER.stock_id == stock_id,
+            StockDailyPER.date >= start_date,
+            StockDailyPER.date <= end_date,
+        )
+        existing_dates = {row[0] for row in self._session.execute(stmt).fetchall()}
+
+        # 計算缺少的日期
+        missing_dates = sorted(trading_dates - existing_dates)
+        if not missing_dates:
+            return {"fetched": 0, "inserted": 0, "missing_dates": []}
+
+        # 用 FinMind 補缺少的資料
+        params = {
+            "dataset": "TaiwanStockPER",
+            "data_id": stock_id,
+            "start_date": min(missing_dates).isoformat(),
+            "end_date": max(missing_dates).isoformat(),
+        }
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(self.FINMIND_URL, params=params, timeout=60)
+            data = resp.json()
+
+        if data.get("status") != 200:
+            raise RuntimeError(f"FinMind API error: {data.get('msg')}")
+
+        records = data.get("data", [])
+        inserted = 0
+
+        for r in records:
+            r_date = date.fromisoformat(r["date"])
+            if r_date not in missing_dates:
+                continue
+            if r_date in existing_dates:
+                continue
+
+            pe_ratio = self._safe_decimal(r.get("PER"))
+            pb_ratio = self._safe_decimal(r.get("PBR"))
+            dividend_yield = self._safe_decimal(r.get("dividend_yield"))
+
+            if pe_ratio is None and pb_ratio is None and dividend_yield is None:
+                continue
+
+            self._session.add(
+                StockDailyPER(
+                    stock_id=stock_id,
+                    date=r_date,
+                    pe_ratio=pe_ratio,
+                    pb_ratio=pb_ratio,
+                    dividend_yield=dividend_yield,
+                )
+            )
+            inserted += 1
+
+        self._session.commit()
+
+        # 重新計算還缺少的日期
+        stmt = select(StockDailyPER.date).where(
+            StockDailyPER.stock_id == stock_id,
+            StockDailyPER.date >= start_date,
+            StockDailyPER.date <= end_date,
+        )
+        final_existing = {row[0] for row in self._session.execute(stmt).fetchall()}
+        still_missing = sorted(trading_dates - final_existing)
+
+        return {
+            "fetched": len(records),
+            "inserted": inserted,
+            "missing_dates": [d.isoformat() for d in still_missing],
+        }
+
+    def get_per_status(self, start_date: date, end_date: date) -> dict:
+        """取得 PER 資料狀態"""
+        from sqlalchemy import func
+
+        # 取得交易日數
+        stmt = select(func.count()).select_from(TradingCalendar).where(
+            TradingCalendar.date >= start_date,
+            TradingCalendar.date <= end_date,
+            TradingCalendar.is_trading_day == True,
+        )
+        trading_days = self._session.execute(stmt).scalar() or 0
+
+        # 取得股票池
+        stmt = select(StockUniverse).order_by(StockUniverse.rank)
+        universe = self._session.execute(stmt).scalars().all()
+
+        stocks = []
+        for stock in universe:
+            # 統計該股票的資料
+            stmt = select(
+                func.min(StockDailyPER.date),
+                func.max(StockDailyPER.date),
+                func.count(),
+            ).where(
+                StockDailyPER.stock_id == stock.stock_id,
+                StockDailyPER.date >= start_date,
+                StockDailyPER.date <= end_date,
+            )
+            result = self._session.execute(stmt).fetchone()
+            earliest, latest, total = result
+
+            missing = max(0, trading_days - total) if trading_days > 0 else 0
+            coverage = (total / trading_days * 100) if trading_days > 0 else 0
+
+            stocks.append({
+                "stock_id": stock.stock_id,
+                "name": stock.name,
+                "rank": stock.rank,
+                "earliest_date": earliest.isoformat() if earliest else None,
+                "latest_date": latest.isoformat() if latest else None,
+                "total_records": total,
+                "missing_count": missing,
+                "coverage_pct": round(coverage, 1),
+            })
+
+        return {
+            "trading_days": trading_days,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "stocks": stocks,
         }
 
     # =========================================================================

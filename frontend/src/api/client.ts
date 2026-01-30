@@ -655,4 +655,32 @@ export const syncApi = {
     const query = params.toString() ? `?${params.toString()}` : ''
     return api.post<SyncAllResponse>(`/sync/all${query}`, {})
   },
+  // PER/PBR/殖利率
+  perStatus: (startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams()
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.get<SyncStatusResponse>(`/sync/per/status${query}`)
+  },
+  perBulk: (targetDate?: string) => {
+    const params = new URLSearchParams()
+    if (targetDate) params.set('target_date', targetDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncBulkResponse>(`/sync/per/bulk${query}`, {})
+  },
+  perStock: (stockId: string, startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams()
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncStockResponse>(`/sync/per/stock/${stockId}${query}`, {})
+  },
+  perAll: (startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams()
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncAllResponse>(`/sync/per/all${query}`, {})
+  },
 }
