@@ -151,12 +151,23 @@ async def run_backtest(
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")
 
+    # 從模型取得回測期間
+    # 回測從 valid_end 開始到今天
+    if not model.valid_end:
+        raise HTTPException(status_code=400, detail="Model has no validation period defined")
+
+    start_date = model.valid_end
+    end_date = date.today()
+
+    if start_date >= end_date:
+        raise HTTPException(status_code=400, detail="No backtest period available (valid_end >= today)")
+
     # 建立回測記錄
     backtest_repo = BacktestRepository(session)
     backtest = backtest_repo.create(
         model_id=request.model_id,
-        start_date=request.start_date,
-        end_date=request.end_date,
+        start_date=start_date,
+        end_date=end_date,
         initial_capital=Decimal(str(request.initial_capital)),
         max_positions=request.max_positions,
     )
@@ -168,8 +179,8 @@ async def run_backtest(
         message=f"Running backtest {backtest.id}",
         backtest_id=backtest.id,
         model_id=request.model_id,
-        start_date=request.start_date,
-        end_date=request.end_date,
+        start_date=start_date,
+        end_date=end_date,
         initial_capital=request.initial_capital,
         max_positions=request.max_positions,
     )

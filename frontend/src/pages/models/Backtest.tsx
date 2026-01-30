@@ -14,8 +14,6 @@ export function Backtest() {
 
   // Form state
   const [modelId, setModelId] = useState<number | ''>('')
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
   const [initialCapital, setInitialCapital] = useState('1000000')
   const [maxPositions, setMaxPositions] = useState('10')
 
@@ -31,13 +29,6 @@ export function Backtest() {
       ])
       setBacktests(backtestsRes.items)
       setModels(modelsRes.items)
-
-      // Set default dates
-      const today = new Date()
-      const oneYearAgo = new Date()
-      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
-      setEndDate(today.toISOString().split('T')[0])
-      setStartDate(oneYearAgo.toISOString().split('T')[0])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data')
     } finally {
@@ -46,8 +37,8 @@ export function Backtest() {
   }
 
   const handleRun = async () => {
-    if (!modelId || !startDate || !endDate) {
-      setError('Please fill all required fields')
+    if (!modelId) {
+      setError('Please select a model')
       return
     }
 
@@ -56,8 +47,6 @@ export function Backtest() {
     try {
       await backtestApi.run({
         model_id: Number(modelId),
-        start_date: startDate,
-        end_date: endDate,
         initial_capital: Number(initialCapital),
         max_positions: Number(maxPositions),
       })
@@ -176,26 +165,9 @@ export function Backtest() {
                   </option>
                 ))}
               </select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs text-muted-foreground block mb-1">Start Date *</label>
-                <input
-                  type="date"
-                  className="input w-full"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground block mb-1">End Date *</label>
-                <input
-                  type="date"
-                  className="input w-full"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                />
-              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Backtest period is determined by the model's validation end date to today.
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>

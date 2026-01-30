@@ -467,8 +467,6 @@ export interface BacktestListResponse {
 
 export interface BacktestRequest {
   model_id: number
-  start_date: string
-  end_date: string
   initial_capital?: number
   max_positions?: number
 }

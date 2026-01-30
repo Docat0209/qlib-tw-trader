@@ -11,8 +11,6 @@ class BacktestRequest(BaseModel):
     """回測請求"""
 
     model_id: int
-    start_date: date
-    end_date: date
     initial_capital: float = 1000000.0
     max_positions: int = 10
 
