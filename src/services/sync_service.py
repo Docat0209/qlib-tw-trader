@@ -9,7 +9,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.repositories.models import StockDaily, StockDailyPER, StockUniverse, TradingCalendar
+from src.repositories.models import StockDaily, StockDailyInstitutional, StockDailyPER, StockUniverse, TradingCalendar
 
 
 class SyncService:
@@ -18,6 +18,7 @@ class SyncService:
     FINMIND_URL = "https://api.finmindtrade.com/api/v4/data"
     TWSE_RWD_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL"
     TWSE_PER_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/BWIBBU_ALL"
+    TWSE_INSTITUTIONAL_URL = "https://www.twse.com.tw/rwd/zh/fund/T86"
 
     def __init__(self, session: Session):
         self._session = session
@@ -496,6 +497,243 @@ class SyncService:
                 StockDailyPER.stock_id == stock.stock_id,
                 StockDailyPER.date >= start_date,
                 StockDailyPER.date <= end_date,
+            )
+            result = self._session.execute(stmt).fetchone()
+            earliest, latest, total = result
+
+            missing = max(0, trading_days - total) if trading_days > 0 else 0
+            coverage = (total / trading_days * 100) if trading_days > 0 else 0
+
+            stocks.append({
+                "stock_id": stock.stock_id,
+                "name": stock.name,
+                "rank": stock.rank,
+                "earliest_date": earliest.isoformat() if earliest else None,
+                "latest_date": latest.isoformat() if latest else None,
+                "total_records": total,
+                "missing_count": missing,
+                "coverage_pct": round(coverage, 1),
+            })
+
+        return {
+            "trading_days": trading_days,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "stocks": stocks,
+        }
+
+    # =========================================================================
+    # 三大法人買賣超
+    # =========================================================================
+
+    async def sync_institutional_bulk(self, target_date: date) -> dict:
+        """
+        同步全市場三大法人買賣超（用 TWSE RWD API）
+        只儲存股票池內的股票
+        Returns: {"date": str, "total": int, "inserted": int}
+        """
+        # 取得股票池
+        stmt = select(StockUniverse.stock_id)
+        universe = {row[0] for row in self._session.execute(stmt).fetchall()}
+
+        if not universe:
+            return {"date": target_date.isoformat(), "total": 0, "inserted": 0}
+
+        # 呼叫 TWSE RWD API（需帶日期參數）
+        params = {
+            "date": target_date.strftime("%Y%m%d"),
+            "selectType": "ALL",
+        }
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(self.TWSE_INSTITUTIONAL_URL, params=params, timeout=30)
+            data = resp.json()
+
+        if data.get("stat") != "OK":
+            return {"date": target_date.isoformat(), "total": 0, "inserted": 0, "error": "TWSE API failed"}
+
+        # 取得已有資料
+        stmt = select(StockDailyInstitutional.stock_id).where(StockDailyInstitutional.date == target_date)
+        existing_stocks = {row[0] for row in self._session.execute(stmt).fetchall()}
+
+        rows = data.get("data", [])
+        inserted = 0
+
+        for row in rows:
+            if len(row) < 14:
+                continue
+
+            stock_id = row[0].strip()
+
+            # 只儲存股票池內的股票
+            if stock_id not in universe:
+                continue
+            # 跳過已存在的
+            if stock_id in existing_stocks:
+                continue
+
+            # T86 欄位:
+            # 0: 證券代號
+            # 2: 外陸資買進股數(不含外資自營商)
+            # 3: 外陸資賣出股數(不含外資自營商)
+            # 8: 投信買進股數
+            # 9: 投信賣出股數
+            # 12: 自營商買進股數(自行買賣)
+            # 13: 自營商賣出股數(自行買賣)
+            foreign_buy = self._safe_int(row[2])
+            foreign_sell = self._safe_int(row[3])
+            trust_buy = self._safe_int(row[8])
+            trust_sell = self._safe_int(row[9])
+            dealer_buy = self._safe_int(row[12])
+            dealer_sell = self._safe_int(row[13])
+
+            self._session.add(
+                StockDailyInstitutional(
+                    stock_id=stock_id,
+                    date=target_date,
+                    foreign_buy=foreign_buy,
+                    foreign_sell=foreign_sell,
+                    trust_buy=trust_buy,
+                    trust_sell=trust_sell,
+                    dealer_buy=dealer_buy,
+                    dealer_sell=dealer_sell,
+                )
+            )
+            inserted += 1
+
+        self._session.commit()
+
+        return {
+            "date": target_date.isoformat(),
+            "total": len(rows),
+            "inserted": inserted,
+        }
+
+    async def sync_institutional(self, stock_id: str, start_date: date, end_date: date) -> dict:
+        """
+        同步單一股票的三大法人買賣超（使用 FinMind）
+        Returns: {"fetched": int, "inserted": int, "missing_dates": list}
+        """
+        # 取得交易日
+        trading_dates = set(self.get_trading_dates(start_date, end_date))
+        if not trading_dates:
+            return {"fetched": 0, "inserted": 0, "missing_dates": []}
+
+        # 取得已有資料的日期
+        stmt = select(StockDailyInstitutional.date).where(
+            StockDailyInstitutional.stock_id == stock_id,
+            StockDailyInstitutional.date >= start_date,
+            StockDailyInstitutional.date <= end_date,
+        )
+        existing_dates = {row[0] for row in self._session.execute(stmt).fetchall()}
+
+        # 計算缺少的日期
+        missing_dates = sorted(trading_dates - existing_dates)
+        if not missing_dates:
+            return {"fetched": 0, "inserted": 0, "missing_dates": []}
+
+        # 用 FinMind 補缺少的資料
+        params = {
+            "dataset": "TaiwanStockInstitutionalInvestorsBuySell",
+            "data_id": stock_id,
+            "start_date": min(missing_dates).isoformat(),
+            "end_date": max(missing_dates).isoformat(),
+        }
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(self.FINMIND_URL, params=params, timeout=60)
+            data = resp.json()
+
+        if data.get("status") != 200:
+            raise RuntimeError(f"FinMind API error: {data.get('msg')}")
+
+        records = data.get("data", [])
+
+        # FinMind 回傳每個法人一筆，需要彙總成一筆
+        grouped = {}
+        for r in records:
+            r_date = date.fromisoformat(r["date"])
+            if r_date not in missing_dates:
+                continue
+            if r_date in existing_dates:
+                continue
+
+            if r_date not in grouped:
+                grouped[r_date] = {
+                    "foreign_buy": 0, "foreign_sell": 0,
+                    "trust_buy": 0, "trust_sell": 0,
+                    "dealer_buy": 0, "dealer_sell": 0,
+                }
+
+            inv_type = r.get("name", "")
+            buy = self._safe_int(r.get("buy", 0))
+            sell = self._safe_int(r.get("sell", 0))
+
+            if "外資" in inv_type or "外陸資" in inv_type:
+                grouped[r_date]["foreign_buy"] += buy
+                grouped[r_date]["foreign_sell"] += sell
+            elif "投信" in inv_type:
+                grouped[r_date]["trust_buy"] += buy
+                grouped[r_date]["trust_sell"] += sell
+            elif "自營商" in inv_type:
+                grouped[r_date]["dealer_buy"] += buy
+                grouped[r_date]["dealer_sell"] += sell
+
+        inserted = 0
+        for r_date, values in grouped.items():
+            self._session.add(
+                StockDailyInstitutional(
+                    stock_id=stock_id,
+                    date=r_date,
+                    **values,
+                )
+            )
+            inserted += 1
+
+        self._session.commit()
+
+        # 重新計算還缺少的日期
+        stmt = select(StockDailyInstitutional.date).where(
+            StockDailyInstitutional.stock_id == stock_id,
+            StockDailyInstitutional.date >= start_date,
+            StockDailyInstitutional.date <= end_date,
+        )
+        final_existing = {row[0] for row in self._session.execute(stmt).fetchall()}
+        still_missing = sorted(trading_dates - final_existing)
+
+        return {
+            "fetched": len(records),
+            "inserted": inserted,
+            "missing_dates": [d.isoformat() for d in still_missing],
+        }
+
+    def get_institutional_status(self, start_date: date, end_date: date) -> dict:
+        """取得三大法人資料狀態"""
+        from sqlalchemy import func
+
+        # 取得交易日數
+        stmt = select(func.count()).select_from(TradingCalendar).where(
+            TradingCalendar.date >= start_date,
+            TradingCalendar.date <= end_date,
+            TradingCalendar.is_trading_day == True,
+        )
+        trading_days = self._session.execute(stmt).scalar() or 0
+
+        # 取得股票池
+        stmt = select(StockUniverse).order_by(StockUniverse.rank)
+        universe = self._session.execute(stmt).scalars().all()
+
+        stocks = []
+        for stock in universe:
+            # 統計該股票的資料
+            stmt = select(
+                func.min(StockDailyInstitutional.date),
+                func.max(StockDailyInstitutional.date),
+                func.count(),
+            ).where(
+                StockDailyInstitutional.stock_id == stock.stock_id,
+                StockDailyInstitutional.date >= start_date,
+                StockDailyInstitutional.date <= end_date,
             )
             result = self._session.execute(stmt).fetchone()
             earliest, latest, total = result

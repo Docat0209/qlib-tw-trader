@@ -683,4 +683,32 @@ export const syncApi = {
     const query = params.toString() ? `?${params.toString()}` : ''
     return api.post<SyncAllResponse>(`/sync/per/all${query}`, {})
   },
+  // 三大法人
+  institutionalStatus: (startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams()
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.get<SyncStatusResponse>(`/sync/institutional/status${query}`)
+  },
+  institutionalBulk: (targetDate?: string) => {
+    const params = new URLSearchParams()
+    if (targetDate) params.set('target_date', targetDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncBulkResponse>(`/sync/institutional/bulk${query}`, {})
+  },
+  institutionalStock: (stockId: string, startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams()
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncStockResponse>(`/sync/institutional/stock/${stockId}${query}`, {})
+  },
+  institutionalAll: (startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams()
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncAllResponse>(`/sync/institutional/all${query}`, {})
+  },
 }

@@ -17,6 +17,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.repositories.database import Base
 
+# Note: StockDailyInstitutional 已存在（三大法人）
+
 TZ_TAIPEI = ZoneInfo("Asia/Taipei")
 
 
