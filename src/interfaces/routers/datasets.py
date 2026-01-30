@@ -57,10 +57,6 @@ ALL_DATASETS = [
     DatasetInfo(name="TaiwanStockSecuritiesLending", display_name="借券明細", category="chips", source="twse/finmind", status="available"),
 
     # 基本面
-    DatasetInfo(name="TaiwanStockCashFlowsStatement", display_name="現金流量表", category="fundamental", source="finmind", status="available"),
-    DatasetInfo(name="TaiwanStockFinancialStatements", display_name="綜合損益表", category="fundamental", source="finmind", status="available"),
-    DatasetInfo(name="TaiwanStockBalanceSheet", display_name="資產負債表", category="fundamental", source="finmind", status="available"),
-    DatasetInfo(name="TaiwanStockDividend", display_name="股利政策", category="fundamental", source="finmind", status="available"),
     DatasetInfo(name="TaiwanStockMonthRevenue", display_name="月營收", category="fundamental", source="finmind", status="available"),
 
     # 待定 - 需評估或累積資料

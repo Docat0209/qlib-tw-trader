@@ -10,15 +10,11 @@ import httpx
 
 from src.adapters.base import StockDataAdapter
 from src.shared.types import (
-    Dividend,
     Institutional,
     Margin,
     MonthlyRevenue,
     OHLCV,
     PER,
-    QuarterlyBalance,
-    QuarterlyCashFlow,
-    QuarterlyFinancial,
     SecuritiesLending,
     Shareholding,
 )
@@ -303,8 +299,13 @@ class FinMindShareholdingAdapter(FinMindBaseAdapter, StockDataAdapter[Shareholdi
                 Shareholding(
                     date=date.fromisoformat(row["date"]),
                     stock_id=row["stock_id"],
+                    total_shares=safe_int(row.get("NumberOfSharesIssued")),
                     foreign_shares=safe_int(row.get("ForeignInvestmentShares")),
                     foreign_ratio=ratio or Decimal("0"),
+                    foreign_remaining_shares=safe_int(row.get("ForeignInvestmentRemainingShares")),
+                    foreign_remaining_ratio=safe_decimal(row.get("ForeignInvestmentRemainRatio")) or Decimal("0"),
+                    foreign_upper_limit_ratio=safe_decimal(row.get("ForeignInvestmentUpperLimitRatio")) or Decimal("0"),
+                    chinese_upper_limit_ratio=safe_decimal(row.get("ChineseInvestmentUpperLimitRatio")) or Decimal("0"),
                 )
             )
 
@@ -391,200 +392,3 @@ class FinMindMonthlyRevenueAdapter(FinMindBaseAdapter, StockDataAdapter[MonthlyR
             )
 
         return results
-
-
-class FinMindFinancialAdapter(FinMindBaseAdapter, StockDataAdapter[QuarterlyFinancial]):
-    """FinMind 綜合損益表"""
-
-    @property
-    def source_name(self) -> str:
-        return "finmind"
-
-    @property
-    def dataset_name(self) -> str:
-        return "TaiwanStockFinancialStatements"
-
-    async def fetch(
-        self, stock_id: str, start_date: date, end_date: date
-    ) -> list[QuarterlyFinancial]:
-        rows = await self._fetch(
-            "TaiwanStockFinancialStatements",
-            {
-                "data_id": stock_id,
-                "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat(),
-            },
-        )
-
-        # FinMind 返回多列，需要按 (stock_id, date) 分組
-        grouped: dict[tuple, dict] = {}
-        for row in rows:
-            key = (row["stock_id"], row["date"])
-            if key not in grouped:
-                grouped[key] = {"stock_id": row["stock_id"], "date": row["date"]}
-            grouped[key][row["type"]] = row["value"]
-
-        results = []
-        for key, data in grouped.items():
-            row_date = date.fromisoformat(data["date"])
-            results.append(
-                QuarterlyFinancial(
-                    stock_id=data["stock_id"],
-                    year=row_date.year,
-                    quarter=(row_date.month - 1) // 3 + 1,
-                    revenue=safe_decimal(data.get("Revenue")),
-                    gross_profit=safe_decimal(data.get("GrossProfit")),
-                    operating_income=safe_decimal(data.get("OperatingIncome")),
-                    net_income=safe_decimal(data.get("NetIncome")),
-                    eps=safe_decimal(data.get("EPS")),
-                )
-            )
-
-        return results
-
-
-class FinMindBalanceAdapter(FinMindBaseAdapter, StockDataAdapter[QuarterlyBalance]):
-    """FinMind 資產負債表"""
-
-    @property
-    def source_name(self) -> str:
-        return "finmind"
-
-    @property
-    def dataset_name(self) -> str:
-        return "TaiwanStockBalanceSheet"
-
-    async def fetch(
-        self, stock_id: str, start_date: date, end_date: date
-    ) -> list[QuarterlyBalance]:
-        rows = await self._fetch(
-            "TaiwanStockBalanceSheet",
-            {
-                "data_id": stock_id,
-                "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat(),
-            },
-        )
-
-        grouped: dict[tuple, dict] = {}
-        for row in rows:
-            key = (row["stock_id"], row["date"])
-            if key not in grouped:
-                grouped[key] = {"stock_id": row["stock_id"], "date": row["date"]}
-            grouped[key][row["type"]] = row["value"]
-
-        results = []
-        for key, data in grouped.items():
-            row_date = date.fromisoformat(data["date"])
-            results.append(
-                QuarterlyBalance(
-                    stock_id=data["stock_id"],
-                    year=row_date.year,
-                    quarter=(row_date.month - 1) // 3 + 1,
-                    total_assets=safe_decimal(data.get("TotalAssets")),
-                    total_liabilities=safe_decimal(data.get("TotalLiabilities")),
-                    total_equity=safe_decimal(data.get("TotalEquity")),
-                )
-            )
-
-        return results
-
-
-class FinMindCashFlowAdapter(FinMindBaseAdapter, StockDataAdapter[QuarterlyCashFlow]):
-    """FinMind 現金流量表"""
-
-    @property
-    def source_name(self) -> str:
-        return "finmind"
-
-    @property
-    def dataset_name(self) -> str:
-        return "TaiwanStockCashFlowsStatement"
-
-    async def fetch(
-        self, stock_id: str, start_date: date, end_date: date
-    ) -> list[QuarterlyCashFlow]:
-        rows = await self._fetch(
-            "TaiwanStockCashFlowsStatement",
-            {
-                "data_id": stock_id,
-                "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat(),
-            },
-        )
-
-        grouped: dict[tuple, dict] = {}
-        for row in rows:
-            key = (row["stock_id"], row["date"])
-            if key not in grouped:
-                grouped[key] = {"stock_id": row["stock_id"], "date": row["date"]}
-            grouped[key][row["type"]] = row["value"]
-
-        results = []
-        for key, data in grouped.items():
-            row_date = date.fromisoformat(data["date"])
-            operating = safe_decimal(data.get("OperatingActivities"))
-            investing = safe_decimal(data.get("InvestingActivities"))
-            financing = safe_decimal(data.get("FinancingActivities"))
-
-            free_cf = None
-            if operating is not None and investing is not None:
-                free_cf = operating + investing
-
-            results.append(
-                QuarterlyCashFlow(
-                    stock_id=data["stock_id"],
-                    year=row_date.year,
-                    quarter=(row_date.month - 1) // 3 + 1,
-                    operating_cf=operating,
-                    investing_cf=investing,
-                    financing_cf=financing,
-                    free_cf=free_cf,
-                )
-            )
-
-        return results
-
-
-class FinMindDividendAdapter(FinMindBaseAdapter, StockDataAdapter[Dividend]):
-    """FinMind 股利政策"""
-
-    @property
-    def source_name(self) -> str:
-        return "finmind"
-
-    @property
-    def dataset_name(self) -> str:
-        return "TaiwanStockDividend"
-
-    async def fetch(
-        self, stock_id: str, start_date: date, end_date: date
-    ) -> list[Dividend]:
-        rows = await self._fetch(
-            "TaiwanStockDividend",
-            {
-                "data_id": stock_id,
-                "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat(),
-            },
-        )
-
-        results = []
-        for row in rows:
-            # FinMind 返回的欄位: stock_id, date, CashEarningsDistribution, StockEarningsDistribution
-            ex_date_str = row.get("date")
-            if not ex_date_str:
-                continue
-
-            results.append(
-                Dividend(
-                    stock_id=row["stock_id"],
-                    ex_date=date.fromisoformat(ex_date_str),
-                    cash_dividend=safe_decimal(row.get("CashEarningsDistribution")),
-                    stock_dividend=safe_decimal(row.get("StockEarningsDistribution")),
-                )
-            )
-
-        return results
-
-

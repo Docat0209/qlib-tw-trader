@@ -184,81 +184,9 @@ class StockMonthlyRevenue(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
 
 
-class StockQuarterlyFinancial(Base):
-    """季度財報（綜合損益表）"""
-
-    __tablename__ = "stock_quarterly_financial"
-    __table_args__ = (
-        UniqueConstraint("stock_id", "year", "quarter", name="uq_stock_q_fin"),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    stock_id: Mapped[str] = mapped_column(String(10), index=True)
-    year: Mapped[int] = mapped_column(Integer)
-    quarter: Mapped[int] = mapped_column(Integer)
-    revenue: Mapped[Decimal | None] = mapped_column(Numeric(16, 0), nullable=True)
-    gross_profit: Mapped[Decimal | None] = mapped_column(Numeric(16, 0), nullable=True)
-    operating_income: Mapped[Decimal | None] = mapped_column(Numeric(16, 0), nullable=True)
-    net_income: Mapped[Decimal | None] = mapped_column(Numeric(16, 0), nullable=True)
-    eps: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
-
-
-class StockQuarterlyBalance(Base):
-    """資產負債表"""
-
-    __tablename__ = "stock_quarterly_balance"
-    __table_args__ = (
-        UniqueConstraint("stock_id", "year", "quarter", name="uq_stock_q_bal"),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    stock_id: Mapped[str] = mapped_column(String(10), index=True)
-    year: Mapped[int] = mapped_column(Integer)
-    quarter: Mapped[int] = mapped_column(Integer)
-    total_assets: Mapped[Decimal | None] = mapped_column(Numeric(16, 0), nullable=True)
-    total_liabilities: Mapped[Decimal | None] = mapped_column(Numeric(16, 0), nullable=True)
-    total_equity: Mapped[Decimal | None] = mapped_column(Numeric(16, 0), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
-
-
-class StockQuarterlyCashFlow(Base):
-    """現金流量表"""
-
-    __tablename__ = "stock_quarterly_cashflow"
-    __table_args__ = (
-        UniqueConstraint("stock_id", "year", "quarter", name="uq_stock_q_cf"),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    stock_id: Mapped[str] = mapped_column(String(10), index=True)
-    year: Mapped[int] = mapped_column(Integer)
-    quarter: Mapped[int] = mapped_column(Integer)
-    operating_cf: Mapped[Decimal | None] = mapped_column(Numeric(16, 0), nullable=True)
-    investing_cf: Mapped[Decimal | None] = mapped_column(Numeric(16, 0), nullable=True)
-    financing_cf: Mapped[Decimal | None] = mapped_column(Numeric(16, 0), nullable=True)
-    free_cf: Mapped[Decimal | None] = mapped_column(Numeric(16, 0), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
-
-
 # =============================================================================
-# 事件型 & 其他
+# 其他
 # =============================================================================
-
-class StockDividend(Base):
-    """除權息記錄"""
-
-    __tablename__ = "stock_dividend"
-    __table_args__ = (
-        UniqueConstraint("stock_id", "ex_date", name="uq_stock_dividend"),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    stock_id: Mapped[str] = mapped_column(String(10), index=True)
-    ex_date: Mapped[date] = mapped_column(Date, index=True)
-    cash_dividend: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
-    stock_dividend: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
 
 
 class TradingCalendar(Base):

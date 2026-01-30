@@ -7,10 +7,6 @@ from src.adapters.base import (
     StockDataAdapter,
 )
 from src.adapters.finmind import (
-    FinMindBalanceAdapter,
-    FinMindCashFlowAdapter,
-    FinMindDividendAdapter,
-    FinMindFinancialAdapter,
     FinMindInstitutionalAdapter,
     FinMindMarginAdapter,
     FinMindMonthlyRevenueAdapter,
@@ -50,10 +46,6 @@ __all__ = [
     "FinMindShareholdingAdapter",
     "FinMindSecuritiesLendingAdapter",
     "FinMindMonthlyRevenueAdapter",
-    "FinMindFinancialAdapter",
-    "FinMindBalanceAdapter",
-    "FinMindCashFlowAdapter",
-    "FinMindDividendAdapter",
     # yfinance
     "YFinanceAdjCloseAdapter",
 ]

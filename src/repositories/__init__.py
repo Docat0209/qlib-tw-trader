@@ -10,13 +10,7 @@ from src.repositories.daily import (
     SecuritiesLendingRepository,
     ShareholdingRepository,
 )
-from src.repositories.periodic import (
-    DividendRepository,
-    MonthlyRevenueRepository,
-    QuarterlyBalanceRepository,
-    QuarterlyCashFlowRepository,
-    QuarterlyFinancialRepository,
-)
+from src.repositories.periodic import MonthlyRevenueRepository
 
 __all__ = [
     # Database
@@ -34,8 +28,4 @@ __all__ = [
     "SecuritiesLendingRepository",
     # Periodic
     "MonthlyRevenueRepository",
-    "QuarterlyFinancialRepository",
-    "QuarterlyBalanceRepository",
-    "QuarterlyCashFlowRepository",
-    "DividendRepository",
 ]

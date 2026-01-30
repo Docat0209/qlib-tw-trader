@@ -100,42 +100,6 @@ class MonthlyRevenue:
     revenue_mom: Decimal | None
 
 
-@dataclass
-class QuarterlyFinancial:
-    """季度財報（綜合損益表）"""
-    stock_id: str
-    year: int
-    quarter: int
-    revenue: Decimal | None
-    gross_profit: Decimal | None
-    operating_income: Decimal | None
-    net_income: Decimal | None
-    eps: Decimal | None
-
-
-@dataclass
-class QuarterlyBalance:
-    """資產負債表"""
-    stock_id: str
-    year: int
-    quarter: int
-    total_assets: Decimal | None
-    total_liabilities: Decimal | None
-    total_equity: Decimal | None
-
-
-@dataclass
-class QuarterlyCashFlow:
-    """現金流量表"""
-    stock_id: str
-    year: int
-    quarter: int
-    operating_cf: Decimal | None
-    investing_cf: Decimal | None
-    financing_cf: Decimal | None
-    free_cf: Decimal | None
-
-
 # === 事件型 ===
 
 @dataclass
@@ -145,12 +109,3 @@ class SecuritiesLending:
     stock_id: str
     lending_volume: int       # 借券賣出
     lending_balance: int      # 借券餘額
-
-
-@dataclass
-class Dividend:
-    """除權息"""
-    stock_id: str
-    ex_date: date
-    cash_dividend: Decimal | None
-    stock_dividend: Decimal | None
