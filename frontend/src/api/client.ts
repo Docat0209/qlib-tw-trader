@@ -56,6 +56,27 @@ export interface HealthResponse {
   version: string
 }
 
+export interface SyncRequest {
+  stock_id: string
+  start_date: string
+  end_date: string
+  datasets?: string[]
+}
+
+export interface SyncResult {
+  dataset: string
+  records_fetched: number
+  success: boolean
+  error: string | null
+}
+
+export interface SyncResponse {
+  stock_id: string
+  results: SyncResult[]
+  total_records: number
+  synced_at: string
+}
+
 // Factor Types
 export interface Factor {
   id: string
@@ -105,6 +126,7 @@ export const systemApi = {
   health: () => api.get<HealthResponse>('/system/health'),
   dataStatus: (stockId: string = '2330') =>
     api.get<DataStatusResponse>(`/system/data-status?stock_id=${stockId}`),
+  sync: (data: SyncRequest) => api.post<SyncResponse>('/system/sync', data),
 }
 
 export const factorApi = {

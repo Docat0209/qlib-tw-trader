@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { systemApi, type DataStatusResponse } from '@/api/client'
-import { Database, CheckCircle, AlertCircle, RefreshCw, Search } from 'lucide-react'
+import { systemApi, type DataStatusResponse, type SyncResponse } from '@/api/client'
+import { Database, CheckCircle, AlertCircle, RefreshCw, Search, Download, Loader2 } from 'lucide-react'
 
 export function DataStatus() {
   const [data, setData] = useState<DataStatusResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [stockId, setStockId] = useState('2330')
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<SyncResponse | null>(null)
 
   const fetchData = async () => {
     setLoading(true)
@@ -22,6 +24,31 @@ export function DataStatus() {
     }
   }
 
+  const handleSync = async () => {
+    setSyncing(true)
+    setSyncResult(null)
+    setError(null)
+    try {
+      // Default: sync last 30 days
+      const endDate = new Date()
+      const startDate = new Date()
+      startDate.setDate(startDate.getDate() - 30)
+
+      const result = await systemApi.sync({
+        stock_id: stockId,
+        start_date: startDate.toISOString().split('T')[0],
+        end_date: endDate.toISOString().split('T')[0],
+      })
+      setSyncResult(result)
+      // Refresh data status after sync
+      await fetchData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sync failed')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   useEffect(() => {
     fetchData()
   }, [stockId])
@@ -32,16 +59,30 @@ export function DataStatus() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="heading text-2xl">Data Status</h1>
-          <p className="subheading mt-1">Check data completeness for each stock.</p>
+          <p className="subheading mt-1">Check data completeness and sync missing data.</p>
         </div>
-        <button
-          onClick={fetchData}
-          disabled={loading}
-          className="btn btn-primary disabled:opacity-50"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleSync}
+            disabled={syncing || loading}
+            className="btn btn-primary disabled:opacity-50"
+          >
+            {syncing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            {syncing ? 'Syncing...' : 'Sync Data'}
+          </button>
+          <button
+            onClick={fetchData}
+            disabled={loading || syncing}
+            className="btn btn-secondary disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Search */}
@@ -71,6 +112,11 @@ export function DataStatus() {
                     <RefreshCw className="h-4 w-4 text-blue animate-spin" />
                     <span className="text-sm font-medium">Loading...</span>
                   </>
+                ) : syncing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 text-purple animate-spin" />
+                    <span className="text-sm font-medium text-purple">Syncing...</span>
+                  </>
                 ) : error ? (
                   <>
                     <AlertCircle className="h-4 w-4 text-red" />
@@ -99,6 +145,64 @@ export function DataStatus() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Sync Result */}
+      {syncResult && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Download className="h-4 w-4 text-green" />
+              Sync Complete
+            </CardTitle>
+            <span className="text-xs text-muted-foreground mono">
+              {new Date(syncResult.synced_at).toLocaleString('en-US')}
+            </span>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              <div className="p-3 rounded-lg bg-secondary">
+                <p className="text-xs text-muted-foreground">Total Records</p>
+                <p className="text-xl font-semibold text-green">{syncResult.total_records.toLocaleString()}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-secondary">
+                <p className="text-xs text-muted-foreground">Datasets</p>
+                <p className="text-xl font-semibold">{syncResult.results.length}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-secondary">
+                <p className="text-xs text-muted-foreground">Success Rate</p>
+                <p className="text-xl font-semibold text-green">
+                  {Math.round((syncResult.results.filter(r => r.success).length / syncResult.results.length) * 100)}%
+                </p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {syncResult.results.map((result) => (
+                <div
+                  key={result.dataset}
+                  className="flex items-center justify-between p-2 rounded-lg hover:bg-secondary"
+                >
+                  <div className="flex items-center gap-2">
+                    {result.success ? (
+                      <CheckCircle className="h-4 w-4 text-green" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4 text-red" />
+                    )}
+                    <span className="font-medium">{result.dataset}</span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm text-muted-foreground">
+                      {result.records_fetched} records
+                    </span>
+                    {result.error && (
+                      <span className="text-xs text-red">{result.error}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Results */}
