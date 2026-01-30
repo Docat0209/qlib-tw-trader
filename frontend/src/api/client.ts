@@ -620,6 +620,82 @@ export interface SyncAllResponse {
   errors: { stock_id: string; error: string }[]
 }
 
+// 月營收專用
+export interface MonthlyStatusItem {
+  stock_id: string
+  name: string
+  rank: number
+  earliest_month: string | null
+  latest_month: string | null
+  total_records: number
+  missing_count: number
+  coverage_pct: number
+}
+
+export interface MonthlyStatusResponse {
+  expected_months: number
+  start_year: number
+  end_year: number
+  stocks: MonthlyStatusItem[]
+}
+
+export interface MonthlyStockResponse {
+  stock_id: string
+  fetched: number
+  inserted: number
+  missing_months: string[]
+}
+
+// 季度財報專用
+export interface QuarterlyStatusItem {
+  stock_id: string
+  name: string
+  rank: number
+  earliest_quarter: string | null
+  latest_quarter: string | null
+  total_records: number
+  missing_count: number
+  coverage_pct: number
+}
+
+export interface QuarterlyStatusResponse {
+  expected_quarters: number
+  start_year: number
+  end_year: number
+  stocks: QuarterlyStatusItem[]
+}
+
+export interface QuarterlyStockResponse {
+  stock_id: string
+  fetched: number
+  inserted: number
+  missing_quarters: string[]
+}
+
+// 股利政策專用
+export interface DividendStatusItem {
+  stock_id: string
+  name: string
+  rank: number
+  earliest_date: string | null
+  latest_date: string | null
+  total_records: number
+  years_with_data: number[]
+  missing_years: number[]
+}
+
+export interface DividendStatusResponse {
+  start_year: number
+  end_year: number
+  stocks: DividendStatusItem[]
+}
+
+export interface DividendStockResponse {
+  stock_id: string
+  fetched: number
+  inserted: number
+}
+
 export const syncApi = {
   status: (startDate?: string, endDate?: string) => {
     const params = new URLSearchParams()
@@ -766,5 +842,165 @@ export const syncApi = {
     if (endDate) params.set('end_date', endDate)
     const query = params.toString() ? `?${params.toString()}` : ''
     return api.post<SyncAllResponse>(`/sync/adj/all${query}`, {})
+  },
+  // 外資持股
+  shareholdingStatus: (startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams()
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.get<SyncStatusResponse>(`/sync/shareholding/status${query}`)
+  },
+  shareholdingBulk: (targetDate?: string) => {
+    const params = new URLSearchParams()
+    if (targetDate) params.set('target_date', targetDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncBulkResponse>(`/sync/shareholding/bulk${query}`, {})
+  },
+  shareholdingStock: (stockId: string, startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams()
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncStockResponse>(`/sync/shareholding/stock/${stockId}${query}`, {})
+  },
+  shareholdingAll: (startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams()
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncAllResponse>(`/sync/shareholding/all${query}`, {})
+  },
+  // 借券明細
+  securitiesLendingStatus: (startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams()
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.get<SyncStatusResponse>(`/sync/securities-lending/status${query}`)
+  },
+  securitiesLendingStock: (stockId: string, startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams()
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncStockResponse>(`/sync/securities-lending/stock/${stockId}${query}`, {})
+  },
+  securitiesLendingAll: (startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams()
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncAllResponse>(`/sync/securities-lending/all${query}`, {})
+  },
+  // 月營收
+  monthlyRevenueStatus: (startYear?: number, endYear?: number) => {
+    const params = new URLSearchParams()
+    if (startYear) params.set('start_year', String(startYear))
+    if (endYear) params.set('end_year', String(endYear))
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.get<MonthlyStatusResponse>(`/sync/monthly-revenue/status${query}`)
+  },
+  monthlyRevenueStock: (stockId: string, startYear?: number, endYear?: number) => {
+    const params = new URLSearchParams()
+    if (startYear) params.set('start_year', String(startYear))
+    if (endYear) params.set('end_year', String(endYear))
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<MonthlyStockResponse>(`/sync/monthly-revenue/stock/${stockId}${query}`, {})
+  },
+  monthlyRevenueAll: (startYear?: number, endYear?: number) => {
+    const params = new URLSearchParams()
+    if (startYear) params.set('start_year', String(startYear))
+    if (endYear) params.set('end_year', String(endYear))
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncAllResponse>(`/sync/monthly-revenue/all${query}`, {})
+  },
+  // 綜合損益表
+  financialStatus: (startYear?: number, endYear?: number) => {
+    const params = new URLSearchParams()
+    if (startYear) params.set('start_year', String(startYear))
+    if (endYear) params.set('end_year', String(endYear))
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.get<QuarterlyStatusResponse>(`/sync/financial/status${query}`)
+  },
+  financialStock: (stockId: string, startYear?: number, endYear?: number) => {
+    const params = new URLSearchParams()
+    if (startYear) params.set('start_year', String(startYear))
+    if (endYear) params.set('end_year', String(endYear))
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<QuarterlyStockResponse>(`/sync/financial/stock/${stockId}${query}`, {})
+  },
+  financialAll: (startYear?: number, endYear?: number) => {
+    const params = new URLSearchParams()
+    if (startYear) params.set('start_year', String(startYear))
+    if (endYear) params.set('end_year', String(endYear))
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncAllResponse>(`/sync/financial/all${query}`, {})
+  },
+  // 資產負債表
+  balanceStatus: (startYear?: number, endYear?: number) => {
+    const params = new URLSearchParams()
+    if (startYear) params.set('start_year', String(startYear))
+    if (endYear) params.set('end_year', String(endYear))
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.get<QuarterlyStatusResponse>(`/sync/balance/status${query}`)
+  },
+  balanceStock: (stockId: string, startYear?: number, endYear?: number) => {
+    const params = new URLSearchParams()
+    if (startYear) params.set('start_year', String(startYear))
+    if (endYear) params.set('end_year', String(endYear))
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<QuarterlyStockResponse>(`/sync/balance/stock/${stockId}${query}`, {})
+  },
+  balanceAll: (startYear?: number, endYear?: number) => {
+    const params = new URLSearchParams()
+    if (startYear) params.set('start_year', String(startYear))
+    if (endYear) params.set('end_year', String(endYear))
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncAllResponse>(`/sync/balance/all${query}`, {})
+  },
+  // 現金流量表
+  cashflowStatus: (startYear?: number, endYear?: number) => {
+    const params = new URLSearchParams()
+    if (startYear) params.set('start_year', String(startYear))
+    if (endYear) params.set('end_year', String(endYear))
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.get<QuarterlyStatusResponse>(`/sync/cashflow/status${query}`)
+  },
+  cashflowStock: (stockId: string, startYear?: number, endYear?: number) => {
+    const params = new URLSearchParams()
+    if (startYear) params.set('start_year', String(startYear))
+    if (endYear) params.set('end_year', String(endYear))
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<QuarterlyStockResponse>(`/sync/cashflow/stock/${stockId}${query}`, {})
+  },
+  cashflowAll: (startYear?: number, endYear?: number) => {
+    const params = new URLSearchParams()
+    if (startYear) params.set('start_year', String(startYear))
+    if (endYear) params.set('end_year', String(endYear))
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncAllResponse>(`/sync/cashflow/all${query}`, {})
+  },
+  // 股利政策
+  dividendStatus: (startYear?: number, endYear?: number) => {
+    const params = new URLSearchParams()
+    if (startYear) params.set('start_year', String(startYear))
+    if (endYear) params.set('end_year', String(endYear))
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.get<DividendStatusResponse>(`/sync/dividend/status${query}`)
+  },
+  dividendStock: (stockId: string, startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams()
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<DividendStockResponse>(`/sync/dividend/stock/${stockId}${query}`, {})
+  },
+  dividendAll: (startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams()
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncAllResponse>(`/sync/dividend/all${query}`, {})
   },
 }

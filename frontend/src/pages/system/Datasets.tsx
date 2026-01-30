@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { datasetsApi, universeApi, syncApi, DatasetInfo, TestResult, CategoryInfo, StockInfo, SyncStatusResponse } from '@/api/client'
+import { datasetsApi, universeApi, syncApi, DatasetInfo, TestResult, CategoryInfo, StockInfo, SyncStatusResponse, MonthlyStatusResponse, QuarterlyStatusResponse, DividendStatusResponse } from '@/api/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Loader2, CheckCircle, XCircle, Play, ChevronDown, ChevronRight, RefreshCw, Wrench, Download } from 'lucide-react'
 
@@ -70,6 +70,13 @@ export function Datasets() {
   const [instSyncStatus, setInstSyncStatus] = useState<SyncStatusResponse | null>(null)
   const [marginSyncStatus, setMarginSyncStatus] = useState<SyncStatusResponse | null>(null)
   const [adjSyncStatus, setAdjSyncStatus] = useState<SyncStatusResponse | null>(null)
+  const [shareholdingStatus, setShareholdingStatus] = useState<SyncStatusResponse | null>(null)
+  const [securitiesLendingStatus, setSecuritiesLendingStatus] = useState<SyncStatusResponse | null>(null)
+  const [monthlyRevenueStatus, setMonthlyRevenueStatus] = useState<MonthlyStatusResponse | null>(null)
+  const [financialStatus, setFinancialStatus] = useState<QuarterlyStatusResponse | null>(null)
+  const [balanceStatus, setBalanceStatus] = useState<QuarterlyStatusResponse | null>(null)
+  const [cashflowStatus, setCashflowStatus] = useState<QuarterlyStatusResponse | null>(null)
+  const [dividendStatus, setDividendStatus] = useState<DividendStatusResponse | null>(null)
 
   useEffect(() => {
     loadData()
@@ -77,7 +84,12 @@ export function Datasets() {
 
   const loadData = async () => {
     try {
-      const [datasetsRes, categoriesRes, universeRes, syncStatusRes, perStatusRes, instStatusRes, marginStatusRes, adjStatusRes] = await Promise.all([
+      const [
+        datasetsRes, categoriesRes, universeRes,
+        syncStatusRes, perStatusRes, instStatusRes, marginStatusRes, adjStatusRes,
+        shareholdingRes, securitiesLendingRes, monthlyRevenueRes,
+        financialRes, balanceRes, cashflowRes, dividendRes
+      ] = await Promise.all([
         datasetsApi.list(),
         datasetsApi.categories(),
         universeApi.get(),
@@ -86,6 +98,13 @@ export function Datasets() {
         syncApi.institutionalStatus('2020-01-01'),
         syncApi.marginStatus('2020-01-01'),
         syncApi.adjStatus('2020-01-01'),
+        syncApi.shareholdingStatus('2020-01-01'),
+        syncApi.securitiesLendingStatus('2020-01-01'),
+        syncApi.monthlyRevenueStatus(2020),
+        syncApi.financialStatus(2020),
+        syncApi.balanceStatus(2020),
+        syncApi.cashflowStatus(2020),
+        syncApi.dividendStatus(2020),
       ])
       setDatasets(datasetsRes.datasets)
       setCategories(categoriesRes.categories)
@@ -96,6 +115,13 @@ export function Datasets() {
       setInstSyncStatus(instStatusRes)
       setMarginSyncStatus(marginStatusRes)
       setAdjSyncStatus(adjStatusRes)
+      setShareholdingStatus(shareholdingRes)
+      setSecuritiesLendingStatus(securitiesLendingRes)
+      setMonthlyRevenueStatus(monthlyRevenueRes)
+      setFinancialStatus(financialRes)
+      setBalanceStatus(balanceRes)
+      setCashflowStatus(cashflowRes)
+      setDividendStatus(dividendRes)
     } catch (error) {
       console.error('Failed to load data:', error)
     } finally {
@@ -105,18 +131,36 @@ export function Datasets() {
 
   const refreshSyncStatus = async () => {
     try {
-      const [syncStatusRes, perStatusRes, instStatusRes, marginStatusRes, adjStatusRes] = await Promise.all([
+      const [
+        syncStatusRes, perStatusRes, instStatusRes, marginStatusRes, adjStatusRes,
+        shareholdingRes, securitiesLendingRes, monthlyRevenueRes,
+        financialRes, balanceRes, cashflowRes, dividendRes
+      ] = await Promise.all([
         syncApi.status('2020-01-01'),
         syncApi.perStatus('2020-01-01'),
         syncApi.institutionalStatus('2020-01-01'),
         syncApi.marginStatus('2020-01-01'),
         syncApi.adjStatus('2020-01-01'),
+        syncApi.shareholdingStatus('2020-01-01'),
+        syncApi.securitiesLendingStatus('2020-01-01'),
+        syncApi.monthlyRevenueStatus(2020),
+        syncApi.financialStatus(2020),
+        syncApi.balanceStatus(2020),
+        syncApi.cashflowStatus(2020),
+        syncApi.dividendStatus(2020),
       ])
       setSyncStatus(syncStatusRes)
       setPerSyncStatus(perStatusRes)
       setInstSyncStatus(instStatusRes)
       setMarginSyncStatus(marginStatusRes)
       setAdjSyncStatus(adjStatusRes)
+      setShareholdingStatus(shareholdingRes)
+      setSecuritiesLendingStatus(securitiesLendingRes)
+      setMonthlyRevenueStatus(monthlyRevenueRes)
+      setFinancialStatus(financialRes)
+      setBalanceStatus(balanceRes)
+      setCashflowStatus(cashflowRes)
+      setDividendStatus(dividendRes)
     } catch (error) {
       console.error('Failed to refresh sync status:', error)
     }
@@ -370,6 +414,13 @@ export function Datasets() {
                         instSyncStatus={instSyncStatus}
                         marginSyncStatus={marginSyncStatus}
                         adjSyncStatus={adjSyncStatus}
+                        shareholdingStatus={shareholdingStatus}
+                        securitiesLendingStatus={securitiesLendingStatus}
+                        monthlyRevenueStatus={monthlyRevenueStatus}
+                        financialStatus={financialStatus}
+                        balanceStatus={balanceStatus}
+                        cashflowStatus={cashflowStatus}
+                        dividendStatus={dividendStatus}
                         onSyncStatusRefresh={refreshSyncStatus}
                       />
                     ))}
@@ -439,10 +490,17 @@ interface DatasetRowProps {
   instSyncStatus: SyncStatusResponse | null
   marginSyncStatus: SyncStatusResponse | null
   adjSyncStatus: SyncStatusResponse | null
+  shareholdingStatus: SyncStatusResponse | null
+  securitiesLendingStatus: SyncStatusResponse | null
+  monthlyRevenueStatus: MonthlyStatusResponse | null
+  financialStatus: QuarterlyStatusResponse | null
+  balanceStatus: QuarterlyStatusResponse | null
+  cashflowStatus: QuarterlyStatusResponse | null
+  dividendStatus: DividendStatusResponse | null
   onSyncStatusRefresh: () => void
 }
 
-function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyncStatus, instSyncStatus, marginSyncStatus, adjSyncStatus, onSyncStatusRefresh }: DatasetRowProps) {
+function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyncStatus, instSyncStatus, marginSyncStatus, adjSyncStatus, shareholdingStatus, securitiesLendingStatus, monthlyRevenueStatus, financialStatus, balanceStatus, cashflowStatus, dividendStatus, onSyncStatusRefresh }: DatasetRowProps) {
   const [expanded, setExpanded] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [repairing, setRepairing] = useState(false)
@@ -1311,6 +1369,1030 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
                     <td className={`p-2 text-right font-medium ${getCoverageTextColor(stock.coverage_pct, stock.latest_date)}`}>
                       {stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%
                     </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // TaiwanStockShareholding 特殊處理 (外資持股)
+  if (dataset.name === 'TaiwanStockShareholding') {
+    const status = shareholdingStatus
+    const totalStocks = status?.stocks.length || 0
+    const completeStocks = status?.stocks.filter(s => s.coverage_pct >= 95 && s.latest_date && !isDateStale(s.latest_date)).length || 0
+    const tradingDays = status?.trading_days || 0
+
+    const allEarliest = status?.stocks
+      .filter(s => s.earliest_date)
+      .map(s => s.earliest_date!)
+      .sort() || []
+    const allLatest = status?.stocks
+      .filter(s => s.latest_date)
+      .map(s => s.latest_date!)
+      .sort()
+      .reverse() || []
+
+    const earliestDate = allEarliest[0] || '無資料'
+    const latestDate = allLatest[0] || '無資料'
+
+    const handleSync = async () => {
+      setSyncing(true)
+      try {
+        await syncApi.shareholdingBulk()
+        onSyncStatusRefresh()
+      } catch (error) {
+        console.error('Sync failed:', error)
+      } finally {
+        setSyncing(false)
+      }
+    }
+
+    const handleRepair = async () => {
+      setRepairing(true)
+      try {
+        await syncApi.calendar('2020-01-01')
+        await syncApi.shareholdingAll('2020-01-01')
+        onSyncStatusRefresh()
+      } catch (error) {
+        console.error('Repair failed:', error)
+      } finally {
+        setRepairing(false)
+      }
+    }
+
+    return (
+      <div className="border rounded-lg p-4 bg-indigo-50/50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="px-2 py-0.5 text-xs text-white rounded bg-indigo-500">
+              核心
+            </span>
+            <div>
+              <div className="font-medium">{dataset.display_name}</div>
+              <div className="text-sm text-muted-foreground font-mono">
+                {dataset.name}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-indigo-500 text-white rounded hover:bg-indigo-600 disabled:opacity-50"
+              onClick={handleSync}
+              disabled={syncing || repairing}
+            >
+              {syncing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              <span>Sync (TWSE)</span>
+            </button>
+            <button
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-orange-500 text-white rounded hover:bg-orange-600 disabled:opacity-50"
+              onClick={handleRepair}
+              disabled={syncing || repairing}
+            >
+              {repairing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Wrench className="h-4 w-4" />
+              )}
+              <span>修復資料 (FinMind)</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-4 gap-4">
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">交易日數</div>
+            <div className="text-lg font-bold">{tradingDays.toLocaleString()}</div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">完整股票</div>
+            <div className="text-lg font-bold">
+              {completeStocks}/{totalStocks}
+              <span className="text-sm font-normal text-muted-foreground ml-1">
+                ({totalStocks > 0 ? Math.round(completeStocks / totalStocks * 100) : 0}%)
+              </span>
+            </div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">最早資料</div>
+            <div className="text-lg font-bold font-mono">{earliestDate}</div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">最新資料</div>
+            <div className="text-lg font-bold font-mono">{latestDate}</div>
+          </div>
+        </div>
+
+        {status && (
+          <div className="mt-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs text-muted-foreground">覆蓋率分佈</span>
+              <button
+                className="text-xs text-indigo-500 hover:underline"
+                onClick={() => setExpanded(!expanded)}
+              >
+                {expanded ? '收起' : '展開詳情'}
+              </button>
+            </div>
+            <div className="flex gap-0.5">
+              {status.stocks.slice(0, 100).map((stock) => (
+                <div
+                  key={stock.stock_id}
+                  className={`w-2 h-4 rounded-sm ${getCoverageBarColor(stock.coverage_pct, stock.latest_date)}`}
+                  title={`${stock.stock_id} ${stock.name}: ${stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%`}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {expanded && status && (
+          <div className="mt-3 max-h-60 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted sticky top-0">
+                <tr>
+                  <th className="text-left p-2">代碼</th>
+                  <th className="text-left p-2">名稱</th>
+                  <th className="text-left p-2">最早</th>
+                  <th className="text-left p-2">最新</th>
+                  <th className="text-right p-2">筆數</th>
+                  <th className="text-right p-2">覆蓋率</th>
+                </tr>
+              </thead>
+              <tbody>
+                {status.stocks.map((stock) => (
+                  <tr key={stock.stock_id} className="border-b hover:bg-muted/50">
+                    <td className="p-2 font-mono">{stock.stock_id}</td>
+                    <td className="p-2">{stock.name}</td>
+                    <td className="p-2 font-mono text-xs">{stock.earliest_date || '-'}</td>
+                    <td className="p-2 font-mono text-xs">{stock.latest_date || '-'}</td>
+                    <td className="p-2 text-right">{stock.total_records.toLocaleString()}</td>
+                    <td className={`p-2 text-right font-medium ${getCoverageTextColor(stock.coverage_pct, stock.latest_date)}`}>
+                      {stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // TaiwanStockSecuritiesLending 特殊處理 (借券明細)
+  if (dataset.name === 'TaiwanStockSecuritiesLending') {
+    const status = securitiesLendingStatus
+    const totalStocks = status?.stocks.length || 0
+    const completeStocks = status?.stocks.filter(s => s.coverage_pct >= 95 && s.latest_date && !isDateStale(s.latest_date)).length || 0
+    const tradingDays = status?.trading_days || 0
+
+    const allEarliest = status?.stocks
+      .filter(s => s.earliest_date)
+      .map(s => s.earliest_date!)
+      .sort() || []
+    const allLatest = status?.stocks
+      .filter(s => s.latest_date)
+      .map(s => s.latest_date!)
+      .sort()
+      .reverse() || []
+
+    const earliestDate = allEarliest[0] || '無資料'
+    const latestDate = allLatest[0] || '無資料'
+
+    const handleRepair = async () => {
+      setRepairing(true)
+      try {
+        await syncApi.calendar('2020-01-01')
+        await syncApi.securitiesLendingAll('2020-01-01')
+        onSyncStatusRefresh()
+      } catch (error) {
+        console.error('Repair failed:', error)
+      } finally {
+        setRepairing(false)
+      }
+    }
+
+    return (
+      <div className="border rounded-lg p-4 bg-pink-50/50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="px-2 py-0.5 text-xs text-white rounded bg-pink-500">
+              核心
+            </span>
+            <div>
+              <div className="font-medium">{dataset.display_name}</div>
+              <div className="text-sm text-muted-foreground font-mono">
+                {dataset.name}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-pink-500 text-white rounded hover:bg-pink-600 disabled:opacity-50"
+              onClick={handleRepair}
+              disabled={repairing}
+            >
+              {repairing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              <span>Sync (FinMind)</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-4 gap-4">
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">交易日數</div>
+            <div className="text-lg font-bold">{tradingDays.toLocaleString()}</div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">完整股票</div>
+            <div className="text-lg font-bold">
+              {completeStocks}/{totalStocks}
+              <span className="text-sm font-normal text-muted-foreground ml-1">
+                ({totalStocks > 0 ? Math.round(completeStocks / totalStocks * 100) : 0}%)
+              </span>
+            </div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">最早資料</div>
+            <div className="text-lg font-bold font-mono">{earliestDate}</div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">最新資料</div>
+            <div className="text-lg font-bold font-mono">{latestDate}</div>
+          </div>
+        </div>
+
+        {status && (
+          <div className="mt-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs text-muted-foreground">覆蓋率分佈</span>
+              <button
+                className="text-xs text-pink-500 hover:underline"
+                onClick={() => setExpanded(!expanded)}
+              >
+                {expanded ? '收起' : '展開詳情'}
+              </button>
+            </div>
+            <div className="flex gap-0.5">
+              {status.stocks.slice(0, 100).map((stock) => (
+                <div
+                  key={stock.stock_id}
+                  className={`w-2 h-4 rounded-sm ${getCoverageBarColor(stock.coverage_pct, stock.latest_date)}`}
+                  title={`${stock.stock_id} ${stock.name}: ${stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%`}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {expanded && status && (
+          <div className="mt-3 max-h-60 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted sticky top-0">
+                <tr>
+                  <th className="text-left p-2">代碼</th>
+                  <th className="text-left p-2">名稱</th>
+                  <th className="text-left p-2">最早</th>
+                  <th className="text-left p-2">最新</th>
+                  <th className="text-right p-2">筆數</th>
+                  <th className="text-right p-2">覆蓋率</th>
+                </tr>
+              </thead>
+              <tbody>
+                {status.stocks.map((stock) => (
+                  <tr key={stock.stock_id} className="border-b hover:bg-muted/50">
+                    <td className="p-2 font-mono">{stock.stock_id}</td>
+                    <td className="p-2">{stock.name}</td>
+                    <td className="p-2 font-mono text-xs">{stock.earliest_date || '-'}</td>
+                    <td className="p-2 font-mono text-xs">{stock.latest_date || '-'}</td>
+                    <td className="p-2 text-right">{stock.total_records.toLocaleString()}</td>
+                    <td className={`p-2 text-right font-medium ${getCoverageTextColor(stock.coverage_pct, stock.latest_date)}`}>
+                      {stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // TaiwanStockMonthRevenue 特殊處理 (月營收)
+  if (dataset.name === 'TaiwanStockMonthRevenue') {
+    const status = monthlyRevenueStatus
+    const totalStocks = status?.stocks.length || 0
+    const completeStocks = status?.stocks.filter(s => s.coverage_pct >= 95).length || 0
+    const expectedMonths = status?.expected_months || 0
+
+    const allEarliest = status?.stocks
+      .filter(s => s.earliest_month)
+      .map(s => s.earliest_month!)
+      .sort() || []
+    const allLatest = status?.stocks
+      .filter(s => s.latest_month)
+      .map(s => s.latest_month!)
+      .sort()
+      .reverse() || []
+
+    const earliestMonth = allEarliest[0] || '無資料'
+    const latestMonth = allLatest[0] || '無資料'
+
+    const handleRepair = async () => {
+      setRepairing(true)
+      try {
+        await syncApi.monthlyRevenueAll(2020)
+        onSyncStatusRefresh()
+      } catch (error) {
+        console.error('Repair failed:', error)
+      } finally {
+        setRepairing(false)
+      }
+    }
+
+    return (
+      <div className="border rounded-lg p-4 bg-emerald-50/50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="px-2 py-0.5 text-xs text-white rounded bg-emerald-500">
+              核心
+            </span>
+            <div>
+              <div className="font-medium">{dataset.display_name}</div>
+              <div className="text-sm text-muted-foreground font-mono">
+                {dataset.name}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-emerald-500 text-white rounded hover:bg-emerald-600 disabled:opacity-50"
+              onClick={handleRepair}
+              disabled={repairing}
+            >
+              {repairing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              <span>Sync (FinMind)</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-4 gap-4">
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">預期月數</div>
+            <div className="text-lg font-bold">{expectedMonths}</div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">完整股票</div>
+            <div className="text-lg font-bold">
+              {completeStocks}/{totalStocks}
+              <span className="text-sm font-normal text-muted-foreground ml-1">
+                ({totalStocks > 0 ? Math.round(completeStocks / totalStocks * 100) : 0}%)
+              </span>
+            </div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">最早資料</div>
+            <div className="text-lg font-bold font-mono">{earliestMonth}</div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">最新資料</div>
+            <div className="text-lg font-bold font-mono">{latestMonth}</div>
+          </div>
+        </div>
+
+        {status && (
+          <div className="mt-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs text-muted-foreground">覆蓋率分佈</span>
+              <button
+                className="text-xs text-emerald-500 hover:underline"
+                onClick={() => setExpanded(!expanded)}
+              >
+                {expanded ? '收起' : '展開詳情'}
+              </button>
+            </div>
+            <div className="flex gap-0.5">
+              {status.stocks.slice(0, 100).map((stock) => (
+                <div
+                  key={stock.stock_id}
+                  className={`w-2 h-4 rounded-sm ${stock.coverage_pct >= 95 ? 'bg-green-500' : stock.coverage_pct > 0 ? 'bg-yellow-500' : 'bg-gray-300'}`}
+                  title={`${stock.stock_id} ${stock.name}: ${stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%`}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {expanded && status && (
+          <div className="mt-3 max-h-60 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted sticky top-0">
+                <tr>
+                  <th className="text-left p-2">代碼</th>
+                  <th className="text-left p-2">名稱</th>
+                  <th className="text-left p-2">最早月份</th>
+                  <th className="text-left p-2">最新月份</th>
+                  <th className="text-right p-2">筆數</th>
+                  <th className="text-right p-2">覆蓋率</th>
+                </tr>
+              </thead>
+              <tbody>
+                {status.stocks.map((stock) => (
+                  <tr key={stock.stock_id} className="border-b hover:bg-muted/50">
+                    <td className="p-2 font-mono">{stock.stock_id}</td>
+                    <td className="p-2">{stock.name}</td>
+                    <td className="p-2 font-mono text-xs">{stock.earliest_month || '-'}</td>
+                    <td className="p-2 font-mono text-xs">{stock.latest_month || '-'}</td>
+                    <td className="p-2 text-right">{stock.total_records.toLocaleString()}</td>
+                    <td className={`p-2 text-right font-medium ${stock.coverage_pct >= 95 ? 'text-green-600' : stock.coverage_pct > 0 ? 'text-yellow-600' : 'text-gray-400'}`}>
+                      {stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // TaiwanStockFinancialStatements 特殊處理 (綜合損益表)
+  if (dataset.name === 'TaiwanStockFinancialStatements') {
+    const status = financialStatus
+    const totalStocks = status?.stocks.length || 0
+    const completeStocks = status?.stocks.filter(s => s.coverage_pct >= 95).length || 0
+    const expectedQuarters = status?.expected_quarters || 0
+
+    const allEarliest = status?.stocks
+      .filter(s => s.earliest_quarter)
+      .map(s => s.earliest_quarter!)
+      .sort() || []
+    const allLatest = status?.stocks
+      .filter(s => s.latest_quarter)
+      .map(s => s.latest_quarter!)
+      .sort()
+      .reverse() || []
+
+    const earliestQuarter = allEarliest[0] || '無資料'
+    const latestQuarter = allLatest[0] || '無資料'
+
+    const handleRepair = async () => {
+      setRepairing(true)
+      try {
+        await syncApi.financialAll(2020)
+        onSyncStatusRefresh()
+      } catch (error) {
+        console.error('Repair failed:', error)
+      } finally {
+        setRepairing(false)
+      }
+    }
+
+    return (
+      <div className="border rounded-lg p-4 bg-violet-50/50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="px-2 py-0.5 text-xs text-white rounded bg-violet-500">
+              核心
+            </span>
+            <div>
+              <div className="font-medium">{dataset.display_name}</div>
+              <div className="text-sm text-muted-foreground font-mono">
+                {dataset.name}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-violet-500 text-white rounded hover:bg-violet-600 disabled:opacity-50"
+              onClick={handleRepair}
+              disabled={repairing}
+            >
+              {repairing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              <span>Sync (FinMind)</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-4 gap-4">
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">預期季數</div>
+            <div className="text-lg font-bold">{expectedQuarters}</div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">完整股票</div>
+            <div className="text-lg font-bold">
+              {completeStocks}/{totalStocks}
+              <span className="text-sm font-normal text-muted-foreground ml-1">
+                ({totalStocks > 0 ? Math.round(completeStocks / totalStocks * 100) : 0}%)
+              </span>
+            </div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">最早季度</div>
+            <div className="text-lg font-bold font-mono">{earliestQuarter}</div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">最新季度</div>
+            <div className="text-lg font-bold font-mono">{latestQuarter}</div>
+          </div>
+        </div>
+
+        {status && (
+          <div className="mt-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs text-muted-foreground">覆蓋率分佈</span>
+              <button
+                className="text-xs text-violet-500 hover:underline"
+                onClick={() => setExpanded(!expanded)}
+              >
+                {expanded ? '收起' : '展開詳情'}
+              </button>
+            </div>
+            <div className="flex gap-0.5">
+              {status.stocks.slice(0, 100).map((stock) => (
+                <div
+                  key={stock.stock_id}
+                  className={`w-2 h-4 rounded-sm ${stock.coverage_pct >= 95 ? 'bg-green-500' : stock.coverage_pct > 0 ? 'bg-yellow-500' : 'bg-gray-300'}`}
+                  title={`${stock.stock_id} ${stock.name}: ${stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%`}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {expanded && status && (
+          <div className="mt-3 max-h-60 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted sticky top-0">
+                <tr>
+                  <th className="text-left p-2">代碼</th>
+                  <th className="text-left p-2">名稱</th>
+                  <th className="text-left p-2">最早季度</th>
+                  <th className="text-left p-2">最新季度</th>
+                  <th className="text-right p-2">筆數</th>
+                  <th className="text-right p-2">覆蓋率</th>
+                </tr>
+              </thead>
+              <tbody>
+                {status.stocks.map((stock) => (
+                  <tr key={stock.stock_id} className="border-b hover:bg-muted/50">
+                    <td className="p-2 font-mono">{stock.stock_id}</td>
+                    <td className="p-2">{stock.name}</td>
+                    <td className="p-2 font-mono text-xs">{stock.earliest_quarter || '-'}</td>
+                    <td className="p-2 font-mono text-xs">{stock.latest_quarter || '-'}</td>
+                    <td className="p-2 text-right">{stock.total_records.toLocaleString()}</td>
+                    <td className={`p-2 text-right font-medium ${stock.coverage_pct >= 95 ? 'text-green-600' : stock.coverage_pct > 0 ? 'text-yellow-600' : 'text-gray-400'}`}>
+                      {stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // TaiwanStockBalanceSheet 特殊處理 (資產負債表)
+  if (dataset.name === 'TaiwanStockBalanceSheet') {
+    const status = balanceStatus
+    const totalStocks = status?.stocks.length || 0
+    const completeStocks = status?.stocks.filter(s => s.coverage_pct >= 95).length || 0
+    const expectedQuarters = status?.expected_quarters || 0
+
+    const allEarliest = status?.stocks
+      .filter(s => s.earliest_quarter)
+      .map(s => s.earliest_quarter!)
+      .sort() || []
+    const allLatest = status?.stocks
+      .filter(s => s.latest_quarter)
+      .map(s => s.latest_quarter!)
+      .sort()
+      .reverse() || []
+
+    const earliestQuarter = allEarliest[0] || '無資料'
+    const latestQuarter = allLatest[0] || '無資料'
+
+    const handleRepair = async () => {
+      setRepairing(true)
+      try {
+        await syncApi.balanceAll(2020)
+        onSyncStatusRefresh()
+      } catch (error) {
+        console.error('Repair failed:', error)
+      } finally {
+        setRepairing(false)
+      }
+    }
+
+    return (
+      <div className="border rounded-lg p-4 bg-sky-50/50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="px-2 py-0.5 text-xs text-white rounded bg-sky-500">
+              核心
+            </span>
+            <div>
+              <div className="font-medium">{dataset.display_name}</div>
+              <div className="text-sm text-muted-foreground font-mono">
+                {dataset.name}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-sky-500 text-white rounded hover:bg-sky-600 disabled:opacity-50"
+              onClick={handleRepair}
+              disabled={repairing}
+            >
+              {repairing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              <span>Sync (FinMind)</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-4 gap-4">
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">預期季數</div>
+            <div className="text-lg font-bold">{expectedQuarters}</div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">完整股票</div>
+            <div className="text-lg font-bold">
+              {completeStocks}/{totalStocks}
+              <span className="text-sm font-normal text-muted-foreground ml-1">
+                ({totalStocks > 0 ? Math.round(completeStocks / totalStocks * 100) : 0}%)
+              </span>
+            </div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">最早季度</div>
+            <div className="text-lg font-bold font-mono">{earliestQuarter}</div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">最新季度</div>
+            <div className="text-lg font-bold font-mono">{latestQuarter}</div>
+          </div>
+        </div>
+
+        {status && (
+          <div className="mt-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs text-muted-foreground">覆蓋率分佈</span>
+              <button
+                className="text-xs text-sky-500 hover:underline"
+                onClick={() => setExpanded(!expanded)}
+              >
+                {expanded ? '收起' : '展開詳情'}
+              </button>
+            </div>
+            <div className="flex gap-0.5">
+              {status.stocks.slice(0, 100).map((stock) => (
+                <div
+                  key={stock.stock_id}
+                  className={`w-2 h-4 rounded-sm ${stock.coverage_pct >= 95 ? 'bg-green-500' : stock.coverage_pct > 0 ? 'bg-yellow-500' : 'bg-gray-300'}`}
+                  title={`${stock.stock_id} ${stock.name}: ${stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%`}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {expanded && status && (
+          <div className="mt-3 max-h-60 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted sticky top-0">
+                <tr>
+                  <th className="text-left p-2">代碼</th>
+                  <th className="text-left p-2">名稱</th>
+                  <th className="text-left p-2">最早季度</th>
+                  <th className="text-left p-2">最新季度</th>
+                  <th className="text-right p-2">筆數</th>
+                  <th className="text-right p-2">覆蓋率</th>
+                </tr>
+              </thead>
+              <tbody>
+                {status.stocks.map((stock) => (
+                  <tr key={stock.stock_id} className="border-b hover:bg-muted/50">
+                    <td className="p-2 font-mono">{stock.stock_id}</td>
+                    <td className="p-2">{stock.name}</td>
+                    <td className="p-2 font-mono text-xs">{stock.earliest_quarter || '-'}</td>
+                    <td className="p-2 font-mono text-xs">{stock.latest_quarter || '-'}</td>
+                    <td className="p-2 text-right">{stock.total_records.toLocaleString()}</td>
+                    <td className={`p-2 text-right font-medium ${stock.coverage_pct >= 95 ? 'text-green-600' : stock.coverage_pct > 0 ? 'text-yellow-600' : 'text-gray-400'}`}>
+                      {stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // TaiwanStockCashFlowsStatement 特殊處理 (現金流量表)
+  if (dataset.name === 'TaiwanStockCashFlowsStatement') {
+    const status = cashflowStatus
+    const totalStocks = status?.stocks.length || 0
+    const completeStocks = status?.stocks.filter(s => s.coverage_pct >= 95).length || 0
+    const expectedQuarters = status?.expected_quarters || 0
+
+    const allEarliest = status?.stocks
+      .filter(s => s.earliest_quarter)
+      .map(s => s.earliest_quarter!)
+      .sort() || []
+    const allLatest = status?.stocks
+      .filter(s => s.latest_quarter)
+      .map(s => s.latest_quarter!)
+      .sort()
+      .reverse() || []
+
+    const earliestQuarter = allEarliest[0] || '無資料'
+    const latestQuarter = allLatest[0] || '無資料'
+
+    const handleRepair = async () => {
+      setRepairing(true)
+      try {
+        await syncApi.cashflowAll(2020)
+        onSyncStatusRefresh()
+      } catch (error) {
+        console.error('Repair failed:', error)
+      } finally {
+        setRepairing(false)
+      }
+    }
+
+    return (
+      <div className="border rounded-lg p-4 bg-teal-50/50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="px-2 py-0.5 text-xs text-white rounded bg-teal-500">
+              核心
+            </span>
+            <div>
+              <div className="font-medium">{dataset.display_name}</div>
+              <div className="text-sm text-muted-foreground font-mono">
+                {dataset.name}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-teal-500 text-white rounded hover:bg-teal-600 disabled:opacity-50"
+              onClick={handleRepair}
+              disabled={repairing}
+            >
+              {repairing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              <span>Sync (FinMind)</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-4 gap-4">
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">預期季數</div>
+            <div className="text-lg font-bold">{expectedQuarters}</div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">完整股票</div>
+            <div className="text-lg font-bold">
+              {completeStocks}/{totalStocks}
+              <span className="text-sm font-normal text-muted-foreground ml-1">
+                ({totalStocks > 0 ? Math.round(completeStocks / totalStocks * 100) : 0}%)
+              </span>
+            </div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">最早季度</div>
+            <div className="text-lg font-bold font-mono">{earliestQuarter}</div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">最新季度</div>
+            <div className="text-lg font-bold font-mono">{latestQuarter}</div>
+          </div>
+        </div>
+
+        {status && (
+          <div className="mt-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs text-muted-foreground">覆蓋率分佈</span>
+              <button
+                className="text-xs text-teal-500 hover:underline"
+                onClick={() => setExpanded(!expanded)}
+              >
+                {expanded ? '收起' : '展開詳情'}
+              </button>
+            </div>
+            <div className="flex gap-0.5">
+              {status.stocks.slice(0, 100).map((stock) => (
+                <div
+                  key={stock.stock_id}
+                  className={`w-2 h-4 rounded-sm ${stock.coverage_pct >= 95 ? 'bg-green-500' : stock.coverage_pct > 0 ? 'bg-yellow-500' : 'bg-gray-300'}`}
+                  title={`${stock.stock_id} ${stock.name}: ${stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%`}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {expanded && status && (
+          <div className="mt-3 max-h-60 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted sticky top-0">
+                <tr>
+                  <th className="text-left p-2">代碼</th>
+                  <th className="text-left p-2">名稱</th>
+                  <th className="text-left p-2">最早季度</th>
+                  <th className="text-left p-2">最新季度</th>
+                  <th className="text-right p-2">筆數</th>
+                  <th className="text-right p-2">覆蓋率</th>
+                </tr>
+              </thead>
+              <tbody>
+                {status.stocks.map((stock) => (
+                  <tr key={stock.stock_id} className="border-b hover:bg-muted/50">
+                    <td className="p-2 font-mono">{stock.stock_id}</td>
+                    <td className="p-2">{stock.name}</td>
+                    <td className="p-2 font-mono text-xs">{stock.earliest_quarter || '-'}</td>
+                    <td className="p-2 font-mono text-xs">{stock.latest_quarter || '-'}</td>
+                    <td className="p-2 text-right">{stock.total_records.toLocaleString()}</td>
+                    <td className={`p-2 text-right font-medium ${stock.coverage_pct >= 95 ? 'text-green-600' : stock.coverage_pct > 0 ? 'text-yellow-600' : 'text-gray-400'}`}>
+                      {stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // TaiwanStockDividend 特殊處理 (股利政策)
+  if (dataset.name === 'TaiwanStockDividend') {
+    const status = dividendStatus
+    const totalStocks = status?.stocks.length || 0
+    const stocksWithData = status?.stocks.filter(s => s.total_records > 0).length || 0
+
+    const allEarliest = status?.stocks
+      .filter(s => s.earliest_date)
+      .map(s => s.earliest_date!)
+      .sort() || []
+    const allLatest = status?.stocks
+      .filter(s => s.latest_date)
+      .map(s => s.latest_date!)
+      .sort()
+      .reverse() || []
+
+    const earliestDate = allEarliest[0] || '無資料'
+    const latestDate = allLatest[0] || '無資料'
+
+    const handleRepair = async () => {
+      setRepairing(true)
+      try {
+        await syncApi.dividendAll('2020-01-01')
+        onSyncStatusRefresh()
+      } catch (error) {
+        console.error('Repair failed:', error)
+      } finally {
+        setRepairing(false)
+      }
+    }
+
+    return (
+      <div className="border rounded-lg p-4 bg-rose-50/50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="px-2 py-0.5 text-xs text-white rounded bg-rose-500">
+              核心
+            </span>
+            <div>
+              <div className="font-medium">{dataset.display_name}</div>
+              <div className="text-sm text-muted-foreground font-mono">
+                {dataset.name}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-rose-500 text-white rounded hover:bg-rose-600 disabled:opacity-50"
+              onClick={handleRepair}
+              disabled={repairing}
+            >
+              {repairing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              <span>Sync (FinMind)</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-4 gap-4">
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">資料年份</div>
+            <div className="text-lg font-bold">{status?.start_year}-{status?.end_year}</div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">有資料股票</div>
+            <div className="text-lg font-bold">
+              {stocksWithData}/{totalStocks}
+              <span className="text-sm font-normal text-muted-foreground ml-1">
+                ({totalStocks > 0 ? Math.round(stocksWithData / totalStocks * 100) : 0}%)
+              </span>
+            </div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">最早除息日</div>
+            <div className="text-lg font-bold font-mono">{earliestDate}</div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">最新除息日</div>
+            <div className="text-lg font-bold font-mono">{latestDate}</div>
+          </div>
+        </div>
+
+        {status && (
+          <div className="mt-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs text-muted-foreground">資料分佈</span>
+              <button
+                className="text-xs text-rose-500 hover:underline"
+                onClick={() => setExpanded(!expanded)}
+              >
+                {expanded ? '收起' : '展開詳情'}
+              </button>
+            </div>
+            <div className="flex gap-0.5">
+              {status.stocks.slice(0, 100).map((stock) => (
+                <div
+                  key={stock.stock_id}
+                  className={`w-2 h-4 rounded-sm ${stock.total_records > 0 ? 'bg-green-500' : 'bg-gray-300'}`}
+                  title={`${stock.stock_id} ${stock.name}: ${stock.total_records} 筆`}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {expanded && status && (
+          <div className="mt-3 max-h-60 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted sticky top-0">
+                <tr>
+                  <th className="text-left p-2">代碼</th>
+                  <th className="text-left p-2">名稱</th>
+                  <th className="text-left p-2">最早除息日</th>
+                  <th className="text-left p-2">最新除息日</th>
+                  <th className="text-right p-2">筆數</th>
+                  <th className="text-left p-2">有資料年份</th>
+                </tr>
+              </thead>
+              <tbody>
+                {status.stocks.map((stock) => (
+                  <tr key={stock.stock_id} className="border-b hover:bg-muted/50">
+                    <td className="p-2 font-mono">{stock.stock_id}</td>
+                    <td className="p-2">{stock.name}</td>
+                    <td className="p-2 font-mono text-xs">{stock.earliest_date || '-'}</td>
+                    <td className="p-2 font-mono text-xs">{stock.latest_date || '-'}</td>
+                    <td className="p-2 text-right">{stock.total_records}</td>
+                    <td className="p-2 text-xs">{stock.years_with_data.join(', ') || '-'}</td>
                   </tr>
                 ))}
               </tbody>
