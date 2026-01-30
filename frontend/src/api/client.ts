@@ -711,4 +711,32 @@ export const syncApi = {
     const query = params.toString() ? `?${params.toString()}` : ''
     return api.post<SyncAllResponse>(`/sync/institutional/all${query}`, {})
   },
+  // 融資融券
+  marginStatus: (startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams()
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.get<SyncStatusResponse>(`/sync/margin/status${query}`)
+  },
+  marginBulk: (targetDate?: string) => {
+    const params = new URLSearchParams()
+    if (targetDate) params.set('target_date', targetDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncBulkResponse>(`/sync/margin/bulk${query}`, {})
+  },
+  marginStock: (stockId: string, startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams()
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncStockResponse>(`/sync/margin/stock/${stockId}${query}`, {})
+  },
+  marginAll: (startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams()
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncAllResponse>(`/sync/margin/all${query}`, {})
+  },
 }

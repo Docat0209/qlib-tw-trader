@@ -9,7 +9,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.repositories.models import StockDaily, StockDailyInstitutional, StockDailyPER, StockUniverse, TradingCalendar
+from src.repositories.models import StockDaily, StockDailyInstitutional, StockDailyMargin, StockDailyPER, StockUniverse, TradingCalendar
 
 
 class SyncService:
@@ -19,6 +19,7 @@ class SyncService:
     TWSE_RWD_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL"
     TWSE_PER_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/BWIBBU_ALL"
     TWSE_INSTITUTIONAL_URL = "https://www.twse.com.tw/rwd/zh/fund/T86"
+    TWSE_MARGIN_URL = "https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN"
 
     def __init__(self, session: Session):
         self._session = session
@@ -734,6 +735,232 @@ class SyncService:
                 StockDailyInstitutional.stock_id == stock.stock_id,
                 StockDailyInstitutional.date >= start_date,
                 StockDailyInstitutional.date <= end_date,
+            )
+            result = self._session.execute(stmt).fetchone()
+            earliest, latest, total = result
+
+            missing = max(0, trading_days - total) if trading_days > 0 else 0
+            coverage = (total / trading_days * 100) if trading_days > 0 else 0
+
+            stocks.append({
+                "stock_id": stock.stock_id,
+                "name": stock.name,
+                "rank": stock.rank,
+                "earliest_date": earliest.isoformat() if earliest else None,
+                "latest_date": latest.isoformat() if latest else None,
+                "total_records": total,
+                "missing_count": missing,
+                "coverage_pct": round(coverage, 1),
+            })
+
+        return {
+            "trading_days": trading_days,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "stocks": stocks,
+        }
+
+    # =========================================================================
+    # 融資融券
+    # =========================================================================
+
+    async def sync_margin_bulk(self, target_date: date) -> dict:
+        """
+        同步全市場融資融券（用 TWSE RWD API）
+        只儲存股票池內的股票
+        Returns: {"date": str, "total": int, "inserted": int}
+        """
+        # 取得股票池
+        stmt = select(StockUniverse.stock_id)
+        universe = {row[0] for row in self._session.execute(stmt).fetchall()}
+
+        if not universe:
+            return {"date": target_date.isoformat(), "total": 0, "inserted": 0}
+
+        # 呼叫 TWSE RWD API（需帶日期參數）
+        params = {
+            "date": target_date.strftime("%Y%m%d"),
+            "selectType": "ALL",
+        }
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(self.TWSE_MARGIN_URL, params=params, timeout=30)
+            data = resp.json()
+
+        if data.get("stat") != "OK":
+            return {"date": target_date.isoformat(), "total": 0, "inserted": 0, "error": "TWSE API failed"}
+
+        # 取得已有資料
+        stmt = select(StockDailyMargin.stock_id).where(StockDailyMargin.date == target_date)
+        existing_stocks = {row[0] for row in self._session.execute(stmt).fetchall()}
+
+        # tables[1] 是融資融券彙總
+        tables = data.get("tables", [])
+        if len(tables) < 2:
+            return {"date": target_date.isoformat(), "total": 0, "inserted": 0, "error": "No margin data"}
+
+        rows = tables[1].get("data", [])
+        inserted = 0
+
+        for row in rows:
+            if len(row) < 13:
+                continue
+
+            stock_id = row[0].strip()
+
+            # 只儲存股票池內的股票
+            if stock_id not in universe:
+                continue
+            # 跳過已存在的
+            if stock_id in existing_stocks:
+                continue
+
+            # MI_MARGN 欄位:
+            # 融資: 買進[2], 賣出[3], 今日餘額[6]
+            # 融券: 買進[8], 賣出[9], 今日餘額[12]
+            margin_buy = self._safe_int(row[2])
+            margin_sell = self._safe_int(row[3])
+            margin_balance = self._safe_int(row[6])
+            short_buy = self._safe_int(row[8])
+            short_sell = self._safe_int(row[9])
+            short_balance = self._safe_int(row[12])
+
+            self._session.add(
+                StockDailyMargin(
+                    stock_id=stock_id,
+                    date=target_date,
+                    margin_buy=margin_buy,
+                    margin_sell=margin_sell,
+                    margin_balance=margin_balance,
+                    short_buy=short_buy,
+                    short_sell=short_sell,
+                    short_balance=short_balance,
+                )
+            )
+            inserted += 1
+
+        self._session.commit()
+
+        return {
+            "date": target_date.isoformat(),
+            "total": len(rows),
+            "inserted": inserted,
+        }
+
+    async def sync_margin(self, stock_id: str, start_date: date, end_date: date) -> dict:
+        """
+        同步單一股票的融資融券（使用 FinMind）
+        Returns: {"fetched": int, "inserted": int, "missing_dates": list}
+        """
+        # 取得交易日
+        trading_dates = set(self.get_trading_dates(start_date, end_date))
+        if not trading_dates:
+            return {"fetched": 0, "inserted": 0, "missing_dates": []}
+
+        # 取得已有資料的日期
+        stmt = select(StockDailyMargin.date).where(
+            StockDailyMargin.stock_id == stock_id,
+            StockDailyMargin.date >= start_date,
+            StockDailyMargin.date <= end_date,
+        )
+        existing_dates = {row[0] for row in self._session.execute(stmt).fetchall()}
+
+        # 計算缺少的日期
+        missing_dates = sorted(trading_dates - existing_dates)
+        if not missing_dates:
+            return {"fetched": 0, "inserted": 0, "missing_dates": []}
+
+        # 用 FinMind 補缺少的資料
+        params = {
+            "dataset": "TaiwanStockMarginPurchaseShortSale",
+            "data_id": stock_id,
+            "start_date": min(missing_dates).isoformat(),
+            "end_date": max(missing_dates).isoformat(),
+        }
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(self.FINMIND_URL, params=params, timeout=60)
+            data = resp.json()
+
+        if data.get("status") != 200:
+            raise RuntimeError(f"FinMind API error: {data.get('msg')}")
+
+        records = data.get("data", [])
+        inserted = 0
+
+        for r in records:
+            r_date = date.fromisoformat(r["date"])
+            if r_date not in missing_dates:
+                continue
+            if r_date in existing_dates:
+                continue
+
+            # FinMind 欄位
+            margin_buy = self._safe_int(r.get("MarginPurchaseBuy", 0))
+            margin_sell = self._safe_int(r.get("MarginPurchaseSell", 0))
+            margin_balance = self._safe_int(r.get("MarginPurchaseTodayBalance", 0))
+            short_buy = self._safe_int(r.get("ShortSaleBuy", 0))
+            short_sell = self._safe_int(r.get("ShortSaleSell", 0))
+            short_balance = self._safe_int(r.get("ShortSaleTodayBalance", 0))
+
+            self._session.add(
+                StockDailyMargin(
+                    stock_id=stock_id,
+                    date=r_date,
+                    margin_buy=margin_buy,
+                    margin_sell=margin_sell,
+                    margin_balance=margin_balance,
+                    short_buy=short_buy,
+                    short_sell=short_sell,
+                    short_balance=short_balance,
+                )
+            )
+            inserted += 1
+
+        self._session.commit()
+
+        # 重新計算還缺少的日期
+        stmt = select(StockDailyMargin.date).where(
+            StockDailyMargin.stock_id == stock_id,
+            StockDailyMargin.date >= start_date,
+            StockDailyMargin.date <= end_date,
+        )
+        final_existing = {row[0] for row in self._session.execute(stmt).fetchall()}
+        still_missing = sorted(trading_dates - final_existing)
+
+        return {
+            "fetched": len(records),
+            "inserted": inserted,
+            "missing_dates": [d.isoformat() for d in still_missing],
+        }
+
+    def get_margin_status(self, start_date: date, end_date: date) -> dict:
+        """取得融資融券資料狀態"""
+        from sqlalchemy import func
+
+        # 取得交易日數
+        stmt = select(func.count()).select_from(TradingCalendar).where(
+            TradingCalendar.date >= start_date,
+            TradingCalendar.date <= end_date,
+            TradingCalendar.is_trading_day == True,
+        )
+        trading_days = self._session.execute(stmt).scalar() or 0
+
+        # 取得股票池
+        stmt = select(StockUniverse).order_by(StockUniverse.rank)
+        universe = self._session.execute(stmt).scalars().all()
+
+        stocks = []
+        for stock in universe:
+            # 統計該股票的資料
+            stmt = select(
+                func.min(StockDailyMargin.date),
+                func.max(StockDailyMargin.date),
+                func.count(),
+            ).where(
+                StockDailyMargin.stock_id == stock.stock_id,
+                StockDailyMargin.date >= start_date,
+                StockDailyMargin.date <= end_date,
             )
             result = self._session.execute(stmt).fetchone()
             earliest, latest, total = result
