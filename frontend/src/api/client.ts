@@ -40,13 +40,19 @@ export const api = {
 // Types
 export interface DatasetStatus {
   name: string
+  earliest_date: string | null
   latest_date: string | null
-  record_count: number
+  is_fresh: boolean
+}
+
+export interface StockItem {
+  stock_id: string
+  is_fresh: boolean
 }
 
 export interface DataStatusResponse {
-  stock_id: string
   datasets: DatasetStatus[]
+  stocks: StockItem[]
   checked_at: string
 }
 
@@ -124,8 +130,7 @@ export interface FactorUpdate {
 // API functions
 export const systemApi = {
   health: () => api.get<HealthResponse>('/system/health'),
-  dataStatus: (stockId: string = '2330') =>
-    api.get<DataStatusResponse>(`/system/data-status?stock_id=${stockId}`),
+  dataStatus: () => api.get<DataStatusResponse>('/system/data-status'),
   sync: (data: SyncRequest) => api.post<SyncResponse>('/system/sync', data),
 }
 

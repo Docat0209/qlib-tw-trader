@@ -2,7 +2,7 @@
 系統監控 API
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -12,6 +12,7 @@ from src.interfaces.schemas.system import (
     DatasetStatus,
     DataStatusResponse,
     HealthResponse,
+    StockItem,
     SyncRequest,
     SyncResponse,
     SyncResult,
@@ -43,10 +44,10 @@ async def health_check():
 
 @router.get("/data-status", response_model=DataStatusResponse)
 async def data_status(
-    stock_id: str = Query("2330", description="股票代碼"),
     session: Session = Depends(get_db),
 ):
-    """檢查指定股票的資料狀態"""
+    """檢查資料狀態"""
+    # 所有 dataset repositories
     repos = [
         ("OHLCV", OHLCVRepository(session)),
         ("AdjClose", AdjCloseRepository(session)),
@@ -56,21 +57,36 @@ async def data_status(
         ("Shareholding", ShareholdingRepository(session)),
     ]
 
+    yesterday = date.today() - timedelta(days=1)
+
+    # 1. 每個 Dataset 的整體狀態（用 global 查詢，很快）
     datasets = []
     for name, repo in repos:
-        latest = repo.get_latest_date(stock_id)
-        count = repo.count(stock_id) if hasattr(repo, "count") else 0
+        earliest = repo.get_global_earliest_date()
+        latest = repo.get_global_latest_date()
+        is_fresh = latest >= yesterday if latest else False
         datasets.append(
             DatasetStatus(
                 name=name,
+                earliest_date=earliest,
                 latest_date=latest,
-                record_count=count,
+                is_fresh=is_fresh,
             )
         )
 
+    # 2. 股票清單（只從 OHLCV 取，用它的最新日期判斷是否 fresh）
+    ohlcv_repo = repos[0][1]
+    all_stock_ids = ohlcv_repo.get_all_stock_ids()
+
+    stocks = []
+    for stock_id in all_stock_ids:
+        latest = ohlcv_repo.get_latest_date(stock_id)
+        is_fresh = latest >= yesterday if latest else False
+        stocks.append(StockItem(stock_id=stock_id, is_fresh=is_fresh))
+
     return DataStatusResponse(
-        stock_id=stock_id,
         datasets=datasets,
+        stocks=stocks,
         checked_at=datetime.now(),
     )
 

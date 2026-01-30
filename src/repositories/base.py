@@ -111,6 +111,35 @@ class StockDailyRepository(BaseRepository[T, M]):
         stmt = select(func.count()).where(self._model.stock_id == stock_id)
         return self._session.execute(stmt).scalar() or 0
 
+    def get_earliest_date(self, stock_id: str) -> date | None:
+        """取得某股票最早資料日期"""
+        stmt = (
+            select(self._model.date)
+            .where(self._model.stock_id == stock_id)
+            .order_by(self._model.date.asc())
+            .limit(1)
+        )
+        return self._session.execute(stmt).scalar()
+
+    def get_all_stock_ids(self) -> list[str]:
+        """取得所有有資料的股票代碼"""
+        stmt = select(self._model.stock_id).distinct().order_by(self._model.stock_id)
+        return list(self._session.execute(stmt).scalars().all())
+
+    def get_global_latest_date(self) -> date | None:
+        """取得整體最新資料日期（所有股票中最新的）"""
+        from sqlalchemy import func
+
+        stmt = select(func.max(self._model.date))
+        return self._session.execute(stmt).scalar()
+
+    def get_global_earliest_date(self) -> date | None:
+        """取得整體最早資料日期（所有股票中最早的）"""
+        from sqlalchemy import func
+
+        stmt = select(func.min(self._model.date))
+        return self._session.execute(stmt).scalar()
+
 
 class MarketDailyRepository(BaseRepository[T, M]):
     """市場日頻資料 Repository（date 為主鍵）"""
@@ -135,6 +164,15 @@ class MarketDailyRepository(BaseRepository[T, M]):
         stmt = (
             select(self._model.date)
             .order_by(self._model.date.desc())
+            .limit(1)
+        )
+        return self._session.execute(stmt).scalar()
+
+    def get_earliest_date(self) -> date | None:
+        """取得最早資料日期"""
+        stmt = (
+            select(self._model.date)
+            .order_by(self._model.date.asc())
             .limit(1)
         )
         return self._session.execute(stmt).scalar()

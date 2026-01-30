@@ -19,15 +19,23 @@ class DatasetStatus(BaseModel):
     """單一資料集狀態"""
 
     name: str
+    earliest_date: date | None
     latest_date: date | None
-    record_count: int
+    is_fresh: bool
+
+
+class StockItem(BaseModel):
+    """股票清單項目"""
+
+    stock_id: str
+    is_fresh: bool
 
 
 class DataStatusResponse(BaseModel):
     """資料狀態回應"""
 
-    stock_id: str
     datasets: list[DatasetStatus]
+    stocks: list[StockItem]
     checked_at: datetime
 
 
