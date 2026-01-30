@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 import yfinance as yf
 
-from src.repositories.models import StockDaily, StockDailyAdj, StockDailyInstitutional, StockDailyMargin, StockDailyPER, StockUniverse, TradingCalendar
+from src.repositories.models import StockDaily, StockDailyAdj, StockDailyInstitutional, StockDailyMargin, StockDailyPER, StockDailyShareholding, StockUniverse, TradingCalendar
 
 
 class SyncService:
@@ -1174,6 +1174,214 @@ class SyncService:
                 StockDailyAdj.stock_id == stock.stock_id,
                 StockDailyAdj.date >= start_date,
                 StockDailyAdj.date <= end_date,
+            )
+            result = self._session.execute(stmt).fetchone()
+            earliest, latest, total = result
+
+            # 用該股票的首筆資料日期計算覆蓋率
+            if earliest:
+                expected_days = self.count_trading_days(earliest, end_date)
+                missing = max(0, expected_days - total)
+                coverage = (total / expected_days * 100) if expected_days > 0 else 0
+            else:
+                missing = 0
+                coverage = 0
+
+            stocks.append({
+                "stock_id": stock.stock_id,
+                "name": stock.name,
+                "rank": stock.rank,
+                "earliest_date": earliest.isoformat() if earliest else None,
+                "latest_date": latest.isoformat() if latest else None,
+                "total_records": total,
+                "missing_count": missing,
+                "coverage_pct": round(coverage, 1),
+            })
+
+        return {
+            "trading_days": trading_days,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "stocks": stocks,
+        }
+
+    # =========================================================================
+    # 外資持股
+    # =========================================================================
+
+    TWSE_SHAREHOLDING_URL = "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS"
+
+    async def sync_shareholding_bulk(self, target_date: date) -> dict:
+        """
+        同步全市場外資持股（用 TWSE RWD bulk API）
+        只儲存股票池內的股票
+        Returns: {"date": str, "total": int, "inserted": int}
+        """
+        # 取得股票池
+        stmt = select(StockUniverse.stock_id)
+        universe = {row[0] for row in self._session.execute(stmt).fetchall()}
+
+        if not universe:
+            return {"date": target_date.isoformat(), "total": 0, "inserted": 0}
+
+        # 呼叫 TWSE RWD API（需帶日期參數）
+        params = {
+            "date": target_date.strftime("%Y%m%d"),
+            "selectType": "ALLBUT0999",
+        }
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(self.TWSE_SHAREHOLDING_URL, params=params, timeout=30)
+            data = resp.json()
+
+        if data.get("stat") != "OK":
+            return {"date": target_date.isoformat(), "total": 0, "inserted": 0, "error": "TWSE API failed"}
+
+        # 取得已有資料
+        stmt = select(StockDailyShareholding.stock_id).where(StockDailyShareholding.date == target_date)
+        existing_stocks = {row[0] for row in self._session.execute(stmt).fetchall()}
+
+        rows = data.get("data", [])
+        inserted = 0
+
+        for row in rows:
+            # MI_QFIIS 格式: [證券代號, 證券名稱, ISIN Code, 發行股數, 外資持股數, 異動數, 外資持股比率(%)]
+            if len(row) < 7:
+                continue
+
+            stock_id = row[0].strip()
+
+            # 只儲存股票池內的股票
+            if stock_id not in universe:
+                continue
+            # 跳過已存在的
+            if stock_id in existing_stocks:
+                continue
+
+            # 持股比率可能是數字或字串
+            ratio_val = row[6]
+            if isinstance(ratio_val, (int, float)):
+                ratio = Decimal(str(ratio_val))
+            else:
+                ratio = self._safe_decimal(ratio_val) or Decimal("0")
+
+            self._session.add(
+                StockDailyShareholding(
+                    stock_id=stock_id,
+                    date=target_date,
+                    foreign_shares=self._safe_int(row[4]),
+                    foreign_ratio=ratio,
+                )
+            )
+            inserted += 1
+
+        self._session.commit()
+
+        return {
+            "date": target_date.isoformat(),
+            "total": len(rows),
+            "inserted": inserted,
+        }
+
+    async def sync_shareholding(self, stock_id: str, start_date: date, end_date: date) -> dict:
+        """
+        同步單一股票的外資持股（使用 FinMind）
+        Returns: {"fetched": int, "inserted": int, "missing_dates": list}
+        """
+        # 取得交易日
+        trading_dates = set(self.get_trading_dates(start_date, end_date))
+        if not trading_dates:
+            return {"fetched": 0, "inserted": 0, "missing_dates": []}
+
+        # 取得已有資料的日期
+        stmt = select(StockDailyShareholding.date).where(
+            StockDailyShareholding.stock_id == stock_id,
+            StockDailyShareholding.date >= start_date,
+            StockDailyShareholding.date <= end_date,
+        )
+        existing_dates = {row[0] for row in self._session.execute(stmt).fetchall()}
+
+        # 計算缺少的日期
+        missing_dates = sorted(trading_dates - existing_dates)
+        if not missing_dates:
+            return {"fetched": 0, "inserted": 0, "missing_dates": []}
+
+        # 用 FinMind 補缺少的資料
+        params = {
+            "dataset": "TaiwanStockShareholding",
+            "data_id": stock_id,
+            "start_date": min(missing_dates).isoformat(),
+            "end_date": max(missing_dates).isoformat(),
+        }
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(self.FINMIND_URL, params=params, timeout=60)
+            data = resp.json()
+
+        if data.get("status") != 200:
+            raise RuntimeError(f"FinMind API error: {data.get('msg')}")
+
+        records = data.get("data", [])
+        inserted = 0
+
+        for r in records:
+            r_date = date.fromisoformat(r["date"])
+            if r_date not in missing_dates:
+                continue
+            if r_date in existing_dates:
+                continue
+
+            ratio = self._safe_decimal(r.get("ForeignInvestmentSharesRatio")) or Decimal("0")
+
+            self._session.add(
+                StockDailyShareholding(
+                    stock_id=stock_id,
+                    date=r_date,
+                    foreign_shares=self._safe_int(r.get("ForeignInvestmentShares", 0)),
+                    foreign_ratio=ratio,
+                )
+            )
+            inserted += 1
+
+        self._session.commit()
+
+        # 重新計算還缺少的日期
+        stmt = select(StockDailyShareholding.date).where(
+            StockDailyShareholding.stock_id == stock_id,
+            StockDailyShareholding.date >= start_date,
+            StockDailyShareholding.date <= end_date,
+        )
+        final_existing = {row[0] for row in self._session.execute(stmt).fetchall()}
+        still_missing = sorted(trading_dates - final_existing)
+
+        return {
+            "fetched": len(records),
+            "inserted": inserted,
+            "missing_dates": [d.isoformat() for d in still_missing],
+        }
+
+    def get_shareholding_status(self, start_date: date, end_date: date) -> dict:
+        """取得外資持股資料狀態"""
+        from sqlalchemy import func
+
+        # 取得整體交易日數（用於顯示）
+        trading_days = self.count_trading_days(start_date, end_date)
+
+        # 取得股票池
+        stmt = select(StockUniverse).order_by(StockUniverse.rank)
+        universe = self._session.execute(stmt).scalars().all()
+
+        stocks = []
+        for stock in universe:
+            # 統計該股票的資料
+            stmt = select(
+                func.min(StockDailyShareholding.date),
+                func.max(StockDailyShareholding.date),
+                func.count(),
+            ).where(
+                StockDailyShareholding.stock_id == stock.stock_id,
+                StockDailyShareholding.date >= start_date,
+                StockDailyShareholding.date <= end_date,
             )
             result = self._session.execute(stmt).fetchone()
             earliest, latest, total = result
