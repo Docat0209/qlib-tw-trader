@@ -1279,8 +1279,11 @@ class SyncService:
         inserted = 0
 
         for row in rows:
-            # MI_QFIIS 格式: [證券代號, 證券名稱, ISIN Code, 發行股數, 外資持股數, 異動數, 外資持股比率(%)]
-            if len(row) < 7:
+            # MI_QFIIS 格式（12 欄）:
+            # 0: 證券代號, 1: 證券名稱, 2: ISIN, 3: 發行股數,
+            # 4: 尚可投資股數, 5: 全體外資持有股數, 6: 尚可投資比率,
+            # 7: 全體外資持股比率, 8-11: 其他欄位
+            if len(row) < 8:
                 continue
 
             stock_id = row[0].strip()
@@ -1292,8 +1295,8 @@ class SyncService:
             if stock_id in existing_stocks:
                 continue
 
-            # 持股比率可能是數字或字串
-            ratio_val = row[6]
+            # 持股比率可能是數字或字串（欄位 7: 全體外資持股比率）
+            ratio_val = row[7]
             if isinstance(ratio_val, (int, float)):
                 ratio = Decimal(str(ratio_val))
             else:
@@ -1303,7 +1306,7 @@ class SyncService:
                 StockDailyShareholding(
                     stock_id=stock_id,
                     date=target_date,
-                    foreign_shares=self._safe_int(row[4]),
+                    foreign_shares=self._safe_int(row[5]),  # 欄位 5: 全體外資持有股數
                     foreign_ratio=ratio,
                 )
             )
