@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.interfaces.exceptions import register_exception_handlers
-from src.interfaces.routers import backtest, dashboard, datasets, factor, model, performance, portfolio, system, universe, websocket
+from src.interfaces.routers import backtest, dashboard, datasets, factor, model, performance, portfolio, sync, system, universe, websocket
 from src.repositories.database import init_db
 
 
@@ -33,6 +33,7 @@ def create_app() -> FastAPI:
     )
 
     # 註冊路由
+    app.include_router(sync.router, prefix="/api/v1/sync", tags=["sync"])
     app.include_router(universe.router, prefix="/api/v1/universe", tags=["universe"])
     app.include_router(datasets.router, prefix="/api/v1/datasets", tags=["datasets"])
     app.include_router(system.router, prefix="/api/v1/system", tags=["system"])
