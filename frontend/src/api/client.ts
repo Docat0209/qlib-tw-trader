@@ -573,3 +573,86 @@ export const datasetsApi = {
   },
   categories: () => api.get<{ categories: CategoryInfo[] }>('/datasets/categories'),
 }
+
+// Sync Types
+export interface SyncStatusItem {
+  stock_id: string
+  name: string
+  rank: number
+  earliest_date: string | null
+  latest_date: string | null
+  total_records: number
+  missing_count: number
+  coverage_pct: number
+}
+
+export interface SyncStatusResponse {
+  trading_days: number
+  start_date: string
+  end_date: string
+  stocks: SyncStatusItem[]
+}
+
+export interface SyncCalendarResponse {
+  start_date: string
+  end_date: string
+  new_dates: number
+  total_dates: number
+}
+
+export interface SyncStockResponse {
+  stock_id: string
+  fetched: number
+  inserted: number
+  missing_dates: string[]
+}
+
+export interface SyncBulkResponse {
+  date: string
+  total: number
+  inserted: number
+  error: string | null
+}
+
+export interface SyncAllResponse {
+  stocks: number
+  total_inserted: number
+  errors: { stock_id: string; error: string }[]
+}
+
+export const syncApi = {
+  status: (startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams()
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.get<SyncStatusResponse>(`/sync/status${query}`)
+  },
+  calendar: (startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams()
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncCalendarResponse>(`/sync/calendar${query}`, {})
+  },
+  stock: (stockId: string, startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams()
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncStockResponse>(`/sync/stock/${stockId}${query}`, {})
+  },
+  bulk: (targetDate?: string) => {
+    const params = new URLSearchParams()
+    if (targetDate) params.set('target_date', targetDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncBulkResponse>(`/sync/bulk${query}`, {})
+  },
+  all: (startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams()
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.post<SyncAllResponse>(`/sync/all${query}`, {})
+  },
+}

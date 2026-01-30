@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { datasetsApi, universeApi, DatasetInfo, TestResult, CategoryInfo, StockInfo } from '@/api/client'
+import { datasetsApi, universeApi, syncApi, DatasetInfo, TestResult, CategoryInfo, StockInfo, SyncStatusResponse } from '@/api/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { Loader2, CheckCircle, XCircle, Play, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
+import { Loader2, CheckCircle, XCircle, Play, ChevronDown, ChevronRight, RefreshCw, Wrench, Download } from 'lucide-react'
 
 const statusColors: Record<string, string> = {
   available: 'bg-green-500',
@@ -36,6 +36,7 @@ export function Datasets() {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['technical', 'chips']))
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [showUniverse, setShowUniverse] = useState(false)
+  const [syncStatus, setSyncStatus] = useState<SyncStatusResponse | null>(null)
 
   useEffect(() => {
     loadData()
@@ -43,19 +44,30 @@ export function Datasets() {
 
   const loadData = async () => {
     try {
-      const [datasetsRes, categoriesRes, universeRes] = await Promise.all([
+      const [datasetsRes, categoriesRes, universeRes, syncStatusRes] = await Promise.all([
         datasetsApi.list(),
         datasetsApi.categories(),
         universeApi.get(),
+        syncApi.status('2020-01-01'),
       ])
       setDatasets(datasetsRes.datasets)
       setCategories(categoriesRes.categories)
       setUniverse(universeRes.stocks)
       setUniverseUpdatedAt(universeRes.updated_at)
+      setSyncStatus(syncStatusRes)
     } catch (error) {
       console.error('Failed to load data:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const refreshSyncStatus = async () => {
+    try {
+      const syncStatusRes = await syncApi.status('2020-01-01')
+      setSyncStatus(syncStatusRes)
+    } catch (error) {
+      console.error('Failed to refresh sync status:', error)
     }
   }
 
@@ -298,6 +310,8 @@ export function Datasets() {
                         testResult={testResults[ds.name]}
                         isTesting={testingDataset === ds.name}
                         onTest={() => testDataset(ds.name)}
+                        syncStatus={syncStatus}
+                        onSyncStatusRefresh={refreshSyncStatus}
                       />
                     ))}
                   </div>
@@ -315,11 +329,199 @@ interface DatasetRowProps {
   testResult?: TestResult
   isTesting: boolean
   onTest: () => void
+  syncStatus: SyncStatusResponse | null
+  onSyncStatusRefresh: () => void
 }
 
-function DatasetRow({ dataset, testResult, isTesting, onTest }: DatasetRowProps) {
+function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, onSyncStatusRefresh }: DatasetRowProps) {
   const [expanded, setExpanded] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [repairing, setRepairing] = useState(false)
 
+  // TaiwanStockPrice 特殊處理
+  if (dataset.name === 'TaiwanStockPrice') {
+    const totalStocks = syncStatus?.stocks.length || 0
+    const completeStocks = syncStatus?.stocks.filter(s => s.coverage_pct === 100).length || 0
+    const tradingDays = syncStatus?.trading_days || 0
+
+    // 找出最早和最晚日期
+    const allEarliest = syncStatus?.stocks
+      .filter(s => s.earliest_date)
+      .map(s => s.earliest_date!)
+      .sort() || []
+    const allLatest = syncStatus?.stocks
+      .filter(s => s.latest_date)
+      .map(s => s.latest_date!)
+      .sort()
+      .reverse() || []
+
+    const earliestDate = allEarliest[0] || '無資料'
+    const latestDate = allLatest[0] || '無資料'
+
+    const handleSync = async () => {
+      setSyncing(true)
+      try {
+        await syncApi.bulk()
+        onSyncStatusRefresh()
+      } catch (error) {
+        console.error('Sync failed:', error)
+      } finally {
+        setSyncing(false)
+      }
+    }
+
+    const handleRepair = async () => {
+      setRepairing(true)
+      try {
+        // 先同步交易日曆
+        await syncApi.calendar('2020-01-01')
+        // 再同步所有股票
+        await syncApi.all('2020-01-01')
+        onSyncStatusRefresh()
+      } catch (error) {
+        console.error('Repair failed:', error)
+      } finally {
+        setRepairing(false)
+      }
+    }
+
+    return (
+      <div className="border rounded-lg p-4 bg-blue-50/50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="px-2 py-0.5 text-xs text-white rounded bg-blue-500">
+              核心
+            </span>
+            <div>
+              <div className="font-medium">{dataset.display_name}</div>
+              <div className="text-sm text-muted-foreground font-mono">
+                {dataset.name}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {/* 按鈕組 */}
+            <button
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+              onClick={handleSync}
+              disabled={syncing || repairing}
+            >
+              {syncing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              <span>Sync (TWSE)</span>
+            </button>
+            <button
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-orange-500 text-white rounded hover:bg-orange-600 disabled:opacity-50"
+              onClick={handleRepair}
+              disabled={syncing || repairing}
+            >
+              {repairing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Wrench className="h-4 w-4" />
+              )}
+              <span>修復資料 (FinMind)</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 狀態面板 */}
+        <div className="mt-3 grid grid-cols-4 gap-4">
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">交易日數</div>
+            <div className="text-lg font-bold">{tradingDays.toLocaleString()}</div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">完整股票</div>
+            <div className="text-lg font-bold">
+              {completeStocks}/{totalStocks}
+              <span className="text-sm font-normal text-muted-foreground ml-1">
+                ({totalStocks > 0 ? Math.round(completeStocks / totalStocks * 100) : 0}%)
+              </span>
+            </div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">最早資料</div>
+            <div className="text-lg font-bold font-mono">{earliestDate}</div>
+          </div>
+          <div className="p-3 bg-white rounded border">
+            <div className="text-xs text-muted-foreground">最新資料</div>
+            <div className="text-lg font-bold font-mono">{latestDate}</div>
+          </div>
+        </div>
+
+        {/* 股票覆蓋率預覽 */}
+        {syncStatus && (
+          <div className="mt-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs text-muted-foreground">覆蓋率分佈</span>
+              <button
+                className="text-xs text-blue-500 hover:underline"
+                onClick={() => setExpanded(!expanded)}
+              >
+                {expanded ? '收起' : '展開詳情'}
+              </button>
+            </div>
+            <div className="flex gap-0.5">
+              {syncStatus.stocks.slice(0, 100).map((stock) => (
+                <div
+                  key={stock.stock_id}
+                  className={`w-2 h-4 rounded-sm ${
+                    stock.coverage_pct === 100
+                      ? 'bg-green-500'
+                      : stock.coverage_pct > 0
+                      ? 'bg-yellow-500'
+                      : 'bg-gray-300'
+                  }`}
+                  title={`${stock.stock_id} ${stock.name}: ${stock.coverage_pct}%`}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 展開詳情 */}
+        {expanded && syncStatus && (
+          <div className="mt-3 max-h-60 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted sticky top-0">
+                <tr>
+                  <th className="text-left p-2">代碼</th>
+                  <th className="text-left p-2">名稱</th>
+                  <th className="text-left p-2">最早</th>
+                  <th className="text-left p-2">最新</th>
+                  <th className="text-right p-2">筆數</th>
+                  <th className="text-right p-2">覆蓋率</th>
+                </tr>
+              </thead>
+              <tbody>
+                {syncStatus.stocks.map((stock) => (
+                  <tr key={stock.stock_id} className="border-b hover:bg-muted/50">
+                    <td className="p-2 font-mono">{stock.stock_id}</td>
+                    <td className="p-2">{stock.name}</td>
+                    <td className="p-2 font-mono text-xs">{stock.earliest_date || '-'}</td>
+                    <td className="p-2 font-mono text-xs">{stock.latest_date || '-'}</td>
+                    <td className="p-2 text-right">{stock.total_records.toLocaleString()}</td>
+                    <td className={`p-2 text-right font-medium ${
+                      stock.coverage_pct === 100 ? 'text-green-600' :
+                      stock.coverage_pct > 0 ? 'text-yellow-600' : 'text-gray-400'
+                    }`}>
+                      {stock.coverage_pct}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // 其他 dataset 的一般顯示
   return (
     <div className="border rounded-lg p-3">
       <div className="flex items-center justify-between">
