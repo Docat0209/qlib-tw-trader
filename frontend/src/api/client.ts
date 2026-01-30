@@ -425,3 +425,69 @@ export const jobApi = {
   },
   get: (jobId: string) => api.get<JobDetail>(`/jobs/${jobId}`),
 }
+
+// Backtest Types
+export interface BacktestMetrics {
+  total_return: number | null
+  annual_return: number | null
+  sharpe_ratio: number | null
+  max_drawdown: number | null
+  win_rate: number | null
+  profit_factor: number | null
+  total_trades: number | null
+}
+
+export interface EquityCurvePoint {
+  date: string
+  equity: number
+  benchmark: number | null
+  drawdown: number | null
+}
+
+export interface BacktestItem {
+  id: number
+  model_id: number
+  start_date: string
+  end_date: string
+  initial_capital: number
+  max_positions: number
+  status: string
+  metrics: BacktestMetrics | null
+  created_at: string
+}
+
+export interface BacktestDetail extends BacktestItem {
+  equity_curve: EquityCurvePoint[] | null
+}
+
+export interface BacktestListResponse {
+  items: BacktestItem[]
+  total: number
+}
+
+export interface BacktestRequest {
+  model_id: number
+  start_date: string
+  end_date: string
+  initial_capital?: number
+  max_positions?: number
+}
+
+export interface BacktestRunResponse {
+  backtest_id: number
+  job_id: string
+  status: string
+  message: string
+}
+
+export const backtestApi = {
+  list: (modelId?: number, limit?: number) => {
+    const params = new URLSearchParams()
+    if (modelId) params.set('model_id', String(modelId))
+    if (limit) params.set('limit', String(limit))
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.get<BacktestListResponse>(`/backtest${query}`)
+  },
+  get: (backtestId: number) => api.get<BacktestDetail>(`/backtest/${backtestId}`),
+  run: (data: BacktestRequest) => api.post<BacktestRunResponse>('/backtest/run', data),
+}

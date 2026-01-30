@@ -3,6 +3,7 @@ import { Layout } from '@/components/layout/Layout'
 import { Dashboard } from '@/pages/Dashboard'
 import { Factors } from '@/pages/models/Factors'
 import { Training } from '@/pages/models/Training'
+import { Backtest } from '@/pages/models/Backtest'
 import { Positions } from '@/pages/portfolio/Positions'
 import { Performance } from '@/pages/portfolio/Performance'
 import { DataStatus } from '@/pages/system/DataStatus'
@@ -15,6 +16,7 @@ function App() {
         <Route path="models">
           <Route path="factors" element={<Factors />} />
           <Route path="training" element={<Training />} />
+          <Route path="backtest" element={<Backtest />} />
         </Route>
         <Route path="portfolio">
           <Route path="positions" element={<Positions />} />

@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Brain,
   LineChart,
+  BarChart3,
   Briefcase,
   TrendingUp,
   Database,
@@ -22,6 +23,7 @@ const navigation: NavigationType[] = [
     items: [
       { name: 'Factors', href: '/models/factors', icon: Brain },
       { name: 'Training', href: '/models/training', icon: LineChart },
+      { name: 'Backtest', href: '/models/backtest', icon: BarChart3 },
     ],
   },
   {
