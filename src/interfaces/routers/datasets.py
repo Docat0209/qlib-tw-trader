@@ -44,7 +44,6 @@ class TestResult(BaseModel):
 # 完整的 datasets 定義（來自 datasets.md）
 ALL_DATASETS = [
     # 技術面 - 已可用
-    DatasetInfo(name="TaiwanStockInfo", display_name="台股總覽", category="technical", source="twse", status="available", requires_stock_id=False),
     DatasetInfo(name="TaiwanStockPrice", display_name="日K線", category="technical", source="twse/finmind", status="available"),
     DatasetInfo(name="TaiwanStockPriceAdj", display_name="還原股價", category="technical", source="yfinance", status="available"),
     DatasetInfo(name="TaiwanStockPER", display_name="PER/PBR/殖利率", category="technical", source="twse/finmind", status="available"),
