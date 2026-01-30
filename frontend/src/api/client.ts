@@ -397,3 +397,31 @@ export interface DashboardSummary {
 export const dashboardApi = {
   summary: () => api.get<DashboardSummary>('/dashboard/summary'),
 }
+
+// Job Types
+export interface JobItem {
+  id: string
+  job_type: string
+  status: string
+  progress: number
+  message: string | null
+  started_at: string | null
+  completed_at: string | null
+}
+
+export interface JobDetail extends JobItem {
+  result: string | null
+}
+
+export interface JobListResponse {
+  items: JobItem[]
+  total: number
+}
+
+export const jobApi = {
+  list: (limit?: number) => {
+    const query = limit ? `?limit=${limit}` : ''
+    return api.get<JobListResponse>(`/jobs${query}`)
+  },
+  get: (jobId: string) => api.get<JobDetail>(`/jobs/${jobId}`),
+}
