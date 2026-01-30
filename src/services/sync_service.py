@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 import yfinance as yf
 
-from src.repositories.models import StockDaily, StockDailyAdj, StockDailyInstitutional, StockDailyMargin, StockDailyPER, StockDailyShareholding, StockUniverse, TradingCalendar
+from src.repositories.models import StockDaily, StockDailyAdj, StockDailyInstitutional, StockDailyMargin, StockDailyPER, StockDailySecuritiesLending, StockDailyShareholding, StockUniverse, TradingCalendar
 
 
 class SyncService:
@@ -1382,6 +1382,138 @@ class SyncService:
                 StockDailyShareholding.stock_id == stock.stock_id,
                 StockDailyShareholding.date >= start_date,
                 StockDailyShareholding.date <= end_date,
+            )
+            result = self._session.execute(stmt).fetchone()
+            earliest, latest, total = result
+
+            # 用該股票的首筆資料日期計算覆蓋率
+            if earliest:
+                expected_days = self.count_trading_days(earliest, end_date)
+                missing = max(0, expected_days - total)
+                coverage = (total / expected_days * 100) if expected_days > 0 else 0
+            else:
+                missing = 0
+                coverage = 0
+
+            stocks.append({
+                "stock_id": stock.stock_id,
+                "name": stock.name,
+                "rank": stock.rank,
+                "earliest_date": earliest.isoformat() if earliest else None,
+                "latest_date": latest.isoformat() if latest else None,
+                "total_records": total,
+                "missing_count": missing,
+                "coverage_pct": round(coverage, 1),
+            })
+
+        return {
+            "trading_days": trading_days,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "stocks": stocks,
+        }
+
+    # =========================================================================
+    # 借券明細
+    # =========================================================================
+
+    async def sync_securities_lending(self, stock_id: str, start_date: date, end_date: date) -> dict:
+        """
+        同步單一股票的借券明細（使用 FinMind）
+        Returns: {"fetched": int, "inserted": int, "missing_dates": list}
+        """
+        # 取得交易日
+        trading_dates = set(self.get_trading_dates(start_date, end_date))
+        if not trading_dates:
+            return {"fetched": 0, "inserted": 0, "missing_dates": []}
+
+        # 取得已有資料的日期
+        stmt = select(StockDailySecuritiesLending.date).where(
+            StockDailySecuritiesLending.stock_id == stock_id,
+            StockDailySecuritiesLending.date >= start_date,
+            StockDailySecuritiesLending.date <= end_date,
+        )
+        existing_dates = {row[0] for row in self._session.execute(stmt).fetchall()}
+
+        # 計算缺少的日期
+        missing_dates = sorted(trading_dates - existing_dates)
+        if not missing_dates:
+            return {"fetched": 0, "inserted": 0, "missing_dates": []}
+
+        # 用 FinMind 補缺少的資料
+        params = {
+            "dataset": "TaiwanStockSecuritiesLending",
+            "data_id": stock_id,
+            "start_date": min(missing_dates).isoformat(),
+            "end_date": max(missing_dates).isoformat(),
+        }
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(self.FINMIND_URL, params=params, timeout=60)
+            data = resp.json()
+
+        if data.get("status") != 200:
+            raise RuntimeError(f"FinMind API error: {data.get('msg')}")
+
+        records = data.get("data", [])
+        inserted = 0
+
+        for r in records:
+            r_date = date.fromisoformat(r["date"])
+            if r_date not in missing_dates:
+                continue
+            if r_date in existing_dates:
+                continue
+
+            self._session.add(
+                StockDailySecuritiesLending(
+                    stock_id=stock_id,
+                    date=r_date,
+                    lending_volume=self._safe_int(r.get("Volume", 0)),
+                    lending_balance=self._safe_int(r.get("balance", 0)),
+                )
+            )
+            inserted += 1
+
+        self._session.commit()
+
+        # 重新計算還缺少的日期
+        stmt = select(StockDailySecuritiesLending.date).where(
+            StockDailySecuritiesLending.stock_id == stock_id,
+            StockDailySecuritiesLending.date >= start_date,
+            StockDailySecuritiesLending.date <= end_date,
+        )
+        final_existing = {row[0] for row in self._session.execute(stmt).fetchall()}
+        still_missing = sorted(trading_dates - final_existing)
+
+        return {
+            "fetched": len(records),
+            "inserted": inserted,
+            "missing_dates": [d.isoformat() for d in still_missing],
+        }
+
+    def get_securities_lending_status(self, start_date: date, end_date: date) -> dict:
+        """取得借券明細資料狀態"""
+        from sqlalchemy import func
+
+        # 取得整體交易日數（用於顯示）
+        trading_days = self.count_trading_days(start_date, end_date)
+
+        # 取得股票池
+        stmt = select(StockUniverse).order_by(StockUniverse.rank)
+        universe = self._session.execute(stmt).scalars().all()
+
+        stocks = []
+        for stock in universe:
+            # 統計該股票的資料
+            stmt = select(
+                func.min(StockDailySecuritiesLending.date),
+                func.max(StockDailySecuritiesLending.date),
+                func.count(),
+            ).where(
+                StockDailySecuritiesLending.stock_id == stock.stock_id,
+                StockDailySecuritiesLending.date >= start_date,
+                StockDailySecuritiesLending.date <= end_date,
             )
             result = self._session.execute(stmt).fetchone()
             earliest, latest, total = result

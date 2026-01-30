@@ -15,6 +15,7 @@ from src.adapters.finmind import (
     FinMindMonthlyRevenueAdapter,
     FinMindOHLCVAdapter,
     FinMindPERAdapter,
+    FinMindSecuritiesLendingAdapter,
     FinMindShareholdingAdapter,
 )
 from src.adapters.twse import (
@@ -46,6 +47,7 @@ __all__ = [
     "FinMindInstitutionalAdapter",
     "FinMindMarginAdapter",
     "FinMindShareholdingAdapter",
+    "FinMindSecuritiesLendingAdapter",
     "FinMindMonthlyRevenueAdapter",
     "FinMindFinancialAdapter",
     "FinMindBalanceAdapter",

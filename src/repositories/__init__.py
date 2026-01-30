@@ -9,6 +9,7 @@ from src.repositories.daily import (
     MarketMarginRepository,
     OHLCVRepository,
     PERRepository,
+    SecuritiesLendingRepository,
     ShareholdingRepository,
 )
 
@@ -25,6 +26,7 @@ __all__ = [
     "InstitutionalRepository",
     "MarginRepository",
     "ShareholdingRepository",
+    "SecuritiesLendingRepository",
     # Market Daily
     "MarketInstitutionalRepository",
     "MarketMarginRepository",

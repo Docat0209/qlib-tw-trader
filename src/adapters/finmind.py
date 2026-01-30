@@ -18,6 +18,7 @@ from src.shared.types import (
     QuarterlyBalance,
     QuarterlyCashFlow,
     QuarterlyFinancial,
+    SecuritiesLending,
     Shareholding,
 )
 
@@ -304,6 +305,44 @@ class FinMindShareholdingAdapter(FinMindBaseAdapter, StockDataAdapter[Shareholdi
                     stock_id=row["stock_id"],
                     foreign_shares=safe_int(row.get("ForeignInvestmentShares")),
                     foreign_ratio=ratio or Decimal("0"),
+                )
+            )
+
+        return results
+
+
+class FinMindSecuritiesLendingAdapter(FinMindBaseAdapter, StockDataAdapter[SecuritiesLending]):
+    """FinMind 借券明細"""
+
+    @property
+    def source_name(self) -> str:
+        return "finmind"
+
+    @property
+    def dataset_name(self) -> str:
+        return "TaiwanStockSecuritiesLending"
+
+    async def fetch(
+        self, stock_id: str, start_date: date, end_date: date
+    ) -> list[SecuritiesLending]:
+        rows = await self._fetch(
+            "TaiwanStockSecuritiesLending",
+            {
+                "data_id": stock_id,
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+            },
+        )
+
+        results = []
+        for row in rows:
+            # FinMind 欄位: Volume (借券賣出量), balance (借券餘額)
+            results.append(
+                SecuritiesLending(
+                    date=date.fromisoformat(row["date"]),
+                    stock_id=row["stock_id"],
+                    lending_volume=safe_int(row.get("Volume")),
+                    lending_balance=safe_int(row.get("balance")),
                 )
             )
 

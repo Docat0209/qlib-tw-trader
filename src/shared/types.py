@@ -156,6 +156,15 @@ class QuarterlyCashFlow:
 # === 事件型 ===
 
 @dataclass
+class SecuritiesLending:
+    """借券明細"""
+    date: date
+    stock_id: str
+    lending_volume: int       # 借券賣出
+    lending_balance: int      # 借券餘額
+
+
+@dataclass
 class Dividend:
     """除權息"""
     stock_id: str

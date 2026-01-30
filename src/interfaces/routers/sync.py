@@ -733,3 +733,87 @@ async def sync_shareholding_all(
         total_inserted=total_inserted,
         errors=errors,
     )
+
+
+# =========================================================================
+# 借券明細
+# =========================================================================
+
+
+@router.get("/securities-lending/status", response_model=DataStatusResponse)
+async def get_securities_lending_status(
+    start_date: date = Query(default=date(2020, 1, 1)),
+    end_date: date = Query(default=None),
+    session: Session = Depends(get_db),
+):
+    """取得借券明細資料狀態"""
+    if end_date is None:
+        end_date = date.today()
+
+    service = SyncService(session)
+    result = service.get_securities_lending_status(start_date, end_date)
+
+    return DataStatusResponse(
+        trading_days=result["trading_days"],
+        start_date=result["start_date"],
+        end_date=result["end_date"],
+        stocks=[DataStatusItem(**s) for s in result["stocks"]],
+    )
+
+
+@router.post("/securities-lending/stock/{stock_id}", response_model=SyncStockResponse)
+async def sync_securities_lending_stock(
+    stock_id: str,
+    start_date: date = Query(default=date(2020, 1, 1)),
+    end_date: date = Query(default=None),
+    session: Session = Depends(get_db),
+):
+    """同步單一股票的借券明細（FinMind）"""
+    if end_date is None:
+        end_date = date.today()
+
+    service = SyncService(session)
+    result = await service.sync_securities_lending(stock_id, start_date, end_date)
+
+    return SyncStockResponse(
+        stock_id=stock_id,
+        fetched=result["fetched"],
+        inserted=result["inserted"],
+        missing_dates=result["missing_dates"],
+    )
+
+
+@router.post("/securities-lending/all", response_model=SyncAllResponse)
+async def sync_securities_lending_all(
+    start_date: date = Query(default=date(2020, 1, 1)),
+    end_date: date = Query(default=None),
+    session: Session = Depends(get_db),
+):
+    """同步股票池內所有股票的借券明細（FinMind）"""
+    if end_date is None:
+        end_date = date.today()
+
+    service = SyncService(session)
+
+    # 先同步交易日曆
+    await service.sync_trading_calendar(start_date, end_date)
+
+    # 取得股票池
+    stmt = select(StockUniverse.stock_id).order_by(StockUniverse.rank)
+    stock_ids = [row[0] for row in session.execute(stmt).fetchall()]
+
+    total_inserted = 0
+    errors = []
+
+    for stock_id in stock_ids:
+        try:
+            result = await service.sync_securities_lending(stock_id, start_date, end_date)
+            total_inserted += result["inserted"]
+        except Exception as e:
+            errors.append({"stock_id": stock_id, "error": str(e)})
+
+    return SyncAllResponse(
+        stocks=len(stock_ids),
+        total_inserted=total_inserted,
+        errors=errors,
+    )

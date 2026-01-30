@@ -137,6 +137,22 @@ class StockDailyShareholding(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
 
 
+class StockDailySecuritiesLending(Base):
+    """借券明細"""
+
+    __tablename__ = "stock_daily_securities_lending"
+    __table_args__ = (
+        UniqueConstraint("stock_id", "date", name="uq_stock_daily_sl"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    stock_id: Mapped[str] = mapped_column(String(10), index=True)
+    date: Mapped[date] = mapped_column(Date, index=True)
+    lending_volume: Mapped[int] = mapped_column(Integer)
+    lending_balance: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
+
+
 # =============================================================================
 # 市場日頻
 # =============================================================================
