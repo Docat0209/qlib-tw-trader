@@ -21,7 +21,7 @@ class DatasetInfo(BaseModel):
     display_name: str
     category: str
     source: str
-    status: Literal["available", "needs_accumulation", "not_implemented"]
+    status: Literal["available", "needs_accumulation", "not_implemented", "pending"]
     description: str | None = None
     requires_stock_id: bool = True
 
@@ -41,81 +41,33 @@ class TestResult(BaseModel):
     error: str | None = None
 
 
-# 完整的 datasets 定義（來自 datasets.md）
+# 完整的 datasets 定義
 ALL_DATASETS = [
-    # 技術面 - 已可用
+    # 技術面
     DatasetInfo(name="TaiwanStockPrice", display_name="日K線", category="technical", source="twse/finmind", status="available"),
     DatasetInfo(name="TaiwanStockPriceAdj", display_name="還原股價", category="technical", source="yfinance", status="available"),
     DatasetInfo(name="TaiwanStockPER", display_name="PER/PBR/殖利率", category="technical", source="twse/finmind", status="available"),
-    DatasetInfo(name="TaiwanStockDayTrading", display_name="當沖成交量值", category="technical", source="twse", status="available"),
-    DatasetInfo(name="TaiwanStockTotalReturnIndex", display_name="報酬指數", category="technical", source="twse", status="available"),
 
-    # 籌碼面 - 已可用
+    # 籌碼面
     DatasetInfo(name="TaiwanStockMarginPurchaseShortSale", display_name="個股融資融券", category="chips", source="twse/finmind", status="available"),
-    DatasetInfo(name="TaiwanStockTotalMarginPurchaseShortSale", display_name="整體融資融券", category="chips", source="twse", status="available", requires_stock_id=False),
     DatasetInfo(name="TaiwanStockInstitutionalInvestorsBuySell", display_name="個股三大法人", category="chips", source="twse/finmind", status="available"),
-    DatasetInfo(name="TaiwanStockTotalInstitutionalInvestors", display_name="整體三大法人", category="chips", source="twse", status="available", requires_stock_id=False),
     DatasetInfo(name="TaiwanStockShareholding", display_name="外資持股", category="chips", source="twse/finmind", status="available"),
     DatasetInfo(name="TaiwanStockSecuritiesLending", display_name="借券明細", category="chips", source="twse/finmind", status="available"),
-    DatasetInfo(name="TaiwanDailyShortSaleBalances", display_name="信用額度餘額", category="chips", source="twse/finmind", status="available"),
-    DatasetInfo(name="TaiwanSecuritiesTraderInfo", display_name="證券商資訊", category="chips", source="twse", status="available", requires_stock_id=False),
 
-    # 基本面 - 已可用
+    # 基本面
     DatasetInfo(name="TaiwanStockCashFlowsStatement", display_name="現金流量表", category="fundamental", source="finmind", status="available"),
     DatasetInfo(name="TaiwanStockFinancialStatements", display_name="綜合損益表", category="fundamental", source="finmind", status="available"),
     DatasetInfo(name="TaiwanStockBalanceSheet", display_name="資產負債表", category="fundamental", source="finmind", status="available"),
     DatasetInfo(name="TaiwanStockDividend", display_name="股利政策", category="fundamental", source="finmind", status="available"),
-    DatasetInfo(name="TaiwanStockDividendResult", display_name="除權息結果", category="fundamental", source="twse/finmind", status="available"),
     DatasetInfo(name="TaiwanStockMonthRevenue", display_name="月營收", category="fundamental", source="finmind", status="available"),
-    DatasetInfo(name="TaiwanStockCapitalReductionReferencePrice", display_name="減資參考價", category="fundamental", source="twse/finmind", status="available"),
-    DatasetInfo(name="TaiwanStockDelisting", display_name="下市資料", category="fundamental", source="twse/finmind", status="available", requires_stock_id=False),
-    DatasetInfo(name="TaiwanStockSplitPrice", display_name="分割參考價", category="fundamental", source="twse/finmind", status="available"),
-    DatasetInfo(name="TaiwanStockParValueChange", display_name="變更面額參考價", category="fundamental", source="twse/finmind", status="available"),
 
-    # 衍生品 - 已可用
-    DatasetInfo(name="TaiwanFuturesDaily", display_name="期貨日成交", category="derivatives", source="finmind", status="available", requires_stock_id=False, description="data_id=TX"),
-    DatasetInfo(name="TaiwanOptionDaily", display_name="選擇權日成交", category="derivatives", source="finmind", status="available", requires_stock_id=False, description="data_id=TXO"),
-    DatasetInfo(name="TaiwanFuturesInstitutionalInvestors", display_name="期貨三大法人", category="derivatives", source="finmind", status="available", requires_stock_id=False),
-    DatasetInfo(name="TaiwanOptionInstitutionalInvestors", display_name="選擇權三大法人", category="derivatives", source="finmind", status="available", requires_stock_id=False),
-    DatasetInfo(name="TaiwanOptionFutureInfo", display_name="期貨選擇權總覽", category="derivatives", source="finmind", status="available", requires_stock_id=False),
-
-    # 其他 - 已可用
-    DatasetInfo(name="GoldPrice", display_name="黃金價格", category="macro", source="finmind", status="available", requires_stock_id=False),
-    DatasetInfo(name="CrudeOilPrices", display_name="原油價格", category="macro", source="finmind", status="available", requires_stock_id=False, description="延遲 ~9 天"),
-    DatasetInfo(name="TaiwanExchangeRate", display_name="匯率", category="macro", source="finmind", status="available", requires_stock_id=False, description="data_id=USD"),
-    DatasetInfo(name="TaiwanBusinessIndicator", display_name="景氣燈號", category="macro", source="國發會", status="not_implemented", requires_stock_id=False),
-
-    # 需自行累積
-    DatasetInfo(name="TaiwanStockHoldingSharesPer", display_name="股權分級表", category="chips", source="twse", status="needs_accumulation"),
-    DatasetInfo(name="TaiwanStockTradingDailyReport", display_name="分點資料", category="chips", source="twse", status="needs_accumulation"),
-    DatasetInfo(name="TaiwanStockWarrantTradingDailyReport", display_name="權證分點", category="chips", source="twse", status="needs_accumulation"),
-    DatasetInfo(name="TaiwanTotalExchangeMarginMaintenance", display_name="融資維持率", category="chips", source="twse", status="needs_accumulation", requires_stock_id=False),
-    DatasetInfo(name="TaiwanStockTradingDailyReportSecIdAgg", display_name="券商分點統計", category="chips", source="twse", status="needs_accumulation"),
-    DatasetInfo(name="TaiwanStockDispositionSecuritiesPeriod", display_name="處置公告", category="chips", source="twse", status="needs_accumulation"),
-    DatasetInfo(name="TaiwanStockSuspended", display_name="暫停交易公告", category="technical", source="twse", status="needs_accumulation"),
-    DatasetInfo(name="TaiwanStockDayTradingSuspension", display_name="當沖預告", category="technical", source="twse", status="needs_accumulation"),
-    DatasetInfo(name="TaiwanStockInfoWithWarrant", display_name="含權證總覽", category="technical", source="twse", status="needs_accumulation"),
-    DatasetInfo(name="TaiwanStockInfoWithWarrantSummary", display_name="權證對照表", category="technical", source="twse", status="needs_accumulation"),
-    DatasetInfo(name="TaiwanStockMarketValueWeight", display_name="市值比重", category="technical", source="twse", status="needs_accumulation"),
-    DatasetInfo(name="TaiwanStockMarginShortSaleSuspension", display_name="融券回補日", category="chips", source="twse", status="needs_accumulation"),
-    DatasetInfo(name="TaiwanFuturesInstitutionalInvestorsAfterHours", display_name="期貨夜盤法人", category="derivatives", source="taifex", status="needs_accumulation", requires_stock_id=False),
-    DatasetInfo(name="TaiwanOptionInstitutionalInvestorsAfterHours", display_name="選擇權夜盤法人", category="derivatives", source="taifex", status="needs_accumulation", requires_stock_id=False),
-    DatasetInfo(name="TaiwanFuturesDealerTradingVolumeDaily", display_name="期貨券商交易", category="derivatives", source="taifex", status="needs_accumulation", requires_stock_id=False),
-    DatasetInfo(name="TaiwanOptionDealerTradingVolumeDaily", display_name="選擇權券商交易", category="derivatives", source="taifex", status="needs_accumulation", requires_stock_id=False),
-    DatasetInfo(name="TaiwanFuturesOpenInterestLargeTraders", display_name="期貨大額未沖銷", category="derivatives", source="taifex", status="needs_accumulation", requires_stock_id=False),
-    DatasetInfo(name="TaiwanOptionOpenInterestLargeTraders", display_name="選擇權大額未沖銷", category="derivatives", source="taifex", status="needs_accumulation", requires_stock_id=False),
-
-    # 等待實作（可自算）
-    DatasetInfo(name="TaiwanStockWeekPrice", display_name="週K線", category="technical", source="計算", status="not_implemented", description="從日K彙總"),
-    DatasetInfo(name="TaiwanStockMonthPrice", display_name="月K線", category="technical", source="計算", status="not_implemented", description="從日K彙總"),
-    DatasetInfo(name="TaiwanStock10Year", display_name="十年線", category="technical", source="計算", status="not_implemented", description="MA(2500)"),
-    DatasetInfo(name="TaiwanStockMarketValue", display_name="市值", category="technical", source="計算", status="not_implemented", description="股價×股本"),
-    DatasetInfo(name="TaiwanStockTradingDate", display_name="交易日", category="technical", source="計算", status="not_implemented", description="從日K推算"),
-
-    # 可轉債（優先度低）
-    DatasetInfo(name="TaiwanStockConvertibleBondInfo", display_name="可轉債總覽", category="fundamental", source="finmind", status="not_implemented"),
-    DatasetInfo(name="TaiwanStockConvertibleBondDaily", display_name="可轉債日成交", category="fundamental", source="finmind", status="not_implemented"),
-    DatasetInfo(name="TaiwanStockConvertibleBondInstitutionalInvestors", display_name="可轉債三大法人", category="chips", source="finmind", status="not_implemented"),
+    # 待定 - 需評估或累積資料
+    DatasetInfo(name="TaiwanStockDayTrading", display_name="當沖成交量值", category="technical", source="finmind", status="pending", description="非核心因子，資料完整度低"),
+    DatasetInfo(name="TaiwanStockHoldingSharesPer", display_name="股權分級表", category="chips", source="twse", status="pending", description="籌碼集中度，需累積"),
+    DatasetInfo(name="TaiwanStockTradingDailyReport", display_name="分點資料", category="chips", source="twse", status="pending", description="主力券商進出，需累積"),
+    DatasetInfo(name="TaiwanFuturesDaily", display_name="期貨日成交", category="derivatives", source="finmind", status="pending", requires_stock_id=False, description="待確認個股期貨對應"),
+    DatasetInfo(name="TaiwanOptionDaily", display_name="選擇權日成交", category="derivatives", source="finmind", status="pending", requires_stock_id=False, description="待確認個股選擇權對應"),
+    DatasetInfo(name="TaiwanFuturesInstitutionalInvestors", display_name="期貨三大法人", category="derivatives", source="finmind", status="pending", requires_stock_id=False, description="待確認個股期貨對應"),
 ]
 
 
@@ -181,12 +133,6 @@ async def test_dataset(
                 params["data_id"] = "TX"
             elif dataset_name == "TaiwanOptionDaily":
                 params["data_id"] = "TXO"
-            elif dataset_name == "TaiwanExchangeRate":
-                params["data_id"] = "USD"
-            elif dataset_name == "GoldPrice":
-                params["data_id"] = "GOLD"
-            elif dataset_name == "CrudeOilPrices":
-                params["data_id"] = "WTI"
 
         async with httpx.AsyncClient() as client:
             resp = await client.get(FINMIND_URL, params=params, timeout=30)

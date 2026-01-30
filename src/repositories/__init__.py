@@ -3,7 +3,6 @@
 from src.repositories.database import Base, engine, get_session, init_db
 from src.repositories.daily import (
     AdjCloseRepository,
-    CommodityRepository,
     InstitutionalRepository,
     MarginRepository,
     MarketInstitutionalRepository,
@@ -29,5 +28,4 @@ __all__ = [
     # Market Daily
     "MarketInstitutionalRepository",
     "MarketMarginRepository",
-    "CommodityRepository",
 ]

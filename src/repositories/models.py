@@ -175,21 +175,6 @@ class MarketDailyMargin(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
 
 
-class MarketDailyCommodity(Base):
-    """商品價格（黃金/原油/匯率）"""
-
-    __tablename__ = "market_daily_commodity"
-    __table_args__ = (
-        UniqueConstraint("date", "commodity_id", name="uq_market_daily_commodity"),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    date: Mapped[date] = mapped_column(Date, index=True)
-    commodity_id: Mapped[str] = mapped_column(String(10), index=True)
-    price: Mapped[Decimal] = mapped_column(Numeric(16, 4))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
-
-
 # =============================================================================
 # 低頻
 # =============================================================================

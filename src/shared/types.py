@@ -104,14 +104,6 @@ class MarketMargin:
     short_balance: Decimal
 
 
-@dataclass
-class CommodityPrice:
-    """商品價格（黃金/原油/匯率）"""
-    date: date
-    commodity_id: str
-    price: Decimal
-
-
 # === 低頻 ===
 
 @dataclass

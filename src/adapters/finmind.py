@@ -8,10 +8,8 @@ from decimal import Decimal
 
 import httpx
 
-from src.adapters.base import MarketDataAdapter, StockDataAdapter
+from src.adapters.base import StockDataAdapter
 from src.shared.types import (
-    CommodityPrice,
-    Dividend,
     Institutional,
     Margin,
     MonthlyRevenue,
@@ -509,99 +507,3 @@ class FinMindCashFlowAdapter(FinMindBaseAdapter, StockDataAdapter[QuarterlyCashF
         return results
 
 
-class FinMindDividendAdapter(FinMindBaseAdapter, StockDataAdapter[Dividend]):
-    """FinMind 除權息"""
-
-    @property
-    def source_name(self) -> str:
-        return "finmind"
-
-    @property
-    def dataset_name(self) -> str:
-        return "TaiwanStockDividendResult"
-
-    async def fetch(
-        self, stock_id: str, start_date: date, end_date: date
-    ) -> list[Dividend]:
-        rows = await self._fetch(
-            "TaiwanStockDividendResult",
-            {
-                "data_id": stock_id,
-                "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat(),
-            },
-        )
-
-        results = []
-        for row in rows:
-            ex_date = date.fromisoformat(row["date"])
-            results.append(
-                Dividend(
-                    stock_id=row["stock_id"],
-                    ex_date=ex_date,
-                    cash_dividend=safe_decimal(row.get("CashEarningsDistribution")),
-                    stock_dividend=safe_decimal(row.get("StockEarningsDistribution")),
-                )
-            )
-
-        return results
-
-
-# =============================================================================
-# Market Data Adapters (市場級)
-# =============================================================================
-
-
-class FinMindCommodityAdapter(FinMindBaseAdapter, MarketDataAdapter[CommodityPrice]):
-    """FinMind 商品價格（黃金/原油/匯率）"""
-
-    @property
-    def source_name(self) -> str:
-        return "finmind"
-
-    @property
-    def dataset_name(self) -> str:
-        return "Commodity"
-
-    async def fetch(self, start_date: date, end_date: date) -> list[CommodityPrice]:
-        # 黃金
-        gold = await self._fetch_commodity("GoldPrice", "GOLD", start_date, end_date)
-        # 原油
-        oil = await self._fetch_commodity("CrudeOilPrices", "WTI", start_date, end_date)
-        # 匯率
-        usd = await self._fetch_commodity(
-            "TaiwanExchangeRate", "USD", start_date, end_date
-        )
-
-        return gold + oil + usd
-
-    async def _fetch_commodity(
-        self, dataset: str, commodity_id: str, start_date: date, end_date: date
-    ) -> list[CommodityPrice]:
-        try:
-            rows = await self._fetch(
-                dataset,
-                {
-                    "data_id": commodity_id,
-                    "start_date": start_date.isoformat(),
-                    "end_date": end_date.isoformat(),
-                },
-            )
-        except RuntimeError:
-            return []
-
-        results = []
-        for row in rows:
-            price = safe_decimal(row.get("price") or row.get("close"))
-            if price is None:
-                continue
-
-            results.append(
-                CommodityPrice(
-                    date=date.fromisoformat(row["date"]),
-                    commodity_id=commodity_id,
-                    price=price,
-                )
-            )
-
-        return results

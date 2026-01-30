@@ -161,13 +161,10 @@ async def get_data_status(
     if end_date is None:
         end_date = date.today()
 
-    # 取得交易日數
-    stmt = select(func.count()).select_from(TradingCalendar).where(
-        TradingCalendar.date >= start_date,
-        TradingCalendar.date <= end_date,
-        TradingCalendar.is_trading_day == True,
-    )
-    trading_days = session.execute(stmt).scalar() or 0
+    service = SyncService(session)
+
+    # 取得整體交易日數（用於顯示）
+    trading_days = service.count_trading_days(start_date, end_date)
 
     # 取得股票池
     stmt = select(StockUniverse).order_by(StockUniverse.rank)
@@ -188,8 +185,14 @@ async def get_data_status(
         result = session.execute(stmt).fetchone()
         earliest, latest, total = result
 
-        missing = max(0, trading_days - total) if trading_days > 0 else 0
-        coverage = (total / trading_days * 100) if trading_days > 0 else 0
+        # 用該股票的首筆資料日期計算覆蓋率
+        if earliest:
+            expected_days = service.count_trading_days(earliest, end_date)
+            missing = max(0, expected_days - total)
+            coverage = (total / expected_days * 100) if expected_days > 0 else 0
+        else:
+            missing = 0
+            coverage = 0
 
         stocks.append(
             DataStatusItem(

@@ -86,6 +86,16 @@ class SyncService:
         result = self._session.execute(stmt).fetchone()
         return result[0] if result else None
 
+    def count_trading_days(self, start_date: date, end_date: date) -> int:
+        """計算指定區間的交易日數"""
+        from sqlalchemy import func
+        stmt = select(func.count()).select_from(TradingCalendar).where(
+            TradingCalendar.date >= start_date,
+            TradingCalendar.date <= end_date,
+            TradingCalendar.is_trading_day == True,
+        )
+        return self._session.execute(stmt).scalar() or 0
+
     # =========================================================================
     # 股票日K線
     # =========================================================================
@@ -471,13 +481,8 @@ class SyncService:
         """取得 PER 資料狀態"""
         from sqlalchemy import func
 
-        # 取得交易日數
-        stmt = select(func.count()).select_from(TradingCalendar).where(
-            TradingCalendar.date >= start_date,
-            TradingCalendar.date <= end_date,
-            TradingCalendar.is_trading_day == True,
-        )
-        trading_days = self._session.execute(stmt).scalar() or 0
+        # 取得整體交易日數（用於顯示）
+        trading_days = self.count_trading_days(start_date, end_date)
 
         # 取得股票池
         stmt = select(StockUniverse).order_by(StockUniverse.rank)
@@ -498,8 +503,14 @@ class SyncService:
             result = self._session.execute(stmt).fetchone()
             earliest, latest, total = result
 
-            missing = max(0, trading_days - total) if trading_days > 0 else 0
-            coverage = (total / trading_days * 100) if trading_days > 0 else 0
+            # 用該股票的首筆資料日期計算覆蓋率
+            if earliest:
+                expected_days = self.count_trading_days(earliest, end_date)
+                missing = max(0, expected_days - total)
+                coverage = (total / expected_days * 100) if expected_days > 0 else 0
+            else:
+                missing = 0
+                coverage = 0
 
             stocks.append({
                 "stock_id": stock.stock_id,
@@ -708,13 +719,8 @@ class SyncService:
         """取得三大法人資料狀態"""
         from sqlalchemy import func
 
-        # 取得交易日數
-        stmt = select(func.count()).select_from(TradingCalendar).where(
-            TradingCalendar.date >= start_date,
-            TradingCalendar.date <= end_date,
-            TradingCalendar.is_trading_day == True,
-        )
-        trading_days = self._session.execute(stmt).scalar() or 0
+        # 取得整體交易日數（用於顯示）
+        trading_days = self.count_trading_days(start_date, end_date)
 
         # 取得股票池
         stmt = select(StockUniverse).order_by(StockUniverse.rank)
@@ -735,8 +741,14 @@ class SyncService:
             result = self._session.execute(stmt).fetchone()
             earliest, latest, total = result
 
-            missing = max(0, trading_days - total) if trading_days > 0 else 0
-            coverage = (total / trading_days * 100) if trading_days > 0 else 0
+            # 用該股票的首筆資料日期計算覆蓋率
+            if earliest:
+                expected_days = self.count_trading_days(earliest, end_date)
+                missing = max(0, expected_days - total)
+                coverage = (total / expected_days * 100) if expected_days > 0 else 0
+            else:
+                missing = 0
+                coverage = 0
 
             stocks.append({
                 "stock_id": stock.stock_id,
@@ -934,13 +946,8 @@ class SyncService:
         """取得融資融券資料狀態"""
         from sqlalchemy import func
 
-        # 取得交易日數
-        stmt = select(func.count()).select_from(TradingCalendar).where(
-            TradingCalendar.date >= start_date,
-            TradingCalendar.date <= end_date,
-            TradingCalendar.is_trading_day == True,
-        )
-        trading_days = self._session.execute(stmt).scalar() or 0
+        # 取得整體交易日數（用於顯示）
+        trading_days = self.count_trading_days(start_date, end_date)
 
         # 取得股票池
         stmt = select(StockUniverse).order_by(StockUniverse.rank)
@@ -961,8 +968,14 @@ class SyncService:
             result = self._session.execute(stmt).fetchone()
             earliest, latest, total = result
 
-            missing = max(0, trading_days - total) if trading_days > 0 else 0
-            coverage = (total / trading_days * 100) if trading_days > 0 else 0
+            # 用該股票的首筆資料日期計算覆蓋率
+            if earliest:
+                expected_days = self.count_trading_days(earliest, end_date)
+                missing = max(0, expected_days - total)
+                coverage = (total / expected_days * 100) if expected_days > 0 else 0
+            else:
+                missing = 0
+                coverage = 0
 
             stocks.append({
                 "stock_id": stock.stock_id,
@@ -1143,13 +1156,8 @@ class SyncService:
         """取得還原股價資料狀態"""
         from sqlalchemy import func
 
-        # 取得交易日數
-        stmt = select(func.count()).select_from(TradingCalendar).where(
-            TradingCalendar.date >= start_date,
-            TradingCalendar.date <= end_date,
-            TradingCalendar.is_trading_day == True,
-        )
-        trading_days = self._session.execute(stmt).scalar() or 0
+        # 取得整體交易日數（用於顯示）
+        trading_days = self.count_trading_days(start_date, end_date)
 
         # 取得股票池
         stmt = select(StockUniverse).order_by(StockUniverse.rank)
@@ -1170,8 +1178,14 @@ class SyncService:
             result = self._session.execute(stmt).fetchone()
             earliest, latest, total = result
 
-            missing = max(0, trading_days - total) if trading_days > 0 else 0
-            coverage = (total / trading_days * 100) if trading_days > 0 else 0
+            # 用該股票的首筆資料日期計算覆蓋率
+            if earliest:
+                expected_days = self.count_trading_days(earliest, end_date)
+                missing = max(0, expected_days - total)
+                coverage = (total / expected_days * 100) if expected_days > 0 else 0
+            else:
+                missing = 0
+                coverage = 0
 
             stocks.append({
                 "stock_id": stock.stock_id,

@@ -501,7 +501,7 @@ export interface DatasetInfo {
   display_name: string
   category: string
   source: string
-  status: 'available' | 'needs_accumulation' | 'not_implemented'
+  status: 'available' | 'needs_accumulation' | 'not_implemented' | 'pending'
   description: string | null
   requires_stock_id: boolean
 }

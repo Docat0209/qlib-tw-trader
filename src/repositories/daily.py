@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 
 from src.repositories.base import MarketDailyRepository, StockDailyRepository
 from src.repositories.models import (
-    MarketDailyCommodity,
     MarketDailyInstitutional,
     MarketDailyMargin,
     StockDaily,
@@ -21,7 +20,6 @@ from src.repositories.models import (
 )
 from src.shared.types import (
     AdjClose,
-    CommodityPrice,
     Institutional,
     Margin,
     MarketInstitutional,
@@ -300,47 +298,3 @@ class MarketMarginRepository(MarketDailyRepository[MarketMargin, MarketDailyMarg
         return ["margin_balance", "short_balance"]
 
 
-class CommodityRepository(MarketDailyRepository[CommodityPrice, MarketDailyCommodity]):
-    """商品價格 Repository"""
-
-    def __init__(self, session: Session):
-        super().__init__(session, MarketDailyCommodity)
-
-    def _to_dataclass(self, row: MarketDailyCommodity) -> CommodityPrice:
-        return CommodityPrice(
-            date=row.date,
-            commodity_id=row.commodity_id,
-            price=row.price,
-        )
-
-    def _to_dict(self, data: CommodityPrice) -> dict:
-        return {
-            "date": data.date,
-            "commodity_id": data.commodity_id,
-            "price": data.price,
-        }
-
-    def _get_conflict_keys(self) -> list[str]:
-        return ["date", "commodity_id"]
-
-    def _get_update_fields(self) -> list[str]:
-        return ["price"]
-
-    def get_by_commodity(
-        self,
-        commodity_id: str,
-        start_date: date,
-        end_date: date,
-    ) -> list[CommodityPrice]:
-        """取得指定商品區間資料"""
-        from sqlalchemy import select
-
-        stmt = (
-            select(self._model)
-            .where(self._model.commodity_id == commodity_id)
-            .where(self._model.date >= start_date)
-            .where(self._model.date <= end_date)
-            .order_by(self._model.date)
-        )
-        rows = self._session.execute(stmt).scalars().all()
-        return [self._to_dataclass(row) for row in rows]

@@ -7,12 +7,14 @@ const statusColors: Record<string, string> = {
   available: 'bg-green-500',
   needs_accumulation: 'bg-yellow-500',
   not_implemented: 'bg-gray-400',
+  pending: 'bg-slate-400',
 }
 
 const statusLabels: Record<string, string> = {
   available: '可用',
   needs_accumulation: '需累積',
   not_implemented: '未實作',
+  pending: '待定',
 }
 
 const categoryLabels: Record<string, string> = {
@@ -21,6 +23,33 @@ const categoryLabels: Record<string, string> = {
   fundamental: '基本面',
   derivatives: '衍生品',
   macro: '總經指標',
+}
+
+// 檢查日期是否過時（小於昨天）
+const isDateStale = (dateStr: string | null): boolean => {
+  if (!dateStr) return true
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const yesterday = new Date(today)
+  yesterday.setDate(yesterday.getDate() - 1)
+  const checkDate = new Date(dateStr)
+  return checkDate < yesterday
+}
+
+// 取得覆蓋率狀態顏色
+// Green: 覆蓋率 >= 95% 且資料新鮮
+// Yellow: 有資料但 (覆蓋率 < 95% OR 資料過時)
+// Gray: 無資料
+const getCoverageBarColor = (coveragePct: number, latestDate: string | null): string => {
+  if (coveragePct === 0 || !latestDate) return 'bg-gray-300'
+  const isComplete = coveragePct >= 95 && !isDateStale(latestDate)
+  return isComplete ? 'bg-green-500' : 'bg-yellow-500'
+}
+
+const getCoverageTextColor = (coveragePct: number, latestDate: string | null): string => {
+  if (coveragePct === 0 || !latestDate) return 'text-gray-400'
+  const isComplete = coveragePct >= 95 && !isDateStale(latestDate)
+  return isComplete ? 'text-green-600' : 'text-yellow-600'
 }
 
 export function Datasets() {
@@ -140,7 +169,11 @@ export function Datasets() {
     })
   }
 
-  const groupedDatasets = datasets.reduce((acc, ds) => {
+  // 分離 pending 和 active datasets
+  const pendingDatasets = datasets.filter(ds => ds.status === 'pending')
+  const activeDatasets = datasets.filter(ds => ds.status !== 'pending')
+
+  const groupedDatasets = activeDatasets.reduce((acc, ds) => {
     if (!acc[ds.category]) acc[ds.category] = []
     acc[ds.category].push(ds)
     return acc
@@ -346,6 +379,52 @@ export function Datasets() {
             </Card>
           ))}
       </div>
+
+      {/* 待定 Dataset */}
+      {pendingDatasets.length > 0 && (
+        <Card className="border-slate-300 bg-slate-50/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg text-slate-600">
+              待定 Dataset
+              <span className="ml-2 px-2 py-0.5 text-xs rounded bg-slate-400 text-white">
+                {pendingDatasets.length}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-sm text-slate-500 mb-3">
+              以下資料集尚未納入核心因子，僅作紀錄參考
+            </div>
+            <div className="space-y-2">
+              {pendingDatasets.map((ds) => (
+                <div key={ds.name} className="border rounded-lg p-3 bg-white">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="px-2 py-0.5 text-xs text-white rounded bg-slate-400">
+                        待定
+                      </span>
+                      <div>
+                        <div className="font-medium">{ds.display_name}</div>
+                        <div className="text-sm text-muted-foreground font-mono">
+                          {ds.name}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {ds.source}
+                    </div>
+                  </div>
+                  {ds.description && (
+                    <div className="mt-2 text-xs text-slate-500">
+                      {ds.description}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
@@ -371,7 +450,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
   // TaiwanStockPrice 特殊處理
   if (dataset.name === 'TaiwanStockPrice') {
     const totalStocks = syncStatus?.stocks.length || 0
-    const completeStocks = syncStatus?.stocks.filter(s => s.coverage_pct >= 99).length || 0
+    const completeStocks = syncStatus?.stocks.filter(s => s.coverage_pct >= 95 && s.latest_date && !isDateStale(s.latest_date)).length || 0
     const tradingDays = syncStatus?.trading_days || 0
 
     // 找出最早和最晚日期
@@ -499,14 +578,8 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
               {syncStatus.stocks.slice(0, 100).map((stock) => (
                 <div
                   key={stock.stock_id}
-                  className={`w-2 h-4 rounded-sm ${
-                    stock.coverage_pct >= 99
-                      ? 'bg-green-500'
-                      : stock.coverage_pct > 0
-                      ? 'bg-yellow-500'
-                      : 'bg-gray-300'
-                  }`}
-                  title={`${stock.stock_id} ${stock.name}: ${stock.coverage_pct}%`}
+                  className={`w-2 h-4 rounded-sm ${getCoverageBarColor(stock.coverage_pct, stock.latest_date)}`}
+                  title={`${stock.stock_id} ${stock.name}: ${stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%`}
                 />
               ))}
             </div>
@@ -535,10 +608,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
                     <td className="p-2 font-mono text-xs">{stock.earliest_date || '-'}</td>
                     <td className="p-2 font-mono text-xs">{stock.latest_date || '-'}</td>
                     <td className="p-2 text-right">{stock.total_records.toLocaleString()}</td>
-                    <td className={`p-2 text-right font-medium ${
-                      stock.coverage_pct >= 99 ? 'text-green-600' :
-                      stock.coverage_pct > 0 ? 'text-yellow-600' : 'text-gray-400'
-                    }`}>
+                    <td className={`p-2 text-right font-medium ${getCoverageTextColor(stock.coverage_pct, stock.latest_date)}`}>
                       {stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%
                     </td>
                   </tr>
@@ -555,7 +625,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
   if (dataset.name === 'TaiwanStockPER') {
     const status = perSyncStatus
     const totalStocks = status?.stocks.length || 0
-    const completeStocks = status?.stocks.filter(s => s.coverage_pct >= 99).length || 0
+    const completeStocks = status?.stocks.filter(s => s.coverage_pct >= 95 && s.latest_date && !isDateStale(s.latest_date)).length || 0
     const tradingDays = status?.trading_days || 0
 
     // 找出最早和最晚日期
@@ -683,14 +753,8 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
               {status.stocks.slice(0, 100).map((stock) => (
                 <div
                   key={stock.stock_id}
-                  className={`w-2 h-4 rounded-sm ${
-                    stock.coverage_pct >= 99
-                      ? 'bg-green-500'
-                      : stock.coverage_pct > 0
-                      ? 'bg-yellow-500'
-                      : 'bg-gray-300'
-                  }`}
-                  title={`${stock.stock_id} ${stock.name}: ${stock.coverage_pct}%`}
+                  className={`w-2 h-4 rounded-sm ${getCoverageBarColor(stock.coverage_pct, stock.latest_date)}`}
+                  title={`${stock.stock_id} ${stock.name}: ${stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%`}
                 />
               ))}
             </div>
@@ -719,10 +783,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
                     <td className="p-2 font-mono text-xs">{stock.earliest_date || '-'}</td>
                     <td className="p-2 font-mono text-xs">{stock.latest_date || '-'}</td>
                     <td className="p-2 text-right">{stock.total_records.toLocaleString()}</td>
-                    <td className={`p-2 text-right font-medium ${
-                      stock.coverage_pct >= 99 ? 'text-green-600' :
-                      stock.coverage_pct > 0 ? 'text-yellow-600' : 'text-gray-400'
-                    }`}>
+                    <td className={`p-2 text-right font-medium ${getCoverageTextColor(stock.coverage_pct, stock.latest_date)}`}>
                       {stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%
                     </td>
                   </tr>
@@ -739,7 +800,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
   if (dataset.name === 'TaiwanStockInstitutionalInvestorsBuySell') {
     const status = instSyncStatus
     const totalStocks = status?.stocks.length || 0
-    const completeStocks = status?.stocks.filter(s => s.coverage_pct >= 99).length || 0
+    const completeStocks = status?.stocks.filter(s => s.coverage_pct >= 95 && s.latest_date && !isDateStale(s.latest_date)).length || 0
     const tradingDays = status?.trading_days || 0
 
     // 找出最早和最晚日期
@@ -867,14 +928,8 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
               {status.stocks.slice(0, 100).map((stock) => (
                 <div
                   key={stock.stock_id}
-                  className={`w-2 h-4 rounded-sm ${
-                    stock.coverage_pct >= 99
-                      ? 'bg-green-500'
-                      : stock.coverage_pct > 0
-                      ? 'bg-yellow-500'
-                      : 'bg-gray-300'
-                  }`}
-                  title={`${stock.stock_id} ${stock.name}: ${stock.coverage_pct}%`}
+                  className={`w-2 h-4 rounded-sm ${getCoverageBarColor(stock.coverage_pct, stock.latest_date)}`}
+                  title={`${stock.stock_id} ${stock.name}: ${stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%`}
                 />
               ))}
             </div>
@@ -903,10 +958,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
                     <td className="p-2 font-mono text-xs">{stock.earliest_date || '-'}</td>
                     <td className="p-2 font-mono text-xs">{stock.latest_date || '-'}</td>
                     <td className="p-2 text-right">{stock.total_records.toLocaleString()}</td>
-                    <td className={`p-2 text-right font-medium ${
-                      stock.coverage_pct >= 99 ? 'text-green-600' :
-                      stock.coverage_pct > 0 ? 'text-yellow-600' : 'text-gray-400'
-                    }`}>
+                    <td className={`p-2 text-right font-medium ${getCoverageTextColor(stock.coverage_pct, stock.latest_date)}`}>
                       {stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%
                     </td>
                   </tr>
@@ -923,7 +975,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
   if (dataset.name === 'TaiwanStockPriceAdj') {
     const status = adjSyncStatus
     const totalStocks = status?.stocks.length || 0
-    const completeStocks = status?.stocks.filter(s => s.coverage_pct >= 99).length || 0
+    const completeStocks = status?.stocks.filter(s => s.coverage_pct >= 95 && s.latest_date && !isDateStale(s.latest_date)).length || 0
     const tradingDays = status?.trading_days || 0
 
     // 找出最早和最晚日期
@@ -1051,14 +1103,8 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
               {status.stocks.slice(0, 100).map((stock) => (
                 <div
                   key={stock.stock_id}
-                  className={`w-2 h-4 rounded-sm ${
-                    stock.coverage_pct >= 99
-                      ? 'bg-green-500'
-                      : stock.coverage_pct > 0
-                      ? 'bg-yellow-500'
-                      : 'bg-gray-300'
-                  }`}
-                  title={`${stock.stock_id} ${stock.name}: ${stock.coverage_pct}%`}
+                  className={`w-2 h-4 rounded-sm ${getCoverageBarColor(stock.coverage_pct, stock.latest_date)}`}
+                  title={`${stock.stock_id} ${stock.name}: ${stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%`}
                 />
               ))}
             </div>
@@ -1087,10 +1133,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
                     <td className="p-2 font-mono text-xs">{stock.earliest_date || '-'}</td>
                     <td className="p-2 font-mono text-xs">{stock.latest_date || '-'}</td>
                     <td className="p-2 text-right">{stock.total_records.toLocaleString()}</td>
-                    <td className={`p-2 text-right font-medium ${
-                      stock.coverage_pct >= 99 ? 'text-green-600' :
-                      stock.coverage_pct > 0 ? 'text-yellow-600' : 'text-gray-400'
-                    }`}>
+                    <td className={`p-2 text-right font-medium ${getCoverageTextColor(stock.coverage_pct, stock.latest_date)}`}>
                       {stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%
                     </td>
                   </tr>
@@ -1107,7 +1150,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
   if (dataset.name === 'TaiwanStockMarginPurchaseShortSale') {
     const status = marginSyncStatus
     const totalStocks = status?.stocks.length || 0
-    const completeStocks = status?.stocks.filter(s => s.coverage_pct >= 99).length || 0
+    const completeStocks = status?.stocks.filter(s => s.coverage_pct >= 95 && s.latest_date && !isDateStale(s.latest_date)).length || 0
     const tradingDays = status?.trading_days || 0
 
     // 找出最早和最晚日期
@@ -1235,14 +1278,8 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
               {status.stocks.slice(0, 100).map((stock) => (
                 <div
                   key={stock.stock_id}
-                  className={`w-2 h-4 rounded-sm ${
-                    stock.coverage_pct >= 99
-                      ? 'bg-green-500'
-                      : stock.coverage_pct > 0
-                      ? 'bg-yellow-500'
-                      : 'bg-gray-300'
-                  }`}
-                  title={`${stock.stock_id} ${stock.name}: ${stock.coverage_pct}%`}
+                  className={`w-2 h-4 rounded-sm ${getCoverageBarColor(stock.coverage_pct, stock.latest_date)}`}
+                  title={`${stock.stock_id} ${stock.name}: ${stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%`}
                 />
               ))}
             </div>
@@ -1271,10 +1308,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
                     <td className="p-2 font-mono text-xs">{stock.earliest_date || '-'}</td>
                     <td className="p-2 font-mono text-xs">{stock.latest_date || '-'}</td>
                     <td className="p-2 text-right">{stock.total_records.toLocaleString()}</td>
-                    <td className={`p-2 text-right font-medium ${
-                      stock.coverage_pct >= 99 ? 'text-green-600' :
-                      stock.coverage_pct > 0 ? 'text-yellow-600' : 'text-gray-400'
-                    }`}>
+                    <td className={`p-2 text-right font-medium ${getCoverageTextColor(stock.coverage_pct, stock.latest_date)}`}>
                       {stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%
                     </td>
                   </tr>
