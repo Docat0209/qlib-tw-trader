@@ -10,6 +10,7 @@ import httpx
 
 from src.adapters.base import StockDataAdapter
 from src.shared.types import (
+    Dividend,
     Institutional,
     Margin,
     MonthlyRevenue,
@@ -540,6 +541,48 @@ class FinMindCashFlowAdapter(FinMindBaseAdapter, StockDataAdapter[QuarterlyCashF
                     investing_cf=investing,
                     financing_cf=financing,
                     free_cf=free_cf,
+                )
+            )
+
+        return results
+
+
+class FinMindDividendAdapter(FinMindBaseAdapter, StockDataAdapter[Dividend]):
+    """FinMind 股利政策"""
+
+    @property
+    def source_name(self) -> str:
+        return "finmind"
+
+    @property
+    def dataset_name(self) -> str:
+        return "TaiwanStockDividend"
+
+    async def fetch(
+        self, stock_id: str, start_date: date, end_date: date
+    ) -> list[Dividend]:
+        rows = await self._fetch(
+            "TaiwanStockDividend",
+            {
+                "data_id": stock_id,
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+            },
+        )
+
+        results = []
+        for row in rows:
+            # FinMind 返回的欄位: stock_id, date, CashEarningsDistribution, StockEarningsDistribution
+            ex_date_str = row.get("date")
+            if not ex_date_str:
+                continue
+
+            results.append(
+                Dividend(
+                    stock_id=row["stock_id"],
+                    ex_date=date.fromisoformat(ex_date_str),
+                    cash_dividend=safe_decimal(row.get("CashEarningsDistribution")),
+                    stock_dividend=safe_decimal(row.get("StockEarningsDistribution")),
                 )
             )
 

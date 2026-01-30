@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 import yfinance as yf
 
-from src.repositories.models import StockDaily, StockDailyAdj, StockDailyInstitutional, StockDailyMargin, StockDailyPER, StockDailySecuritiesLending, StockDailyShareholding, StockMonthlyRevenue, StockQuarterlyBalance, StockQuarterlyCashFlow, StockQuarterlyFinancial, StockUniverse, TradingCalendar
+from src.repositories.models import StockDaily, StockDailyAdj, StockDailyInstitutional, StockDailyMargin, StockDailyPER, StockDailySecuritiesLending, StockDailyShareholding, StockDividend, StockMonthlyRevenue, StockQuarterlyBalance, StockQuarterlyCashFlow, StockQuarterlyFinancial, StockUniverse, TradingCalendar
 
 
 class SyncService:
@@ -2075,6 +2075,160 @@ class SyncService:
     def get_quarterly_cashflow_status(self, start_year: int, end_year: int) -> dict:
         """取得現金流量表資料狀態"""
         return self._get_quarterly_status(StockQuarterlyCashFlow, start_year, end_year)
+
+    # =========================================================================
+    # 股利政策 (Dividend)
+    # =========================================================================
+
+    async def sync_dividend(self, stock_id: str, start_date: date, end_date: date) -> dict:
+        """
+        同步個股股利資料（使用 FinMind）
+        Returns: {"fetched": int, "inserted": int}
+        """
+        params = {
+            "dataset": "TaiwanStockDividend",
+            "data_id": stock_id,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+        }
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(self.FINMIND_URL, params=params, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+
+        if data.get("status") != 200:
+            raise RuntimeError(f"FinMind API error: {data.get('msg', 'Unknown error')}")
+
+        rows = data.get("data", [])
+
+        # 取得已存在的除息日
+        stmt = select(StockDividend.ex_date).where(
+            StockDividend.stock_id == stock_id,
+            StockDividend.ex_date >= start_date,
+            StockDividend.ex_date <= end_date,
+        )
+        existing_dates = {row[0] for row in self._session.execute(stmt).fetchall()}
+
+        inserted = 0
+        for row in rows:
+            ex_date_str = row.get("date")
+            if not ex_date_str:
+                continue
+
+            ex_date = date.fromisoformat(ex_date_str)
+
+            if ex_date in existing_dates:
+                continue
+
+            self._session.add(StockDividend(
+                stock_id=stock_id,
+                ex_date=ex_date,
+                cash_dividend=self._safe_decimal(row.get("CashEarningsDistribution")),
+                stock_dividend=self._safe_decimal(row.get("StockEarningsDistribution")),
+            ))
+            inserted += 1
+
+        self._session.commit()
+        return {"fetched": len(rows), "inserted": inserted}
+
+    async def sync_dividend_all(self, start_date: date, end_date: date) -> dict:
+        """
+        同步全股票池股利資料
+        Returns: {"total_stocks": int, "total_fetched": int, "total_inserted": int, "stocks": list}
+        """
+        # 取得股票池
+        stmt = select(StockUniverse).order_by(StockUniverse.rank)
+        universe = self._session.execute(stmt).scalars().all()
+
+        results = []
+        total_fetched = 0
+        total_inserted = 0
+
+        for stock in universe:
+            try:
+                result = await self.sync_dividend(stock.stock_id, start_date, end_date)
+                results.append({
+                    "stock_id": stock.stock_id,
+                    "name": stock.name,
+                    "fetched": result["fetched"],
+                    "inserted": result["inserted"],
+                    "status": "success",
+                })
+                total_fetched += result["fetched"]
+                total_inserted += result["inserted"]
+            except Exception as e:
+                results.append({
+                    "stock_id": stock.stock_id,
+                    "name": stock.name,
+                    "fetched": 0,
+                    "inserted": 0,
+                    "status": "error",
+                    "error": str(e),
+                })
+
+        return {
+            "total_stocks": len(universe),
+            "total_fetched": total_fetched,
+            "total_inserted": total_inserted,
+            "stocks": results,
+        }
+
+    def get_dividend_status(self, start_year: int, end_year: int) -> dict:
+        """
+        取得股利資料狀態
+        Returns: {"start_year": int, "end_year": int, "stocks": list}
+        """
+        from sqlalchemy import func, extract
+
+        stmt = select(StockUniverse).order_by(StockUniverse.rank)
+        universe = self._session.execute(stmt).scalars().all()
+
+        stocks = []
+        for stock in universe:
+            # 取得資料範圍和記錄數
+            stmt = select(
+                func.min(StockDividend.ex_date),
+                func.max(StockDividend.ex_date),
+                func.count(),
+            ).where(
+                StockDividend.stock_id == stock.stock_id,
+                extract("year", StockDividend.ex_date) >= start_year,
+                extract("year", StockDividend.ex_date) <= end_year,
+            )
+            result = self._session.execute(stmt).fetchone()
+            earliest_date, latest_date, total = result
+
+            # 取得有資料的年份
+            stmt = select(
+                extract("year", StockDividend.ex_date).label("year")
+            ).where(
+                StockDividend.stock_id == stock.stock_id,
+                extract("year", StockDividend.ex_date) >= start_year,
+                extract("year", StockDividend.ex_date) <= end_year,
+            ).distinct()
+            years_with_data = [int(row[0]) for row in self._session.execute(stmt).fetchall()]
+
+            # 計算缺少的年份
+            all_years = set(range(start_year, end_year + 1))
+            missing_years = sorted(all_years - set(years_with_data))
+
+            stocks.append({
+                "stock_id": stock.stock_id,
+                "name": stock.name,
+                "rank": stock.rank,
+                "earliest_date": earliest_date.isoformat() if earliest_date else None,
+                "latest_date": latest_date.isoformat() if latest_date else None,
+                "total_records": total,
+                "years_with_data": sorted(years_with_data),
+                "missing_years": missing_years,
+            })
+
+        return {
+            "start_year": start_year,
+            "end_year": end_year,
+            "stocks": stocks,
+        }
 
     # =========================================================================
     # 工具方法

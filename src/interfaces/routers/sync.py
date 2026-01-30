@@ -113,6 +113,30 @@ class QuarterlyStatusResponse(BaseModel):
     stocks: list[QuarterlyStatusItem]
 
 
+# 股利政策專用 schema
+class DividendStockResponse(BaseModel):
+    stock_id: str
+    fetched: int
+    inserted: int
+
+
+class DividendStatusItem(BaseModel):
+    stock_id: str
+    name: str
+    rank: int
+    earliest_date: str | None
+    latest_date: str | None
+    total_records: int
+    years_with_data: list[int]
+    missing_years: list[int]
+
+
+class DividendStatusResponse(BaseModel):
+    start_year: int
+    end_year: int
+    stocks: list[DividendStatusItem]
+
+
 @router.post("/calendar", response_model=SyncCalendarResponse)
 async def sync_calendar(
     start_date: date = Query(default=date(2020, 1, 1)),
@@ -1188,5 +1212,78 @@ async def sync_cashflow_all(
     return SyncAllResponse(
         stocks=len(stock_ids),
         total_inserted=total_inserted,
+        errors=errors,
+    )
+
+
+# =========================================================================
+# 股利政策 (Dividend)
+# =========================================================================
+
+
+@router.get("/dividend/status", response_model=DividendStatusResponse)
+async def get_dividend_status(
+    start_year: int = Query(default=2020),
+    end_year: int = Query(default=None),
+    session: Session = Depends(get_db),
+):
+    """取得股利資料狀態"""
+    if end_year is None:
+        end_year = date.today().year
+
+    service = SyncService(session)
+    result = service.get_dividend_status(start_year, end_year)
+
+    return DividendStatusResponse(
+        start_year=result["start_year"],
+        end_year=result["end_year"],
+        stocks=[DividendStatusItem(**s) for s in result["stocks"]],
+    )
+
+
+@router.post("/dividend/stock/{stock_id}", response_model=DividendStockResponse)
+async def sync_dividend_stock(
+    stock_id: str,
+    start_date: date = Query(default=date(2020, 1, 1)),
+    end_date: date = Query(default=None),
+    session: Session = Depends(get_db),
+):
+    """同步單一股票的股利資料（FinMind）"""
+    if end_date is None:
+        end_date = date.today()
+
+    service = SyncService(session)
+    result = await service.sync_dividend(stock_id, start_date, end_date)
+
+    return DividendStockResponse(
+        stock_id=stock_id,
+        fetched=result["fetched"],
+        inserted=result["inserted"],
+    )
+
+
+@router.post("/dividend/all", response_model=SyncAllResponse)
+async def sync_dividend_all(
+    start_date: date = Query(default=date(2020, 1, 1)),
+    end_date: date = Query(default=None),
+    session: Session = Depends(get_db),
+):
+    """同步股票池內所有股票的股利資料（FinMind）"""
+    if end_date is None:
+        end_date = date.today()
+
+    service = SyncService(session)
+    result = await service.sync_dividend_all(start_date, end_date)
+
+    # 轉換為統一的 SyncAllResponse 格式
+    errors = [
+        {"stock_id": s["stock_id"], "error": s.get("error", "")}
+        for s in result["stocks"]
+        if s["status"] == "error"
+    ]
+
+    return SyncAllResponse(
+        stocks=result["total_stocks"],
+        total_inserted=result["total_inserted"],
         errors=errors,
     )
