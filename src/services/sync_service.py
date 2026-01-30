@@ -165,11 +165,11 @@ class SyncService:
         return result[0] if result else None
 
     def get_recent_trading_dates(self, days: int = 7) -> list[date]:
-        """取得最近 N 個交易日（不含今天），由舊到新排序"""
+        """取得最近 N 個交易日（含今天），由舊到新排序"""
         stmt = (
             select(TradingCalendar.date)
             .where(TradingCalendar.is_trading_day == True)
-            .where(TradingCalendar.date < date.today())
+            .where(TradingCalendar.date <= date.today())
             .order_by(TradingCalendar.date.desc())
             .limit(days)
         )
