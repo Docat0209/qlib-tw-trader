@@ -87,6 +87,32 @@ class MonthlyStatusResponse(BaseModel):
     stocks: list[MonthlyStatusItem]
 
 
+# 季度財報專用 schema
+class QuarterlyStockResponse(BaseModel):
+    stock_id: str
+    fetched: int
+    inserted: int
+    missing_quarters: list[str]
+
+
+class QuarterlyStatusItem(BaseModel):
+    stock_id: str
+    name: str
+    rank: int
+    earliest_quarter: str | None
+    latest_quarter: str | None
+    total_records: int
+    missing_count: int
+    coverage_pct: float
+
+
+class QuarterlyStatusResponse(BaseModel):
+    expected_quarters: int
+    start_year: int
+    end_year: int
+    stocks: list[QuarterlyStatusItem]
+
+
 @router.post("/calendar", response_model=SyncCalendarResponse)
 async def sync_calendar(
     start_date: date = Query(default=date(2020, 1, 1)),
@@ -915,6 +941,246 @@ async def sync_monthly_revenue_all(
     for stock_id in stock_ids:
         try:
             result = await service.sync_monthly_revenue(stock_id, start_year, end_year)
+            total_inserted += result["inserted"]
+        except Exception as e:
+            errors.append({"stock_id": stock_id, "error": str(e)})
+
+    return SyncAllResponse(
+        stocks=len(stock_ids),
+        total_inserted=total_inserted,
+        errors=errors,
+    )
+
+
+# =========================================================================
+# 季度財報 - 綜合損益表
+# =========================================================================
+
+
+@router.get("/financial/status", response_model=QuarterlyStatusResponse)
+async def get_financial_status(
+    start_year: int = Query(default=2020),
+    end_year: int = Query(default=None),
+    session: Session = Depends(get_db),
+):
+    """取得綜合損益表資料狀態"""
+    if end_year is None:
+        end_year = date.today().year
+
+    service = SyncService(session)
+    result = service.get_quarterly_financial_status(start_year, end_year)
+
+    return QuarterlyStatusResponse(
+        expected_quarters=result["expected_quarters"],
+        start_year=result["start_year"],
+        end_year=result["end_year"],
+        stocks=[QuarterlyStatusItem(**s) for s in result["stocks"]],
+    )
+
+
+@router.post("/financial/stock/{stock_id}", response_model=QuarterlyStockResponse)
+async def sync_financial_stock(
+    stock_id: str,
+    start_year: int = Query(default=2020),
+    end_year: int = Query(default=None),
+    session: Session = Depends(get_db),
+):
+    """同步單一股票的綜合損益表（FinMind）"""
+    if end_year is None:
+        end_year = date.today().year
+
+    service = SyncService(session)
+    result = await service.sync_quarterly_financial(stock_id, start_year, end_year)
+
+    return QuarterlyStockResponse(
+        stock_id=stock_id,
+        fetched=result["fetched"],
+        inserted=result["inserted"],
+        missing_quarters=result["missing_quarters"],
+    )
+
+
+@router.post("/financial/all", response_model=SyncAllResponse)
+async def sync_financial_all(
+    start_year: int = Query(default=2020),
+    end_year: int = Query(default=None),
+    session: Session = Depends(get_db),
+):
+    """同步股票池內所有股票的綜合損益表（FinMind）"""
+    if end_year is None:
+        end_year = date.today().year
+
+    service = SyncService(session)
+
+    stmt = select(StockUniverse.stock_id).order_by(StockUniverse.rank)
+    stock_ids = [row[0] for row in session.execute(stmt).fetchall()]
+
+    total_inserted = 0
+    errors = []
+
+    for stock_id in stock_ids:
+        try:
+            result = await service.sync_quarterly_financial(stock_id, start_year, end_year)
+            total_inserted += result["inserted"]
+        except Exception as e:
+            errors.append({"stock_id": stock_id, "error": str(e)})
+
+    return SyncAllResponse(
+        stocks=len(stock_ids),
+        total_inserted=total_inserted,
+        errors=errors,
+    )
+
+
+# =========================================================================
+# 季度財報 - 資產負債表
+# =========================================================================
+
+
+@router.get("/balance/status", response_model=QuarterlyStatusResponse)
+async def get_balance_status(
+    start_year: int = Query(default=2020),
+    end_year: int = Query(default=None),
+    session: Session = Depends(get_db),
+):
+    """取得資產負債表資料狀態"""
+    if end_year is None:
+        end_year = date.today().year
+
+    service = SyncService(session)
+    result = service.get_quarterly_balance_status(start_year, end_year)
+
+    return QuarterlyStatusResponse(
+        expected_quarters=result["expected_quarters"],
+        start_year=result["start_year"],
+        end_year=result["end_year"],
+        stocks=[QuarterlyStatusItem(**s) for s in result["stocks"]],
+    )
+
+
+@router.post("/balance/stock/{stock_id}", response_model=QuarterlyStockResponse)
+async def sync_balance_stock(
+    stock_id: str,
+    start_year: int = Query(default=2020),
+    end_year: int = Query(default=None),
+    session: Session = Depends(get_db),
+):
+    """同步單一股票的資產負債表（FinMind）"""
+    if end_year is None:
+        end_year = date.today().year
+
+    service = SyncService(session)
+    result = await service.sync_quarterly_balance(stock_id, start_year, end_year)
+
+    return QuarterlyStockResponse(
+        stock_id=stock_id,
+        fetched=result["fetched"],
+        inserted=result["inserted"],
+        missing_quarters=result["missing_quarters"],
+    )
+
+
+@router.post("/balance/all", response_model=SyncAllResponse)
+async def sync_balance_all(
+    start_year: int = Query(default=2020),
+    end_year: int = Query(default=None),
+    session: Session = Depends(get_db),
+):
+    """同步股票池內所有股票的資產負債表（FinMind）"""
+    if end_year is None:
+        end_year = date.today().year
+
+    service = SyncService(session)
+
+    stmt = select(StockUniverse.stock_id).order_by(StockUniverse.rank)
+    stock_ids = [row[0] for row in session.execute(stmt).fetchall()]
+
+    total_inserted = 0
+    errors = []
+
+    for stock_id in stock_ids:
+        try:
+            result = await service.sync_quarterly_balance(stock_id, start_year, end_year)
+            total_inserted += result["inserted"]
+        except Exception as e:
+            errors.append({"stock_id": stock_id, "error": str(e)})
+
+    return SyncAllResponse(
+        stocks=len(stock_ids),
+        total_inserted=total_inserted,
+        errors=errors,
+    )
+
+
+# =========================================================================
+# 季度財報 - 現金流量表
+# =========================================================================
+
+
+@router.get("/cashflow/status", response_model=QuarterlyStatusResponse)
+async def get_cashflow_status(
+    start_year: int = Query(default=2020),
+    end_year: int = Query(default=None),
+    session: Session = Depends(get_db),
+):
+    """取得現金流量表資料狀態"""
+    if end_year is None:
+        end_year = date.today().year
+
+    service = SyncService(session)
+    result = service.get_quarterly_cashflow_status(start_year, end_year)
+
+    return QuarterlyStatusResponse(
+        expected_quarters=result["expected_quarters"],
+        start_year=result["start_year"],
+        end_year=result["end_year"],
+        stocks=[QuarterlyStatusItem(**s) for s in result["stocks"]],
+    )
+
+
+@router.post("/cashflow/stock/{stock_id}", response_model=QuarterlyStockResponse)
+async def sync_cashflow_stock(
+    stock_id: str,
+    start_year: int = Query(default=2020),
+    end_year: int = Query(default=None),
+    session: Session = Depends(get_db),
+):
+    """同步單一股票的現金流量表（FinMind）"""
+    if end_year is None:
+        end_year = date.today().year
+
+    service = SyncService(session)
+    result = await service.sync_quarterly_cashflow(stock_id, start_year, end_year)
+
+    return QuarterlyStockResponse(
+        stock_id=stock_id,
+        fetched=result["fetched"],
+        inserted=result["inserted"],
+        missing_quarters=result["missing_quarters"],
+    )
+
+
+@router.post("/cashflow/all", response_model=SyncAllResponse)
+async def sync_cashflow_all(
+    start_year: int = Query(default=2020),
+    end_year: int = Query(default=None),
+    session: Session = Depends(get_db),
+):
+    """同步股票池內所有股票的現金流量表（FinMind）"""
+    if end_year is None:
+        end_year = date.today().year
+
+    service = SyncService(session)
+
+    stmt = select(StockUniverse.stock_id).order_by(StockUniverse.rank)
+    stock_ids = [row[0] for row in session.execute(stmt).fetchall()]
+
+    total_inserted = 0
+    errors = []
+
+    for stock_id in stock_ids:
+        try:
+            result = await service.sync_quarterly_cashflow(stock_id, start_year, end_year)
             total_inserted += result["inserted"]
         except Exception as e:
             errors.append({"stock_id": stock_id, "error": str(e)})
