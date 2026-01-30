@@ -11,7 +11,11 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-const navigation = [
+type NavItemType = { name: string; href: string; icon: React.ComponentType<{ className?: string }> }
+type NavGroupType = { name: string; items: NavItemType[] }
+type NavigationType = NavItemType | NavGroupType
+
+const navigation: NavigationType[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   {
     name: 'Models',
@@ -53,10 +57,11 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {navigation.map((item) => (
-          'href' in item ? (
-            <NavItem key={item.name} item={item} />
-          ) : (
+        {navigation.map((item) => {
+          if ('href' in item) {
+            return <NavItem key={item.name} item={item} />
+          }
+          return (
             <div key={item.name} className="pt-5">
               <p className="nav-section">{item.name}</p>
               <div className="mt-1 space-y-1">
@@ -66,7 +71,7 @@ export function Sidebar() {
               </div>
             </div>
           )
-        ))}
+        })}
       </nav>
 
       {/* Footer */}

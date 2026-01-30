@@ -1,113 +1,233 @@
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { TrendingUp, TrendingDown, Database, Brain, DollarSign, Activity } from 'lucide-react'
+import { TrendingUp, TrendingDown, Database, Brain, DollarSign, Activity, Loader2, RefreshCw, AlertTriangle } from 'lucide-react'
+import { dashboardApi, DashboardSummary } from '@/api/client'
 
 export function Dashboard() {
+  const [data, setData] = useState<DashboardSummary | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchData = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const result = await dashboardApi.summary()
+      setData(result)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load data')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchData()
+  }, [])
+
+  const formatPercent = (value: number | null) => {
+    if (value === null) return '---'
+    const prefix = value >= 0 ? '+' : ''
+    return `${prefix}${(value * 100).toFixed(2)}%`
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <p className="text-red">{error}</p>
+        <button className="btn btn-secondary" onClick={fetchData}>
+          <RefreshCw className="h-4 w-4" />
+          Retry
+        </button>
+      </div>
+    )
+  }
+
+  const today = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' })
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="heading text-2xl">Good afternoon, Shane</h1>
-          <p className="subheading mt-1">Here's what's happening with your portfolio today.</p>
+          <h1 className="heading text-2xl">Dashboard</h1>
+          <p className="subheading mt-1">Overview of your trading system.</p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="dot dot-green" />
-          <span className="text-sm text-muted-foreground">Live</span>
+          <span className={`dot ${data?.data_status.is_complete ? 'dot-green' : 'dot-orange'}`} />
+          <span className="text-sm text-muted-foreground">{data?.data_status.is_complete ? 'Data Complete' : 'Data Incomplete'}</span>
           <span className="text-sm text-muted-foreground mx-2">|</span>
-          <span className="text-sm mono">2026.01.29</span>
+          <span className="text-sm mono">{today}</span>
         </div>
       </div>
+
+      {/* Model Retrain Warning */}
+      {data?.model.needs_retrain && (
+        <div className="flex items-center gap-3 p-4 rounded-lg bg-orange/10 border border-orange/20">
+          <AlertTriangle className="h-5 w-5 text-orange" />
+          <div>
+            <p className="font-semibold text-orange">Model Retrain Recommended</p>
+            <p className="text-sm text-muted-foreground">
+              Last trained {data.model.days_since_training} days ago.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <div className="stat-card">
           <div className="flex items-center justify-between">
             <span className="stat-label">Total Return</span>
-            <div className="icon-box icon-box-green">
-              <TrendingUp className="h-4 w-4" />
+            <div className={`icon-box ${(data?.performance.total_return || 0) >= 0 ? 'icon-box-green' : 'icon-box-orange'}`}>
+              {(data?.performance.total_return || 0) >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
             </div>
           </div>
-          <p className="stat-value text-green">+12.5%</p>
-          <div className="stat-change positive">
-            <TrendingUp className="h-3 w-3" />
-            <span>+2.1% from last month</span>
-          </div>
+          <p className={`stat-value ${(data?.performance.total_return || 0) >= 0 ? 'text-green' : 'text-red'}`}>
+            {formatPercent(data?.performance.total_return || null)}
+          </p>
+          <p className="text-sm text-muted-foreground mt-2">
+            MTD: {formatPercent(data?.performance.mtd_return || null)}
+          </p>
         </div>
 
         <div className="stat-card">
           <div className="flex items-center justify-between">
-            <span className="stat-label">Portfolio Value</span>
+            <span className="stat-label">Model IC</span>
             <div className="icon-box icon-box-blue">
-              <DollarSign className="h-4 w-4" />
-            </div>
-          </div>
-          <p className="stat-value">$1.23M</p>
-          <div className="stat-change positive">
-            <TrendingUp className="h-3 w-3" />
-            <span>5 active positions</span>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="flex items-center justify-between">
-            <span className="stat-label">Today's P/L</span>
-            <div className="icon-box icon-box-orange">
               <Activity className="h-4 w-4" />
             </div>
           </div>
-          <p className="stat-value text-red">-$5,432</p>
-          <div className="stat-change negative">
-            <TrendingDown className="h-3 w-3" />
-            <span>-0.44%</span>
-          </div>
+          <p className="stat-value mono">{data?.model.ic?.toFixed(4) || '---'}</p>
+          <p className="text-sm text-muted-foreground mt-2">
+            ICIR: {data?.model.icir?.toFixed(2) || '---'}
+          </p>
         </div>
 
         <div className="stat-card">
           <div className="flex items-center justify-between">
-            <span className="stat-label">Active Factors</span>
+            <span className="stat-label">Predictions</span>
             <div className="icon-box icon-box-purple">
+              <DollarSign className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="stat-value">
+            <span className="text-green">{data?.prediction.buy_signals || 0}</span>
+            <span className="text-muted-foreground mx-1">/</span>
+            <span className="text-red">{data?.prediction.sell_signals || 0}</span>
+          </p>
+          <p className="text-sm text-muted-foreground mt-2">Buy / Sell signals</p>
+        </div>
+
+        <div className="stat-card">
+          <div className="flex items-center justify-between">
+            <span className="stat-label">Factors</span>
+            <div className="icon-box icon-box-orange">
               <Brain className="h-4 w-4" />
             </div>
           </div>
-          <p className="stat-value">24</p>
-          <p className="text-sm text-muted-foreground mt-2">IC: 0.045</p>
+          <p className="stat-value">{data?.factors.enabled || 0}</p>
+          <p className="text-sm text-muted-foreground mt-2">
+            {data?.factors.low_selection_count || 0} low selection
+          </p>
         </div>
       </div>
 
       {/* Secondary Stats */}
       <div className="grid gap-4 md:grid-cols-4">
-        <StatusCard label="Data Status" value="Normal" status="green" />
-        <StatusCard label="Model Version" value="v2.1" status="blue" />
-        <StatusCard label="Today Trades" value="3" status="blue" />
-        <StatusCard label="Risk Level" value="Medium" status="orange" />
+        <StatusCard
+          label="Data Status"
+          value={data?.data_status.is_complete ? 'Complete' : `${data?.data_status.missing_count} Missing`}
+          status={data?.data_status.is_complete ? 'green' : 'orange'}
+        />
+        <StatusCard
+          label="Model"
+          value={data?.model.factor_count ? `${data.model.factor_count} factors` : 'No model'}
+          status={data?.model.factor_count ? 'blue' : 'gray'}
+        />
+        <StatusCard
+          label="Top Pick"
+          value={data?.prediction.top_pick?.symbol || '---'}
+          status={data?.prediction.top_pick ? 'green' : 'gray'}
+        />
+        <StatusCard
+          label="Days Since Train"
+          value={data?.model.days_since_training?.toString() || '---'}
+          status={data?.model.needs_retrain ? 'orange' : 'green'}
+        />
       </div>
 
       {/* Content Grid */}
       <div className="grid gap-4 md:grid-cols-2">
-        {/* Recent Trades */}
+        {/* Model Info */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Recent Trades</CardTitle>
-            <span className="badge badge-blue">Today</span>
+            <CardTitle>Current Model</CardTitle>
+            {data?.model.ic && <span className="badge badge-green">Active</span>}
           </CardHeader>
           <CardContent className="space-y-3">
-            <TradeRow action="BUY" symbol="2330" name="TSMC" shares="1000" price="580" time="14:30" />
-            <TradeRow action="SELL" symbol="2454" name="MediaTek" shares="500" price="720" time="10:15" />
-            <TradeRow action="BUY" symbol="2317" name="Hon Hai" shares="2000" price="105" time="09:30" />
+            {data?.model.ic ? (
+              <>
+                <div className="flex items-center justify-between py-2 border-b border-border">
+                  <span className="text-sm text-muted-foreground">IC</span>
+                  <span className="font-semibold mono text-green">{data.model.ic.toFixed(4)}</span>
+                </div>
+                <div className="flex items-center justify-between py-2 border-b border-border">
+                  <span className="text-sm text-muted-foreground">ICIR</span>
+                  <span className="font-semibold mono">{data.model.icir?.toFixed(2) || '---'}</span>
+                </div>
+                <div className="flex items-center justify-between py-2 border-b border-border">
+                  <span className="text-sm text-muted-foreground">Factor Count</span>
+                  <span className="font-semibold">{data.model.factor_count || '---'}</span>
+                </div>
+                <div className="flex items-center justify-between py-2">
+                  <span className="text-sm text-muted-foreground">Last Trained</span>
+                  <span className="font-semibold mono text-sm">{data.model.last_trained_at?.split('T')[0] || '---'}</span>
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                <Brain className="h-12 w-12 mb-4 opacity-50" />
+                <p>No model trained yet</p>
+                <p className="text-sm">Train a model to see metrics here.</p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
-        {/* System Status */}
+        {/* Factor Overview */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>System Status</CardTitle>
-            <span className="badge badge-green">Online</span>
+            <CardTitle>Factor Overview</CardTitle>
+            <span className="badge badge-blue">{data?.factors.total || 0} total</span>
           </CardHeader>
-          <CardContent className="space-y-2">
-            <StatusRow label="Data Pipeline" value="Running" color="green" />
-            <StatusRow label="Model Server" value="Ready" color="green" />
-            <StatusRow label="Trade Engine" value="Standby" color="orange" />
-            <StatusRow label="Last Sync" value="14:30:22" color="gray" />
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between py-2 border-b border-border">
+              <span className="text-sm text-muted-foreground">Total Factors</span>
+              <span className="font-semibold">{data?.factors.total || 0}</span>
+            </div>
+            <div className="flex items-center justify-between py-2 border-b border-border">
+              <span className="text-sm text-muted-foreground">Enabled</span>
+              <span className="font-semibold text-green">{data?.factors.enabled || 0}</span>
+            </div>
+            <div className="flex items-center justify-between py-2 border-b border-border">
+              <span className="text-sm text-muted-foreground">Disabled</span>
+              <span className="font-semibold text-muted-foreground">{(data?.factors.total || 0) - (data?.factors.enabled || 0)}</span>
+            </div>
+            <div className="flex items-center justify-between py-2">
+              <span className="text-sm text-muted-foreground">Low Selection Rate</span>
+              <span className={`font-semibold ${(data?.factors.low_selection_count || 0) > 0 ? 'text-orange' : ''}`}>
+                {data?.factors.low_selection_count || 0}
+              </span>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -121,8 +241,8 @@ export function Dashboard() {
           <div className="grid grid-cols-4 gap-3">
             <ActionButton label="Sync Data" icon={<Database className="h-5 w-5" />} color="blue" />
             <ActionButton label="Train Model" icon={<Brain className="h-5 w-5" />} color="purple" />
-            <ActionButton label="View Report" icon={<Activity className="h-5 w-5" />} color="green" />
-            <ActionButton label="Settings" icon={<TrendingUp className="h-5 w-5" />} color="orange" />
+            <ActionButton label="View Factors" icon={<Activity className="h-5 w-5" />} color="green" />
+            <ActionButton label="Predictions" icon={<TrendingUp className="h-5 w-5" />} color="orange" />
           </div>
         </CardContent>
       </Card>
@@ -131,60 +251,13 @@ export function Dashboard() {
 }
 
 function StatusCard({ label, value, status }: { label: string; value: string; status: string }) {
-  const badgeClass = `badge-${status}`
   return (
     <div className="card p-4 flex items-center justify-between">
       <div>
         <p className="text-xs text-muted-foreground">{label}</p>
         <p className="font-semibold">{value}</p>
       </div>
-      <span className={`badge ${badgeClass}`}>{status === 'green' ? 'OK' : status === 'orange' ? 'WARN' : 'ACTIVE'}</span>
-    </div>
-  )
-}
-
-function TradeRow({
-  action,
-  symbol,
-  name,
-  shares,
-  price,
-  time,
-}: {
-  action: 'BUY' | 'SELL'
-  symbol: string
-  name: string
-  shares: string
-  price: string
-  time: string
-}) {
-  const isBuy = action === 'BUY'
-  return (
-    <div className="flex items-center gap-3 p-3 rounded-lg hover:bg-secondary transition-colors">
-      <div className={`icon-box ${isBuy ? 'icon-box-green' : 'icon-box-orange'}`}>
-        {isBuy ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className={`badge ${isBuy ? 'badge-green' : 'badge-red'}`}>{action}</span>
-          <span className="font-semibold">{symbol}</span>
-          <span className="text-sm text-muted-foreground">{name}</span>
-        </div>
-        <p className="text-xs text-muted-foreground mono">{shares} shares @ ${price}</p>
-      </div>
-      <span className="text-xs mono text-muted-foreground">{time}</span>
-    </div>
-  )
-}
-
-function StatusRow({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <div className="flex items-center justify-between py-2 border-b border-border last:border-0">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <div className="flex items-center gap-2">
-        <span className={`dot dot-${color}`} />
-        <span className="text-sm font-medium">{value}</span>
-      </div>
+      <span className={`dot dot-${status}`} />
     </div>
   )
 }

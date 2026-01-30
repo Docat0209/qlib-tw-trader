@@ -1,7 +1,7 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from src.repositories.models import Factor
+from src.repositories.models import Factor, TrainingFactorResult
 
 
 class FactorRepository:
@@ -14,11 +14,15 @@ class FactorRepository:
         self,
         name: str,
         expression: str,
+        display_name: str | None = None,
+        category: str = "technical",
         description: str | None = None,
     ) -> Factor:
         """建立因子"""
         factor = Factor(
             name=name,
+            display_name=display_name,
+            category=category,
             expression=expression,
             description=description,
         )
@@ -27,25 +31,121 @@ class FactorRepository:
         self._session.refresh(factor)
         return factor
 
+    def get_by_id(self, factor_id: int) -> Factor | None:
+        """依 ID 取得因子"""
+        stmt = select(Factor).where(Factor.id == factor_id)
+        return self._session.execute(stmt).scalar()
+
     def get_by_name(self, name: str) -> Factor | None:
         """依名稱取得因子"""
         stmt = select(Factor).where(Factor.name == name)
         return self._session.execute(stmt).scalar()
 
-    def get_active(self) -> list[Factor]:
-        """取得所有未排除的因子"""
-        stmt = select(Factor).where(Factor.excluded == False)
+    def get_enabled(self) -> list[Factor]:
+        """取得所有啟用的因子"""
+        stmt = select(Factor).where(Factor.enabled == True)
         return list(self._session.execute(stmt).scalars().all())
 
-    def get_all(self) -> list[Factor]:
-        """取得所有因子"""
+    def get_all(self, category: str | None = None, enabled: bool | None = None) -> list[Factor]:
+        """取得所有因子（可篩選）"""
         stmt = select(Factor)
+        if category is not None:
+            stmt = stmt.where(Factor.category == category)
+        if enabled is not None:
+            stmt = stmt.where(Factor.enabled == enabled)
         return list(self._session.execute(stmt).scalars().all())
 
-    def set_excluded(self, factor_id: int, excluded: bool) -> None:
-        """設定因子排除狀態"""
-        stmt = select(Factor).where(Factor.id == factor_id)
-        factor = self._session.execute(stmt).scalar()
-        if factor:
-            factor.excluded = excluded
-            self._session.commit()
+    def update(
+        self,
+        factor_id: int,
+        name: str | None = None,
+        display_name: str | None = None,
+        category: str | None = None,
+        expression: str | None = None,
+        description: str | None = None,
+    ) -> Factor | None:
+        """更新因子"""
+        factor = self.get_by_id(factor_id)
+        if not factor:
+            return None
+        if name is not None:
+            factor.name = name
+        if display_name is not None:
+            factor.display_name = display_name
+        if category is not None:
+            factor.category = category
+        if expression is not None:
+            factor.expression = expression
+        if description is not None:
+            factor.description = description
+        self._session.commit()
+        self._session.refresh(factor)
+        return factor
+
+    def delete(self, factor_id: int) -> bool:
+        """刪除因子"""
+        factor = self.get_by_id(factor_id)
+        if not factor:
+            return False
+        self._session.delete(factor)
+        self._session.commit()
+        return True
+
+    def toggle(self, factor_id: int) -> Factor | None:
+        """切換因子啟用狀態"""
+        factor = self.get_by_id(factor_id)
+        if not factor:
+            return None
+        factor.enabled = not factor.enabled
+        self._session.commit()
+        self._session.refresh(factor)
+        return factor
+
+    def get_selection_stats(self, factor_id: int) -> dict:
+        """取得因子入選統計"""
+        # 計算 times_evaluated（參與過的訓練次數）
+        evaluated_stmt = (
+            select(func.count())
+            .select_from(TrainingFactorResult)
+            .where(TrainingFactorResult.factor_id == factor_id)
+        )
+        times_evaluated = self._session.execute(evaluated_stmt).scalar() or 0
+
+        # 計算 times_selected（被選中的次數）
+        selected_stmt = (
+            select(func.count())
+            .select_from(TrainingFactorResult)
+            .where(
+                TrainingFactorResult.factor_id == factor_id,
+                TrainingFactorResult.selected == True,
+            )
+        )
+        times_selected = self._session.execute(selected_stmt).scalar() or 0
+
+        selection_rate = times_selected / times_evaluated if times_evaluated > 0 else 0.0
+
+        return {
+            "times_evaluated": times_evaluated,
+            "times_selected": times_selected,
+            "selection_rate": selection_rate,
+        }
+
+    def get_selection_history(self, factor_id: int) -> list[dict]:
+        """取得因子入選歷史"""
+        from src.repositories.models import TrainingRun
+
+        stmt = (
+            select(TrainingFactorResult, TrainingRun)
+            .join(TrainingRun)
+            .where(TrainingFactorResult.factor_id == factor_id)
+            .order_by(TrainingRun.started_at.desc())
+        )
+        results = self._session.execute(stmt).all()
+        return [
+            {
+                "model_id": f"m{r.TrainingRun.id:03d}",
+                "trained_at": r.TrainingRun.started_at.date().isoformat(),
+                "selected": r.TrainingFactorResult.selected,
+            }
+            for r in results
+        ]

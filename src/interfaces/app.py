@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.interfaces.exceptions import register_exception_handlers
-from src.interfaces.routers import system
+from src.interfaces.routers import dashboard, factor, model, performance, portfolio, system
 from src.repositories.database import init_db
 
 
@@ -34,6 +34,11 @@ def create_app() -> FastAPI:
 
     # 註冊路由
     app.include_router(system.router, prefix="/api/v1/system", tags=["system"])
+    app.include_router(factor.router, prefix="/api/v1/factors", tags=["factors"])
+    app.include_router(model.router, prefix="/api/v1/models", tags=["models"])
+    app.include_router(portfolio.router, prefix="/api/v1", tags=["portfolio"])
+    app.include_router(performance.router, prefix="/api/v1/performance", tags=["performance"])
+    app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["dashboard"])
 
     # 註冊例外處理
     register_exception_handlers(app)

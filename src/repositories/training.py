@@ -1,8 +1,8 @@
 import json
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.repositories.models import TrainingFactorResult, TrainingRun
@@ -16,9 +16,21 @@ class TrainingRepository:
     def __init__(self, session: Session):
         self._session = session
 
-    def create_run(self, config: dict | None = None) -> TrainingRun:
+    def create_run(
+        self,
+        train_start: date | None = None,
+        train_end: date | None = None,
+        valid_start: date | None = None,
+        valid_end: date | None = None,
+        config: dict | None = None,
+    ) -> TrainingRun:
         """建立訓練執行記錄"""
         run = TrainingRun(
+            train_start=train_start,
+            train_end=train_end,
+            valid_start=valid_start,
+            valid_end=valid_end,
+            status="queued",
             config=json.dumps(config) if config else None,
         )
         self._session.add(run)
@@ -26,13 +38,38 @@ class TrainingRepository:
         self._session.refresh(run)
         return run
 
-    def complete_run(self, run_id: int, model_ic: float) -> None:
+    def complete_run(
+        self,
+        run_id: int,
+        model_ic: float,
+        icir: float | None = None,
+        factor_count: int | None = None,
+    ) -> None:
         """完成訓練執行"""
         stmt = select(TrainingRun).where(TrainingRun.id == run_id)
         run = self._session.execute(stmt).scalar()
         if run:
             run.completed_at = datetime.now(TZ_TAIPEI)
             run.model_ic = model_ic
+            run.icir = icir
+            run.factor_count = factor_count
+            run.status = "completed"
+            self._session.commit()
+
+    def set_current(self, run_id: int) -> None:
+        """設定當前模型"""
+        # 先清除所有 is_current
+        self._session.execute(
+            select(TrainingRun).where(TrainingRun.is_current == True)
+        )
+        for run in self._session.execute(select(TrainingRun)).scalars().all():
+            run.is_current = False
+
+        # 設定新的 is_current
+        stmt = select(TrainingRun).where(TrainingRun.id == run_id)
+        run = self._session.execute(stmt).scalar()
+        if run:
+            run.is_current = True
             self._session.commit()
 
     def add_factor_result(
@@ -54,14 +91,39 @@ class TrainingRepository:
         self._session.refresh(result)
         return result
 
+    def get_by_id(self, run_id: int) -> TrainingRun | None:
+        """依 ID 取得訓練記錄"""
+        stmt = select(TrainingRun).where(TrainingRun.id == run_id)
+        return self._session.execute(stmt).scalar()
+
+    def get_current(self) -> TrainingRun | None:
+        """取得當前 active 模型"""
+        stmt = select(TrainingRun).where(TrainingRun.is_current == True)
+        run = self._session.execute(stmt).scalar()
+        if run:
+            return run
+        # 如果沒有設定 is_current，返回最新完成的
+        return self.get_latest_run()
+
     def get_latest_run(self) -> TrainingRun | None:
         """取得最新的訓練記錄"""
         stmt = (
             select(TrainingRun)
+            .where(TrainingRun.status == "completed")
             .order_by(TrainingRun.id.desc())
             .limit(1)
         )
         return self._session.execute(stmt).scalar()
+
+    def get_history(self, limit: int = 20) -> list[TrainingRun]:
+        """取得歷史訓練記錄"""
+        stmt = (
+            select(TrainingRun)
+            .where(TrainingRun.status == "completed")
+            .order_by(TrainingRun.id.desc())
+            .limit(limit)
+        )
+        return list(self._session.execute(stmt).scalars().all())
 
     def get_selected_factors(self, run_id: int) -> list[TrainingFactorResult]:
         """取得訓練中被選中的因子"""
@@ -72,3 +134,21 @@ class TrainingRepository:
             .order_by(TrainingFactorResult.ic_value.desc())
         )
         return list(self._session.execute(stmt).scalars().all())
+
+    def get_status(self) -> dict:
+        """取得訓練狀態"""
+        current = self.get_current()
+        running_stmt = select(TrainingRun).where(TrainingRun.status == "running")
+        running = self._session.execute(running_stmt).scalar()
+
+        days_since = None
+        if current and current.completed_at:
+            days_since = (datetime.now(TZ_TAIPEI) - current.completed_at).days
+
+        return {
+            "last_trained_at": current.completed_at if current else None,
+            "days_since_training": days_since,
+            "needs_retrain": days_since is not None and days_since >= 30,
+            "retrain_threshold_days": 30,
+            "current_job": running.id if running else None,
+        }

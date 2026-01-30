@@ -308,9 +308,11 @@ class Factor(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(100), unique=True)
+    display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    category: Mapped[str] = mapped_column(String(20), default="technical")
     expression: Mapped[str] = mapped_column(Text)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    excluded: Mapped[bool] = mapped_column(Boolean, default=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
 
 
@@ -322,7 +324,15 @@ class TrainingRun(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    train_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    train_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    valid_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    valid_end: Mapped[date | None] = mapped_column(Date, nullable=True)
     model_ic: Mapped[float | None] = mapped_column(Numeric(10, 6), nullable=True)
+    icir: Mapped[float | None] = mapped_column(Numeric(10, 6), nullable=True)
+    factor_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_current: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(20), default="completed")
     config: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     selected_factors: Mapped[list["TrainingFactorResult"]] = relationship(
@@ -346,3 +356,92 @@ class TrainingFactorResult(Base):
 
     training_run: Mapped["TrainingRun"] = relationship(back_populates="selected_factors")
     factor: Mapped["Factor"] = relationship()
+
+
+# =============================================================================
+# 持倉 & 交易
+# =============================================================================
+
+
+class Position(Base):
+    """持倉記錄"""
+
+    __tablename__ = "positions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    stock_id: Mapped[str] = mapped_column(String(10), unique=True)
+    shares: Mapped[int] = mapped_column(Integer)
+    avg_cost: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
+
+
+class Trade(Base):
+    """交易記錄"""
+
+    __tablename__ = "trades"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    date: Mapped[date] = mapped_column(Date, index=True)
+    stock_id: Mapped[str] = mapped_column(String(10), index=True)
+    side: Mapped[str] = mapped_column(String(10))  # buy/sell
+    shares: Mapped[int] = mapped_column(Integer)
+    price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    amount: Mapped[Decimal] = mapped_column(Numeric(16, 2))
+    commission: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
+
+
+class Prediction(Base):
+    """預測記錄"""
+
+    __tablename__ = "predictions"
+    __table_args__ = (
+        UniqueConstraint("date", "stock_id", name="uq_prediction"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    date: Mapped[date] = mapped_column(Date, index=True)
+    model_id: Mapped[int] = mapped_column(Integer, ForeignKey("training_runs.id"))
+    stock_id: Mapped[str] = mapped_column(String(10), index=True)
+    score: Mapped[float] = mapped_column(Numeric(10, 6))
+    rank: Mapped[int] = mapped_column(Integer)
+    signal: Mapped[str] = mapped_column(String(10))  # buy/sell/hold
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
+
+
+# =============================================================================
+# 非同步任務
+# =============================================================================
+
+
+class Job(Base):
+    """非同步任務"""
+
+    __tablename__ = "jobs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)  # UUID
+    job_type: Mapped[str] = mapped_column(String(20))  # train/backtest/sync
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class Backtest(Base):
+    """回測記錄"""
+
+    __tablename__ = "backtests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    model_id: Mapped[int] = mapped_column(Integer, ForeignKey("training_runs.id"))
+    start_date: Mapped[date] = mapped_column(Date)
+    end_date: Mapped[date] = mapped_column(Date)
+    initial_capital: Mapped[Decimal] = mapped_column(Numeric(16, 2))
+    max_positions: Mapped[int] = mapped_column(Integer, default=10)
+    result: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
+    equity_curve: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)

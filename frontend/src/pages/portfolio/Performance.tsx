@@ -1,7 +1,56 @@
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { TrendingUp, Percent, Activity, ArrowDownRight, BarChart3 } from 'lucide-react'
+import { TrendingUp, Percent, Activity, ArrowDownRight, BarChart3, Loader2, RefreshCw } from 'lucide-react'
+import { performanceApi, PerformanceSummary } from '@/api/client'
 
 export function Performance() {
+  const [data, setData] = useState<PerformanceSummary | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchData = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const result = await performanceApi.summary()
+      setData(result)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load data')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchData()
+  }, [])
+
+  const formatPercent = (value: number | null) => {
+    if (value === null) return '---'
+    const prefix = value >= 0 ? '+' : ''
+    return `${prefix}${(value * 100).toFixed(2)}%`
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <p className="text-red">{error}</p>
+        <button className="btn btn-secondary" onClick={fetchData}>
+          <RefreshCw className="h-4 w-4" />
+          Retry
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -10,67 +59,76 @@ export function Performance() {
           <h1 className="heading text-2xl">Performance</h1>
           <p className="subheading mt-1">Analyze your portfolio returns and metrics.</p>
         </div>
-        <select className="input w-auto">
-          <option>Last 30 Days</option>
-          <option>Last 90 Days</option>
-          <option>YTD</option>
-          <option>All Time</option>
-        </select>
+        <div className="text-sm text-muted-foreground">
+          As of: <span className="mono">{data?.as_of || '---'}</span>
+        </div>
       </div>
 
       {/* Main Stats */}
       <div className="grid gap-4 md:grid-cols-2">
         <div className="stat-card">
           <div className="flex items-center justify-between mb-2">
-            <span className="stat-label">Total Profit</span>
-            <div className="icon-box icon-box-green">
+            <span className="stat-label">Total Return</span>
+            <div className={`icon-box ${(data?.returns.total || 0) >= 0 ? 'icon-box-green' : 'icon-box-red'}`}>
               <TrendingUp className="h-4 w-4" />
             </div>
           </div>
-          <p className="stat-value text-green">+$123,456</p>
-          <p className="text-sm text-muted-foreground mt-2">Realized + Unrealized</p>
+          <p className={`stat-value ${(data?.returns.total || 0) >= 0 ? 'text-green' : 'text-red'}`}>
+            {formatPercent(data?.returns.total || null)}
+          </p>
+          <p className="text-sm text-muted-foreground mt-2">Since inception</p>
         </div>
 
         <div className="stat-card">
           <div className="flex items-center justify-between mb-2">
-            <span className="stat-label">Annualized Return</span>
-            <div className="icon-box icon-box-blue">
+            <span className="stat-label">YTD Return</span>
+            <div className={`icon-box ${(data?.returns.ytd || 0) >= 0 ? 'icon-box-blue' : 'icon-box-red'}`}>
               <Percent className="h-4 w-4" />
             </div>
           </div>
-          <p className="stat-value text-blue">+12.5%</p>
-          <p className="text-sm text-muted-foreground mt-2">CAGR</p>
+          <p className={`stat-value ${(data?.returns.ytd || 0) >= 0 ? 'text-blue' : 'text-red'}`}>
+            {formatPercent(data?.returns.ytd || null)}
+          </p>
+          <p className="text-sm text-muted-foreground mt-2">Year to date</p>
         </div>
       </div>
 
       {/* Secondary Stats */}
       <div className="grid gap-4 md:grid-cols-4">
         <div className="card p-4 flex items-center gap-3">
-          <span className="dot dot-blue" />
+          <span className={`dot ${(data?.returns.today || 0) >= 0 ? 'dot-green' : 'dot-red'}`} />
           <div>
-            <p className="text-xs text-muted-foreground">Sharpe</p>
-            <p className="text-xl font-semibold">1.85</p>
+            <p className="text-xs text-muted-foreground">Today</p>
+            <p className={`text-xl font-semibold ${(data?.returns.today || 0) >= 0 ? 'text-green' : 'text-red'}`}>
+              {formatPercent(data?.returns.today || null)}
+            </p>
           </div>
         </div>
         <div className="card p-4 flex items-center gap-3">
-          <span className="dot dot-red" />
+          <span className={`dot ${(data?.returns.wtd || 0) >= 0 ? 'dot-blue' : 'dot-red'}`} />
           <div>
-            <p className="text-xs text-muted-foreground">Max DD</p>
-            <p className="text-xl font-semibold text-red">-8.2%</p>
+            <p className="text-xs text-muted-foreground">WTD</p>
+            <p className={`text-xl font-semibold ${(data?.returns.wtd || 0) >= 0 ? 'text-blue' : 'text-red'}`}>
+              {formatPercent(data?.returns.wtd || null)}
+            </p>
           </div>
         </div>
         <div className="card p-4 flex items-center gap-3">
-          <span className="dot dot-purple" />
+          <span className={`dot ${(data?.returns.mtd || 0) >= 0 ? 'dot-purple' : 'dot-red'}`} />
           <div>
-            <p className="text-xs text-muted-foreground">Sortino</p>
-            <p className="text-xl font-semibold">2.15</p>
+            <p className="text-xs text-muted-foreground">MTD</p>
+            <p className={`text-xl font-semibold ${(data?.returns.mtd || 0) >= 0 ? 'text-purple' : 'text-red'}`}>
+              {formatPercent(data?.returns.mtd || null)}
+            </p>
           </div>
         </div>
         <div className="card p-4 flex items-center gap-3">
-          <span className="dot dot-green" />
+          <span className={`dot ${(data?.alpha?.ytd || 0) >= 0 ? 'dot-green' : 'dot-red'}`} />
           <div>
-            <p className="text-xs text-muted-foreground">Win Rate</p>
-            <p className="text-xl font-semibold text-green">58.3%</p>
+            <p className="text-xs text-muted-foreground">Alpha (YTD)</p>
+            <p className={`text-xl font-semibold ${(data?.alpha?.ytd || 0) >= 0 ? 'text-green' : 'text-red'}`}>
+              {formatPercent(data?.alpha?.ytd || null)}
+            </p>
           </div>
         </div>
       </div>
@@ -112,15 +170,15 @@ export function Performance() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Activity className="h-4 w-4 text-blue" />
-              Risk Metrics
+              Returns vs Benchmark
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-1">
-            <MetricRow label="Volatility" value="15.2%" />
-            <MetricRow label="Beta" value="0.85" />
-            <MetricRow label="Alpha" value="4.2%" highlight />
-            <MetricRow label="Sortino Ratio" value="2.15" />
-            <MetricRow label="Calmar Ratio" value="1.52" />
+            <MetricRow label="Today" value={formatPercent(data?.returns.today || null)} benchmark={formatPercent(data?.benchmark_returns.today || null)} />
+            <MetricRow label="WTD" value={formatPercent(data?.returns.wtd || null)} benchmark={formatPercent(data?.benchmark_returns.wtd || null)} />
+            <MetricRow label="MTD" value={formatPercent(data?.returns.mtd || null)} benchmark={formatPercent(data?.benchmark_returns.mtd || null)} />
+            <MetricRow label="YTD" value={formatPercent(data?.returns.ytd || null)} benchmark={formatPercent(data?.benchmark_returns.ytd || null)} highlight />
+            <MetricRow label="Total" value={formatPercent(data?.returns.total || null)} benchmark={formatPercent(data?.benchmark_returns.total || null)} />
           </CardContent>
         </Card>
 
@@ -128,15 +186,18 @@ export function Performance() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ArrowDownRight className="h-4 w-4 text-blue" />
-              Trade Statistics
+              Alpha
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-1">
-            <MetricRow label="Total Trades" value="156" />
-            <MetricRow label="Win Rate" value="58.3%" highlight />
-            <MetricRow label="Avg Win" value="+$2,345" />
-            <MetricRow label="Avg Loss" value="-$1,234" />
-            <MetricRow label="Profit Factor" value="1.82" />
+            <MetricRow label="MTD Alpha" value={formatPercent(data?.alpha?.mtd || null)} highlight={(data?.alpha?.mtd || 0) > 0} />
+            <MetricRow label="YTD Alpha" value={formatPercent(data?.alpha?.ytd || null)} highlight={(data?.alpha?.ytd || 0) > 0} />
+            <div className="mt-4 p-4 rounded-lg bg-secondary">
+              <p className="text-sm text-muted-foreground">
+                Alpha measures your portfolio's excess return compared to the benchmark (TAIEX).
+                Positive alpha indicates outperformance.
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -144,13 +205,18 @@ export function Performance() {
   )
 }
 
-function MetricRow({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+function MetricRow({ label, value, benchmark, highlight }: { label: string; value: string; benchmark?: string; highlight?: boolean }) {
   return (
     <div className={`flex items-center justify-between px-3 py-2.5 rounded-lg ${
       highlight ? 'bg-blue-50' : 'hover:bg-secondary'
     }`}>
       <span className="text-sm text-muted-foreground">{label}</span>
-      <span className={`font-semibold mono ${highlight ? 'text-blue' : ''}`}>{value}</span>
+      <div className="flex items-center gap-4">
+        {benchmark && (
+          <span className="text-sm text-muted-foreground mono">{benchmark}</span>
+        )}
+        <span className={`font-semibold mono ${highlight ? 'text-blue' : ''}`}>{value}</span>
+      </div>
     </div>
   )
 }
