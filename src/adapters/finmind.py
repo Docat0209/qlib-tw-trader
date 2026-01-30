@@ -313,7 +313,7 @@ class FinMindShareholdingAdapter(FinMindBaseAdapter, StockDataAdapter[Shareholdi
 
 
 class FinMindSecuritiesLendingAdapter(FinMindBaseAdapter, StockDataAdapter[SecuritiesLending]):
-    """FinMind 借券明細"""
+    """FinMind 借券明細（每日聚合）"""
 
     @property
     def source_name(self) -> str:
@@ -335,18 +335,24 @@ class FinMindSecuritiesLendingAdapter(FinMindBaseAdapter, StockDataAdapter[Secur
             },
         )
 
-        results = []
+        # FinMind 返回每筆借券成交，需按日期聚合
+        grouped: dict[tuple, int] = {}
         for row in rows:
-            # FinMind 欄位: Volume (借券賣出量), balance (借券餘額)
+            key = (row["stock_id"], row["date"])
+            volume = safe_int(row.get("volume"))  # 小寫 volume
+            grouped[key] = grouped.get(key, 0) + volume
+
+        results = []
+        for (stock_id, row_date), total_volume in grouped.items():
             results.append(
                 SecuritiesLending(
-                    date=date.fromisoformat(row["date"]),
-                    stock_id=row["stock_id"],
-                    lending_volume=safe_int(row.get("Volume")),
-                    lending_balance=safe_int(row.get("balance")),
+                    date=date.fromisoformat(row_date),
+                    stock_id=stock_id,
+                    lending_volume=total_volume,
                 )
             )
 
+        results.sort(key=lambda x: x.date)
         return results
 
 
@@ -379,15 +385,14 @@ class FinMindMonthlyRevenueAdapter(FinMindBaseAdapter, StockDataAdapter[MonthlyR
             if revenue is None:
                 continue
 
-            row_date = date.fromisoformat(row["date"])
+            # 使用 revenue_year 和 revenue_month（營收所屬月份）
+            # 而非 date（公布日期）
             results.append(
                 MonthlyRevenue(
                     stock_id=row["stock_id"],
-                    year=row_date.year,
-                    month=row_date.month,
+                    year=safe_int(row.get("revenue_year")),
+                    month=safe_int(row.get("revenue_month")),
                     revenue=revenue,
-                    revenue_yoy=safe_decimal(row.get("revenue_year_growth_rate")),
-                    revenue_mom=safe_decimal(row.get("revenue_month_growth_rate")),
                 )
             )
 

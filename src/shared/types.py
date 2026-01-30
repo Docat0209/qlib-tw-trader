@@ -96,16 +96,13 @@ class MonthlyRevenue:
     year: int
     month: int
     revenue: Decimal
-    revenue_yoy: Decimal | None
-    revenue_mom: Decimal | None
 
 
 # === 事件型 ===
 
 @dataclass
 class SecuritiesLending:
-    """借券明細"""
+    """借券明細（每日聚合）"""
     date: date
     stock_id: str
-    lending_volume: int       # 借券賣出
-    lending_balance: int      # 借券餘額
+    lending_volume: int       # 當日借券成交量（張）

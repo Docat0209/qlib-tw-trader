@@ -70,16 +70,10 @@ class MonthlyRevenueRepository:
             year=data.year,
             month=data.month,
             revenue=data.revenue,
-            revenue_yoy=data.revenue_yoy,
-            revenue_mom=data.revenue_mom,
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=["stock_id", "year", "month"],
-            set_={
-                "revenue": stmt.excluded.revenue,
-                "revenue_yoy": stmt.excluded.revenue_yoy,
-                "revenue_mom": stmt.excluded.revenue_mom,
-            },
+            set_={"revenue": stmt.excluded.revenue},
         )
         self._session.execute(stmt)
 
@@ -98,6 +92,4 @@ class MonthlyRevenueRepository:
             year=row.year,
             month=row.month,
             revenue=row.revenue,
-            revenue_yoy=row.revenue_yoy,
-            revenue_mom=row.revenue_mom,
         )

@@ -258,7 +258,6 @@ class SecuritiesLendingRepository(StockDailyRepository[SecuritiesLending, StockD
             date=row.date,
             stock_id=row.stock_id,
             lending_volume=row.lending_volume,
-            lending_balance=row.lending_balance,
         )
 
     def _to_dict(self, data: SecuritiesLending) -> dict:
@@ -266,12 +265,11 @@ class SecuritiesLendingRepository(StockDailyRepository[SecuritiesLending, StockD
             "stock_id": data.stock_id,
             "date": data.date,
             "lending_volume": data.lending_volume,
-            "lending_balance": data.lending_balance,
         }
 
     def _get_conflict_keys(self) -> list[str]:
         return ["stock_id", "date"]
 
     def _get_update_fields(self) -> list[str]:
-        return ["lending_volume", "lending_balance"]
+        return ["lending_volume"]
 

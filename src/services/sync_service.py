@@ -723,6 +723,7 @@ class SyncService:
         records = data.get("data", [])
 
         # FinMind 回傳每個法人一筆，需要彙總成一筆
+        # 法人類型: Foreign_Investor, Investment_Trust, Dealer_self, Dealer_Hedging, Foreign_Dealer_Self
         grouped = {}
         for r in records:
             r_date = date.fromisoformat(r["date"])
@@ -742,13 +743,13 @@ class SyncService:
             buy = self._safe_int(r.get("buy", 0))
             sell = self._safe_int(r.get("sell", 0))
 
-            if "外資" in inv_type or "外陸資" in inv_type:
+            if inv_type == "Foreign_Investor":
                 grouped[r_date]["foreign_buy"] += buy
                 grouped[r_date]["foreign_sell"] += sell
-            elif "投信" in inv_type:
+            elif inv_type == "Investment_Trust":
                 grouped[r_date]["trust_buy"] += buy
                 grouped[r_date]["trust_sell"] += sell
-            elif "自營商" in inv_type:
+            elif inv_type in ("Dealer_self", "Dealer_Hedging"):
                 grouped[r_date]["dealer_buy"] += buy
                 grouped[r_date]["dealer_sell"] += sell
 
@@ -1503,19 +1504,23 @@ class SyncService:
         records = data.get("data", [])
         inserted = 0
 
+        # FinMind 返回每筆借券成交，需按日期聚合
+        grouped: dict[date, int] = {}
         for r in records:
             r_date = date.fromisoformat(r["date"])
             if r_date not in missing_dates:
                 continue
             if r_date in existing_dates:
                 continue
+            volume = self._safe_int(r.get("volume", 0))  # 小寫 volume
+            grouped[r_date] = grouped.get(r_date, 0) + volume
 
+        for r_date, total_volume in grouped.items():
             self._session.add(
                 StockDailySecuritiesLending(
                     stock_id=stock_id,
                     date=r_date,
-                    lending_volume=self._safe_int(r.get("Volume", 0)),
-                    lending_balance=self._safe_int(r.get("balance", 0)),
+                    lending_volume=total_volume,
                 )
             )
             inserted += 1
@@ -1664,10 +1669,12 @@ class SyncService:
         inserted = 0
 
         for r in records:
-            # FinMind 用 date 欄位表示月份（格式: 2024-01-01 表示 2024年1月）
-            r_date = date.fromisoformat(r["date"])
-            r_year, r_month = r_date.year, r_date.month
+            # FinMind 用 revenue_year 和 revenue_month 表示營收所屬月份
+            r_year = self._safe_int(r.get("revenue_year"))
+            r_month = self._safe_int(r.get("revenue_month"))
 
+            if r_year == 0 or r_month == 0:
+                continue
             if (r_year, r_month) in existing_months:
                 continue
             if (r_year, r_month) not in expected_months:
@@ -1683,8 +1690,6 @@ class SyncService:
                     year=r_year,
                     month=r_month,
                     revenue=revenue,
-                    revenue_yoy=self._safe_decimal(r.get("revenue_year_growth_rate")),
-                    revenue_mom=self._safe_decimal(r.get("revenue_month_growth_rate")),
                 )
             )
             inserted += 1

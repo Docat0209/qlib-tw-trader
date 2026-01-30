@@ -147,7 +147,7 @@ class StockDailyShareholding(Base):
 
 
 class StockDailySecuritiesLending(Base):
-    """借券明細"""
+    """借券明細（每日聚合）"""
 
     __tablename__ = "stock_daily_securities_lending"
     __table_args__ = (
@@ -157,8 +157,7 @@ class StockDailySecuritiesLending(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     stock_id: Mapped[str] = mapped_column(String(10), index=True)
     date: Mapped[date] = mapped_column(Date, index=True)
-    lending_volume: Mapped[int] = mapped_column(Integer)
-    lending_balance: Mapped[int] = mapped_column(Integer)
+    lending_volume: Mapped[int] = mapped_column(Integer)  # 當日借券成交量（張）
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
 
 
@@ -179,8 +178,6 @@ class StockMonthlyRevenue(Base):
     year: Mapped[int] = mapped_column(Integer)
     month: Mapped[int] = mapped_column(Integer)
     revenue: Mapped[Decimal] = mapped_column(Numeric(16, 0))
-    revenue_yoy: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
-    revenue_mom: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
 
 
