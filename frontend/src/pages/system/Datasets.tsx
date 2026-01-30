@@ -181,21 +181,62 @@ export function Datasets() {
             <div className="text-sm text-muted-foreground mb-3">
               台股市值前 100 大（排除 ETF、KY 股）
             </div>
-            <div className="grid grid-cols-5 gap-2 max-h-80 overflow-y-auto">
+            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 max-h-[600px] overflow-y-auto">
               {universe.map((stock) => (
                 <div
                   key={stock.stock_id}
-                  className="flex items-center justify-between p-2 border rounded text-sm hover:bg-secondary cursor-pointer"
+                  className="border rounded-lg p-3 hover:border-primary cursor-pointer transition-colors"
                   onClick={() => setStockId(stock.stock_id)}
                 >
-                  <div>
-                    <div className="font-mono">{stock.stock_id}</div>
-                    <div className="text-xs text-muted-foreground truncate max-w-[80px]">
-                      {stock.name}
+                  {/* 股票標題 */}
+                  <div className="flex items-center justify-between mb-2 pb-2 border-b">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold">{stock.stock_id}</span>
+                      <span className="text-sm text-muted-foreground">{stock.name}</span>
                     </div>
+                    <span className="text-xs text-muted-foreground">#{stock.rank}</span>
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    #{stock.rank}
+
+                  {/* 資料監控面板 */}
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* 技術面 */}
+                    <div className="p-2 rounded bg-blue-500/10 border border-blue-500/20">
+                      <div className="text-xs font-medium text-blue-600 mb-1">技術面</div>
+                      <div className="flex gap-1">
+                        <span className="w-2 h-2 rounded-full bg-gray-300" title="日K線"></span>
+                        <span className="w-2 h-2 rounded-full bg-gray-300" title="還原價"></span>
+                        <span className="w-2 h-2 rounded-full bg-gray-300" title="PER"></span>
+                      </div>
+                    </div>
+
+                    {/* 籌碼面 */}
+                    <div className="p-2 rounded bg-green-500/10 border border-green-500/20">
+                      <div className="text-xs font-medium text-green-600 mb-1">籌碼面</div>
+                      <div className="flex gap-1">
+                        <span className="w-2 h-2 rounded-full bg-gray-300" title="法人"></span>
+                        <span className="w-2 h-2 rounded-full bg-gray-300" title="融資券"></span>
+                        <span className="w-2 h-2 rounded-full bg-gray-300" title="外資"></span>
+                      </div>
+                    </div>
+
+                    {/* 基本面 */}
+                    <div className="p-2 rounded bg-orange-500/10 border border-orange-500/20">
+                      <div className="text-xs font-medium text-orange-600 mb-1">基本面</div>
+                      <div className="flex gap-1">
+                        <span className="w-2 h-2 rounded-full bg-gray-300" title="營收"></span>
+                        <span className="w-2 h-2 rounded-full bg-gray-300" title="財報"></span>
+                        <span className="w-2 h-2 rounded-full bg-gray-300" title="股利"></span>
+                      </div>
+                    </div>
+
+                    {/* 衍生品 */}
+                    <div className="p-2 rounded bg-purple-500/10 border border-purple-500/20">
+                      <div className="text-xs font-medium text-purple-600 mb-1">衍生品</div>
+                      <div className="flex gap-1">
+                        <span className="w-2 h-2 rounded-full bg-gray-300" title="期貨"></span>
+                        <span className="w-2 h-2 rounded-full bg-gray-300" title="選擇權"></span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}
