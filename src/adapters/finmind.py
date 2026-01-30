@@ -55,13 +55,12 @@ class FinMindBaseAdapter:
     async def _fetch(self, dataset: str, params: dict) -> list[dict]:
         """共用的 API 呼叫"""
         request_params = {"dataset": dataset, **params}
-        headers = {}
         if self._token:
-            headers["Authorization"] = f"Bearer {self._token}"
+            request_params["token"] = self._token
 
         async with httpx.AsyncClient() as client:
             resp = await client.get(
-                BASE_URL, params=request_params, headers=headers, timeout=30
+                BASE_URL, params=request_params, timeout=30
             )
             resp.raise_for_status()
             data = resp.json()

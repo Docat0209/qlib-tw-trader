@@ -2,6 +2,7 @@
 資料同步服務
 """
 
+import os
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -25,6 +26,26 @@ class SyncService:
 
     def __init__(self, session: Session):
         self._session = session
+        self._finmind_token = os.getenv("FINMIND_KEY", "")
+
+    async def _fetch_finmind(self, dataset: str, params: dict, timeout: int = 60) -> dict:
+        """統一的 FinMind API 呼叫"""
+        request_params = {
+            "dataset": dataset,
+            **params,
+        }
+        if self._finmind_token:
+            request_params["token"] = self._finmind_token
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(self.FINMIND_URL, params=request_params, timeout=timeout)
+            resp.raise_for_status()
+            data = resp.json()
+
+        if data.get("status") != 200:
+            raise RuntimeError(f"FinMind API error: {data.get('msg', 'Unknown error')}")
+
+        return data
 
     # =========================================================================
     # 交易日曆
@@ -129,19 +150,11 @@ class SyncService:
             return {"fetched": 0, "inserted": 0, "missing_dates": []}
 
         # 用 FinMind 補缺少的資料
-        params = {
-            "dataset": "TaiwanStockPrice",
+        data = await self._fetch_finmind("TaiwanStockPrice", {
             "data_id": stock_id,
             "start_date": min(missing_dates).isoformat(),
             "end_date": max(missing_dates).isoformat(),
-        }
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(self.FINMIND_URL, params=params, timeout=60)
-            data = resp.json()
-
-        if data.get("status") != 200:
-            raise RuntimeError(f"FinMind API error: {data.get('msg')}")
+        })
 
         records = data.get("data", [])
         inserted = 0
@@ -418,19 +431,11 @@ class SyncService:
             return {"fetched": 0, "inserted": 0, "missing_dates": []}
 
         # 用 FinMind 補缺少的資料
-        params = {
-            "dataset": "TaiwanStockPER",
+        data = await self._fetch_finmind("TaiwanStockPER", {
             "data_id": stock_id,
             "start_date": min(missing_dates).isoformat(),
             "end_date": max(missing_dates).isoformat(),
-        }
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(self.FINMIND_URL, params=params, timeout=60)
-            data = resp.json()
-
-        if data.get("status") != 200:
-            raise RuntimeError(f"FinMind API error: {data.get('msg')}")
+        })
 
         records = data.get("data", [])
         inserted = 0
@@ -641,19 +646,11 @@ class SyncService:
             return {"fetched": 0, "inserted": 0, "missing_dates": []}
 
         # 用 FinMind 補缺少的資料
-        params = {
-            "dataset": "TaiwanStockInstitutionalInvestorsBuySell",
+        data = await self._fetch_finmind("TaiwanStockInstitutionalInvestorsBuySell", {
             "data_id": stock_id,
             "start_date": min(missing_dates).isoformat(),
             "end_date": max(missing_dates).isoformat(),
-        }
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(self.FINMIND_URL, params=params, timeout=60)
-            data = resp.json()
-
-        if data.get("status") != 200:
-            raise RuntimeError(f"FinMind API error: {data.get('msg')}")
+        })
 
         records = data.get("data", [])
 
@@ -879,19 +876,11 @@ class SyncService:
             return {"fetched": 0, "inserted": 0, "missing_dates": []}
 
         # 用 FinMind 補缺少的資料
-        params = {
-            "dataset": "TaiwanStockMarginPurchaseShortSale",
+        data = await self._fetch_finmind("TaiwanStockMarginPurchaseShortSale", {
             "data_id": stock_id,
             "start_date": min(missing_dates).isoformat(),
             "end_date": max(missing_dates).isoformat(),
-        }
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(self.FINMIND_URL, params=params, timeout=60)
-            data = resp.json()
-
-        if data.get("status") != 200:
-            raise RuntimeError(f"FinMind API error: {data.get('msg')}")
+        })
 
         records = data.get("data", [])
         inserted = 0
@@ -1307,19 +1296,11 @@ class SyncService:
             return {"fetched": 0, "inserted": 0, "missing_dates": []}
 
         # 用 FinMind 補缺少的資料
-        params = {
-            "dataset": "TaiwanStockShareholding",
+        data = await self._fetch_finmind("TaiwanStockShareholding", {
             "data_id": stock_id,
             "start_date": min(missing_dates).isoformat(),
             "end_date": max(missing_dates).isoformat(),
-        }
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(self.FINMIND_URL, params=params, timeout=60)
-            data = resp.json()
-
-        if data.get("status") != 200:
-            raise RuntimeError(f"FinMind API error: {data.get('msg')}")
+        })
 
         records = data.get("data", [])
         inserted = 0
@@ -1441,19 +1422,11 @@ class SyncService:
             return {"fetched": 0, "inserted": 0, "missing_dates": []}
 
         # 用 FinMind 補缺少的資料
-        params = {
-            "dataset": "TaiwanStockSecuritiesLending",
+        data = await self._fetch_finmind("TaiwanStockSecuritiesLending", {
             "data_id": stock_id,
             "start_date": min(missing_dates).isoformat(),
             "end_date": max(missing_dates).isoformat(),
-        }
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(self.FINMIND_URL, params=params, timeout=60)
-            data = resp.json()
-
-        if data.get("status") != 200:
-            raise RuntimeError(f"FinMind API error: {data.get('msg')}")
+        })
 
         records = data.get("data", [])
         inserted = 0
@@ -1609,19 +1582,11 @@ class SyncService:
             return {"fetched": 0, "inserted": 0, "missing_months": []}
 
         # 用 FinMind 補缺少的資料
-        params = {
-            "dataset": "TaiwanStockMonthRevenue",
+        data = await self._fetch_finmind("TaiwanStockMonthRevenue", {
             "data_id": stock_id,
             "start_date": f"{start_year}-01-01",
             "end_date": f"{end_year}-12-31",
-        }
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(self.FINMIND_URL, params=params, timeout=60)
-            data = resp.json()
-
-        if data.get("status") != 200:
-            raise RuntimeError(f"FinMind API error: {data.get('msg')}")
+        })
 
         records = data.get("data", [])
         inserted = 0
@@ -1783,19 +1748,11 @@ class SyncService:
             return {"fetched": 0, "inserted": 0, "missing_quarters": []}
 
         # 用 FinMind 補缺少的資料
-        params = {
-            "dataset": "TaiwanStockFinancialStatements",
+        data = await self._fetch_finmind("TaiwanStockFinancialStatements", {
             "data_id": stock_id,
             "start_date": f"{start_year}-01-01",
             "end_date": f"{end_year}-12-31",
-        }
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(self.FINMIND_URL, params=params, timeout=60)
-            data = resp.json()
-
-        if data.get("status") != 200:
-            raise RuntimeError(f"FinMind API error: {data.get('msg')}")
+        })
 
         records = data.get("data", [])
         # FinMind 返回多列，需要按 (stock_id, date) 分組
@@ -1863,19 +1820,11 @@ class SyncService:
         if not missing_quarters:
             return {"fetched": 0, "inserted": 0, "missing_quarters": []}
 
-        params = {
-            "dataset": "TaiwanStockBalanceSheet",
+        data = await self._fetch_finmind("TaiwanStockBalanceSheet", {
             "data_id": stock_id,
             "start_date": f"{start_year}-01-01",
             "end_date": f"{end_year}-12-31",
-        }
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(self.FINMIND_URL, params=params, timeout=60)
-            data = resp.json()
-
-        if data.get("status") != 200:
-            raise RuntimeError(f"FinMind API error: {data.get('msg')}")
+        })
 
         records = data.get("data", [])
         grouped: dict[tuple, dict] = {}
@@ -1940,19 +1889,11 @@ class SyncService:
         if not missing_quarters:
             return {"fetched": 0, "inserted": 0, "missing_quarters": []}
 
-        params = {
-            "dataset": "TaiwanStockCashFlowsStatement",
+        data = await self._fetch_finmind("TaiwanStockCashFlowsStatement", {
             "data_id": stock_id,
             "start_date": f"{start_year}-01-01",
             "end_date": f"{end_year}-12-31",
-        }
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(self.FINMIND_URL, params=params, timeout=60)
-            data = resp.json()
-
-        if data.get("status") != 200:
-            raise RuntimeError(f"FinMind API error: {data.get('msg')}")
+        })
 
         records = data.get("data", [])
         grouped: dict[tuple, dict] = {}
@@ -2085,20 +2026,11 @@ class SyncService:
         同步個股股利資料（使用 FinMind）
         Returns: {"fetched": int, "inserted": int}
         """
-        params = {
-            "dataset": "TaiwanStockDividend",
+        data = await self._fetch_finmind("TaiwanStockDividend", {
             "data_id": stock_id,
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
-        }
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(self.FINMIND_URL, params=params, timeout=30)
-            resp.raise_for_status()
-            data = resp.json()
-
-        if data.get("status") != 200:
-            raise RuntimeError(f"FinMind API error: {data.get('msg', 'Unknown error')}")
+        }, timeout=30)
 
         rows = data.get("data", [])
 

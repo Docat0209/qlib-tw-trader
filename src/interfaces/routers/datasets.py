@@ -3,6 +3,7 @@ Datasets 測試 API
 用於列出和測試各種資料集
 """
 
+import os
 from datetime import date, timedelta
 from typing import Literal
 
@@ -13,6 +14,7 @@ import httpx
 router = APIRouter()
 
 FINMIND_URL = "https://api.finmindtrade.com/api/v4/data"
+FINMIND_TOKEN = os.getenv("FINMIND_KEY", "")
 
 
 class DatasetInfo(BaseModel):
@@ -133,6 +135,10 @@ async def test_dataset(
                 params["data_id"] = "TX"
             elif dataset_name == "TaiwanOptionDaily":
                 params["data_id"] = "TXO"
+
+        # 加入 API token
+        if FINMIND_TOKEN:
+            params["token"] = FINMIND_TOKEN
 
         async with httpx.AsyncClient() as client:
             resp = await client.get(FINMIND_URL, params=params, timeout=30)
