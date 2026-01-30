@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 import yfinance as yf
 
-from src.repositories.models import StockDaily, StockDailyAdj, StockDailyInstitutional, StockDailyMargin, StockDailyPER, StockDailySecuritiesLending, StockDailyShareholding, StockUniverse, TradingCalendar
+from src.repositories.models import StockDaily, StockDailyAdj, StockDailyInstitutional, StockDailyMargin, StockDailyPER, StockDailySecuritiesLending, StockDailyShareholding, StockMonthlyRevenue, StockUniverse, TradingCalendar
 
 
 class SyncService:
@@ -1542,6 +1542,190 @@ class SyncService:
             "trading_days": trading_days,
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
+            "stocks": stocks,
+        }
+
+    # =========================================================================
+    # 月營收（低頻）
+    # =========================================================================
+
+    @staticmethod
+    def _is_revenue_available(year: int, month: int) -> bool:
+        """判斷某月營收是否應已公布（次月10日）"""
+        today = date.today()
+        if month == 12:
+            deadline = date(year + 1, 1, 10)
+        else:
+            deadline = date(year, month + 1, 10)
+        return today >= deadline
+
+    @staticmethod
+    def _get_expected_months(start_year: int, start_month: int, end_year: int, end_month: int) -> list[tuple[int, int]]:
+        """取得應有的月份列表（考慮公布時程）"""
+        today = date.today()
+        months = []
+        year, month = start_year, start_month
+        while (year, month) <= (end_year, end_month):
+            # 檢查該月營收是否應已公布
+            if month == 12:
+                deadline = date(year + 1, 1, 10)
+            else:
+                deadline = date(year, month + 1, 10)
+
+            if today >= deadline:
+                months.append((year, month))
+
+            # 下個月
+            if month == 12:
+                year += 1
+                month = 1
+            else:
+                month += 1
+        return months
+
+    async def sync_monthly_revenue(self, stock_id: str, start_year: int, end_year: int) -> dict:
+        """
+        同步單一股票的月營收（使用 FinMind）
+        Returns: {"fetched": int, "inserted": int, "missing_months": list}
+        """
+        # 計算應有的月份
+        expected_months = self._get_expected_months(start_year, 1, end_year, 12)
+        if not expected_months:
+            return {"fetched": 0, "inserted": 0, "missing_months": []}
+
+        # 取得已有資料的月份
+        start_val = start_year * 100 + 1
+        end_val = end_year * 100 + 12
+        stmt = select(StockMonthlyRevenue.year, StockMonthlyRevenue.month).where(
+            StockMonthlyRevenue.stock_id == stock_id,
+            (StockMonthlyRevenue.year * 100 + StockMonthlyRevenue.month) >= start_val,
+            (StockMonthlyRevenue.year * 100 + StockMonthlyRevenue.month) <= end_val,
+        )
+        existing_months = {(r[0], r[1]) for r in self._session.execute(stmt).fetchall()}
+
+        # 計算缺少的月份
+        missing_months = [m for m in expected_months if m not in existing_months]
+        if not missing_months:
+            return {"fetched": 0, "inserted": 0, "missing_months": []}
+
+        # 用 FinMind 補缺少的資料
+        params = {
+            "dataset": "TaiwanStockMonthRevenue",
+            "data_id": stock_id,
+            "start_date": f"{start_year}-01-01",
+            "end_date": f"{end_year}-12-31",
+        }
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(self.FINMIND_URL, params=params, timeout=60)
+            data = resp.json()
+
+        if data.get("status") != 200:
+            raise RuntimeError(f"FinMind API error: {data.get('msg')}")
+
+        records = data.get("data", [])
+        inserted = 0
+
+        for r in records:
+            # FinMind 用 date 欄位表示月份（格式: 2024-01-01 表示 2024年1月）
+            r_date = date.fromisoformat(r["date"])
+            r_year, r_month = r_date.year, r_date.month
+
+            if (r_year, r_month) in existing_months:
+                continue
+            if (r_year, r_month) not in expected_months:
+                continue
+
+            revenue = self._safe_decimal(r.get("revenue"))
+            if revenue is None:
+                continue
+
+            self._session.add(
+                StockMonthlyRevenue(
+                    stock_id=stock_id,
+                    year=r_year,
+                    month=r_month,
+                    revenue=revenue,
+                    revenue_yoy=self._safe_decimal(r.get("revenue_year_growth_rate")),
+                    revenue_mom=self._safe_decimal(r.get("revenue_month_growth_rate")),
+                )
+            )
+            inserted += 1
+            existing_months.add((r_year, r_month))
+
+        self._session.commit()
+
+        # 重新計算還缺少的月份
+        still_missing = [m for m in expected_months if m not in existing_months]
+
+        return {
+            "fetched": len(records),
+            "inserted": inserted,
+            "missing_months": [f"{y}-{m:02d}" for y, m in still_missing],
+        }
+
+    def get_monthly_revenue_status(self, start_year: int, end_year: int) -> dict:
+        """取得月營收資料狀態"""
+        from sqlalchemy import func
+
+        # 計算應有的月份數
+        expected_months = self._get_expected_months(start_year, 1, end_year, 12)
+
+        # 取得股票池
+        stmt = select(StockUniverse).order_by(StockUniverse.rank)
+        universe = self._session.execute(stmt).scalars().all()
+
+        stocks = []
+        for stock in universe:
+            # 統計該股票的資料
+            start_val = start_year * 100 + 1
+            end_val = end_year * 100 + 12
+            stmt = select(
+                func.min(StockMonthlyRevenue.year * 100 + StockMonthlyRevenue.month),
+                func.max(StockMonthlyRevenue.year * 100 + StockMonthlyRevenue.month),
+                func.count(),
+            ).where(
+                StockMonthlyRevenue.stock_id == stock.stock_id,
+                (StockMonthlyRevenue.year * 100 + StockMonthlyRevenue.month) >= start_val,
+                (StockMonthlyRevenue.year * 100 + StockMonthlyRevenue.month) <= end_val,
+            )
+            result = self._session.execute(stmt).fetchone()
+            earliest_val, latest_val, total = result
+
+            if earliest_val:
+                earliest_year = earliest_val // 100
+                earliest_month = earliest_val % 100
+                latest_year = latest_val // 100
+                latest_month = latest_val % 100
+                earliest_str = f"{earliest_year}-{earliest_month:02d}"
+                latest_str = f"{latest_year}-{latest_month:02d}"
+
+                # 從首筆資料起算的期望月份數
+                months_from_start = self._get_expected_months(earliest_year, earliest_month, end_year, 12)
+                expected = len(months_from_start)
+                missing = max(0, expected - total)
+                coverage = (total / expected * 100) if expected > 0 else 0
+            else:
+                earliest_str = None
+                latest_str = None
+                missing = 0
+                coverage = 0
+
+            stocks.append({
+                "stock_id": stock.stock_id,
+                "name": stock.name,
+                "rank": stock.rank,
+                "earliest_month": earliest_str,
+                "latest_month": latest_str,
+                "total_records": total,
+                "missing_count": missing,
+                "coverage_pct": round(coverage, 1),
+            })
+
+        return {
+            "expected_months": len(expected_months),
+            "start_year": start_year,
+            "end_year": end_year,
             "stocks": stocks,
         }
 

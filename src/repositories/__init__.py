@@ -12,6 +12,13 @@ from src.repositories.daily import (
     SecuritiesLendingRepository,
     ShareholdingRepository,
 )
+from src.repositories.periodic import (
+    DividendRepository,
+    MonthlyRevenueRepository,
+    QuarterlyBalanceRepository,
+    QuarterlyCashFlowRepository,
+    QuarterlyFinancialRepository,
+)
 
 __all__ = [
     # Database
@@ -30,4 +37,10 @@ __all__ = [
     # Market Daily
     "MarketInstitutionalRepository",
     "MarketMarginRepository",
+    # Periodic
+    "MonthlyRevenueRepository",
+    "QuarterlyFinancialRepository",
+    "QuarterlyBalanceRepository",
+    "QuarterlyCashFlowRepository",
+    "DividendRepository",
 ]
