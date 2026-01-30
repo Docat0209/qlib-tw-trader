@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { datasetsApi, DatasetInfo, TestResult, CategoryInfo } from '@/api/client'
+import { datasetsApi, universeApi, DatasetInfo, TestResult, CategoryInfo, StockInfo } from '@/api/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { Loader2, CheckCircle, XCircle, Play, ChevronDown, ChevronRight } from 'lucide-react'
+import { Loader2, CheckCircle, XCircle, Play, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
 
 const statusColors: Record<string, string> = {
   available: 'bg-green-500',
@@ -26,12 +26,16 @@ const categoryLabels: Record<string, string> = {
 export function Datasets() {
   const [datasets, setDatasets] = useState<DatasetInfo[]>([])
   const [categories, setCategories] = useState<CategoryInfo[]>([])
+  const [universe, setUniverse] = useState<StockInfo[]>([])
+  const [universeUpdatedAt, setUniverseUpdatedAt] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [syncingUniverse, setSyncingUniverse] = useState(false)
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({})
   const [testingDataset, setTestingDataset] = useState<string | null>(null)
   const [stockId, setStockId] = useState('2330')
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['technical', 'chips']))
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  const [showUniverse, setShowUniverse] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -39,16 +43,33 @@ export function Datasets() {
 
   const loadData = async () => {
     try {
-      const [datasetsRes, categoriesRes] = await Promise.all([
+      const [datasetsRes, categoriesRes, universeRes] = await Promise.all([
         datasetsApi.list(),
         datasetsApi.categories(),
+        universeApi.get(),
       ])
       setDatasets(datasetsRes.datasets)
       setCategories(categoriesRes.categories)
+      setUniverse(universeRes.stocks)
+      setUniverseUpdatedAt(universeRes.updated_at)
     } catch (error) {
-      console.error('Failed to load datasets:', error)
+      console.error('Failed to load data:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const syncUniverse = async () => {
+    setSyncingUniverse(true)
+    try {
+      await universeApi.sync()
+      const universeRes = await universeApi.get()
+      setUniverse(universeRes.stocks)
+      setUniverseUpdatedAt(universeRes.updated_at)
+    } catch (error) {
+      console.error('Failed to sync universe:', error)
+    } finally {
+      setSyncingUniverse(false)
     }
   }
 
@@ -116,6 +137,72 @@ export function Datasets() {
           </div>
         </div>
       </div>
+
+      {/* 股票池 */}
+      <Card>
+        <CardHeader
+          className="cursor-pointer"
+          onClick={() => setShowUniverse(!showUniverse)}
+        >
+          <CardTitle className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {showUniverse ? (
+                <ChevronDown className="h-5 w-5" />
+              ) : (
+                <ChevronRight className="h-5 w-5" />
+              )}
+              股票池 (tw100)
+              <span className="ml-2 px-2 py-0.5 text-xs rounded bg-blue-500 text-white">
+                {universe.length} 檔
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              {universeUpdatedAt && (
+                <span className="text-xs text-muted-foreground">
+                  更新: {new Date(universeUpdatedAt).toLocaleDateString()}
+                </span>
+              )}
+              <button
+                className="flex items-center gap-1 px-3 py-1 text-sm border rounded hover:bg-secondary disabled:opacity-50"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  syncUniverse()
+                }}
+                disabled={syncingUniverse}
+              >
+                <RefreshCw className={`h-4 w-4 ${syncingUniverse ? 'animate-spin' : ''}`} />
+                <span>更新</span>
+              </button>
+            </div>
+          </CardTitle>
+        </CardHeader>
+        {showUniverse && (
+          <CardContent>
+            <div className="text-sm text-muted-foreground mb-3">
+              台股市值前 100 大（排除 ETF、KY 股）
+            </div>
+            <div className="grid grid-cols-5 gap-2 max-h-80 overflow-y-auto">
+              {universe.map((stock) => (
+                <div
+                  key={stock.stock_id}
+                  className="flex items-center justify-between p-2 border rounded text-sm hover:bg-secondary cursor-pointer"
+                  onClick={() => setStockId(stock.stock_id)}
+                >
+                  <div>
+                    <div className="font-mono">{stock.stock_id}</div>
+                    <div className="text-xs text-muted-foreground truncate max-w-[80px]">
+                      {stock.name}
+                    </div>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    #{stock.rank}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        )}
+      </Card>
 
       {/* 類別摘要 */}
       <div className="grid grid-cols-5 gap-4">

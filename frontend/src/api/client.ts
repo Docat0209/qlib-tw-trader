@@ -526,6 +526,36 @@ export interface CategoryInfo {
   available: number
 }
 
+// Universe Types
+export interface StockInfo {
+  stock_id: string
+  name: string
+  market_cap: number
+  rank: number
+}
+
+export interface UniverseResponse {
+  name: string
+  description: string
+  total: number
+  stocks: StockInfo[]
+  updated_at: string | null
+}
+
+export interface UniverseStats {
+  total: number
+  min_market_cap: number
+  max_market_cap: number
+  updated_at: string | null
+}
+
+export const universeApi = {
+  get: () => api.get<UniverseResponse>('/universe'),
+  stats: () => api.get<UniverseStats>('/universe/stats'),
+  ids: () => api.get<{ stock_ids: string[]; total: number }>('/universe/ids'),
+  sync: () => api.post<{ success: boolean; total: number; updated_at: string }>('/universe/sync', {}),
+}
+
 export const datasetsApi = {
   list: (category?: string, status?: string) => {
     const params = new URLSearchParams()

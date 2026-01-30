@@ -297,6 +297,18 @@ class TradingCalendar(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
 
 
+class StockUniverse(Base):
+    """股票池"""
+
+    __tablename__ = "stock_universe"
+
+    stock_id: Mapped[str] = mapped_column(String(10), primary_key=True)
+    name: Mapped[str] = mapped_column(String(50))
+    market_cap: Mapped[int] = mapped_column(Integer)  # 市值（億）
+    rank: Mapped[int] = mapped_column(Integer)  # 市值排名
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
+
+
 # =============================================================================
 # 因子 & 訓練（已存在）
 # =============================================================================
