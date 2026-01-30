@@ -1596,16 +1596,16 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
           </div>
           <div className="flex items-center gap-3">
             <button
-              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-pink-500 text-white rounded hover:bg-pink-600 disabled:opacity-50"
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-orange-500 text-white rounded hover:bg-orange-600 disabled:opacity-50"
               onClick={handleRepair}
               disabled={repairing}
             >
               {repairing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <Download className="h-4 w-4" />
+                <Wrench className="h-4 w-4" />
               )}
-              <span>Sync (FinMind)</span>
+              <span>修復資料 (FinMind)</span>
             </button>
           </div>
         </div>
@@ -1739,16 +1739,16 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
           </div>
           <div className="flex items-center gap-3">
             <button
-              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-emerald-500 text-white rounded hover:bg-emerald-600 disabled:opacity-50"
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-orange-500 text-white rounded hover:bg-orange-600 disabled:opacity-50"
               onClick={handleRepair}
               disabled={repairing}
             >
               {repairing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <Download className="h-4 w-4" />
+                <Wrench className="h-4 w-4" />
               )}
-              <span>Sync (FinMind)</span>
+              <span>修復資料 (FinMind)</span>
             </button>
           </div>
         </div>
@@ -1882,16 +1882,16 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
           </div>
           <div className="flex items-center gap-3">
             <button
-              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-violet-500 text-white rounded hover:bg-violet-600 disabled:opacity-50"
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-orange-500 text-white rounded hover:bg-orange-600 disabled:opacity-50"
               onClick={handleRepair}
               disabled={repairing}
             >
               {repairing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <Download className="h-4 w-4" />
+                <Wrench className="h-4 w-4" />
               )}
-              <span>Sync (FinMind)</span>
+              <span>修復資料 (FinMind)</span>
             </button>
           </div>
         </div>
@@ -2025,16 +2025,16 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
           </div>
           <div className="flex items-center gap-3">
             <button
-              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-sky-500 text-white rounded hover:bg-sky-600 disabled:opacity-50"
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-orange-500 text-white rounded hover:bg-orange-600 disabled:opacity-50"
               onClick={handleRepair}
               disabled={repairing}
             >
               {repairing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <Download className="h-4 w-4" />
+                <Wrench className="h-4 w-4" />
               )}
-              <span>Sync (FinMind)</span>
+              <span>修復資料 (FinMind)</span>
             </button>
           </div>
         </div>
@@ -2168,16 +2168,16 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
           </div>
           <div className="flex items-center gap-3">
             <button
-              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-teal-500 text-white rounded hover:bg-teal-600 disabled:opacity-50"
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-orange-500 text-white rounded hover:bg-orange-600 disabled:opacity-50"
               onClick={handleRepair}
               disabled={repairing}
             >
               {repairing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <Download className="h-4 w-4" />
+                <Wrench className="h-4 w-4" />
               )}
-              <span>Sync (FinMind)</span>
+              <span>修復資料 (FinMind)</span>
             </button>
           </div>
         </div>
@@ -2310,16 +2310,16 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
           </div>
           <div className="flex items-center gap-3">
             <button
-              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-rose-500 text-white rounded hover:bg-rose-600 disabled:opacity-50"
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-orange-500 text-white rounded hover:bg-orange-600 disabled:opacity-50"
               onClick={handleRepair}
               disabled={repairing}
             >
               {repairing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <Download className="h-4 w-4" />
+                <Wrench className="h-4 w-4" />
               )}
-              <span>Sync (FinMind)</span>
+              <span>修復資料 (FinMind)</span>
             </button>
           </div>
         </div>
