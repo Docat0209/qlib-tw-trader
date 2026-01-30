@@ -6,7 +6,7 @@ import { Training } from '@/pages/models/Training'
 import { Backtest } from '@/pages/models/Backtest'
 import { Positions } from '@/pages/portfolio/Positions'
 import { Performance } from '@/pages/portfolio/Performance'
-import { DataStatus } from '@/pages/system/DataStatus'
+import { Datasets } from '@/pages/system/Datasets'
 
 function App() {
   return (
@@ -23,7 +23,7 @@ function App() {
           <Route path="performance" element={<Performance />} />
         </Route>
         <Route path="system">
-          <Route path="data-status" element={<DataStatus />} />
+          <Route path="datasets" element={<Datasets />} />
         </Route>
       </Route>
     </Routes>

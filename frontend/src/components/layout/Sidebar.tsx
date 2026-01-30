@@ -6,9 +6,9 @@ import {
   BarChart3,
   Briefcase,
   TrendingUp,
-  Database,
   Settings,
   Zap,
+  Layers,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -36,7 +36,7 @@ const navigation: NavigationType[] = [
   {
     name: 'System',
     items: [
-      { name: 'Data Status', href: '/system/data-status', icon: Database },
+      { name: 'Datasets', href: '/system/datasets', icon: Layers },
     ],
   },
 ]

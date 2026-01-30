@@ -494,3 +494,52 @@ export const backtestApi = {
   get: (backtestId: number) => api.get<BacktestDetail>(`/backtest/${backtestId}`),
   run: (data: BacktestRequest) => api.post<BacktestRunResponse>('/backtest/run', data),
 }
+
+// Dataset Types
+export interface DatasetInfo {
+  name: string
+  display_name: string
+  category: string
+  source: string
+  status: 'available' | 'needs_accumulation' | 'not_implemented'
+  description: string | null
+  requires_stock_id: boolean
+}
+
+export interface DatasetListResponse {
+  datasets: DatasetInfo[]
+  total: number
+}
+
+export interface TestResult {
+  dataset: string
+  success: boolean
+  record_count: number
+  sample_data: Record<string, unknown>[] | null
+  error: string | null
+}
+
+export interface CategoryInfo {
+  id: string
+  name: string
+  total: number
+  available: number
+}
+
+export const datasetsApi = {
+  list: (category?: string, status?: string) => {
+    const params = new URLSearchParams()
+    if (category) params.set('category', category)
+    if (status) params.set('status', status)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.get<DatasetListResponse>(`/datasets${query}`)
+  },
+  test: (datasetName: string, stockId?: string, days?: number) => {
+    const params = new URLSearchParams()
+    if (stockId) params.set('stock_id', stockId)
+    if (days) params.set('days', String(days))
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.get<TestResult>(`/datasets/test/${datasetName}${query}`)
+  },
+  categories: () => api.get<{ categories: CategoryInfo[] }>('/datasets/categories'),
+}
