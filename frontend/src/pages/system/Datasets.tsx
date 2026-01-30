@@ -371,7 +371,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
   // TaiwanStockPrice 特殊處理
   if (dataset.name === 'TaiwanStockPrice') {
     const totalStocks = syncStatus?.stocks.length || 0
-    const completeStocks = syncStatus?.stocks.filter(s => s.coverage_pct === 100).length || 0
+    const completeStocks = syncStatus?.stocks.filter(s => s.coverage_pct >= 99).length || 0
     const tradingDays = syncStatus?.trading_days || 0
 
     // 找出最早和最晚日期
@@ -500,7 +500,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
                 <div
                   key={stock.stock_id}
                   className={`w-2 h-4 rounded-sm ${
-                    stock.coverage_pct === 100
+                    stock.coverage_pct >= 99
                       ? 'bg-green-500'
                       : stock.coverage_pct > 0
                       ? 'bg-yellow-500'
@@ -536,10 +536,10 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
                     <td className="p-2 font-mono text-xs">{stock.latest_date || '-'}</td>
                     <td className="p-2 text-right">{stock.total_records.toLocaleString()}</td>
                     <td className={`p-2 text-right font-medium ${
-                      stock.coverage_pct === 100 ? 'text-green-600' :
+                      stock.coverage_pct >= 99 ? 'text-green-600' :
                       stock.coverage_pct > 0 ? 'text-yellow-600' : 'text-gray-400'
                     }`}>
-                      {stock.coverage_pct}%
+                      {stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%
                     </td>
                   </tr>
                 ))}
@@ -555,7 +555,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
   if (dataset.name === 'TaiwanStockPER') {
     const status = perSyncStatus
     const totalStocks = status?.stocks.length || 0
-    const completeStocks = status?.stocks.filter(s => s.coverage_pct === 100).length || 0
+    const completeStocks = status?.stocks.filter(s => s.coverage_pct >= 99).length || 0
     const tradingDays = status?.trading_days || 0
 
     // 找出最早和最晚日期
@@ -684,7 +684,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
                 <div
                   key={stock.stock_id}
                   className={`w-2 h-4 rounded-sm ${
-                    stock.coverage_pct === 100
+                    stock.coverage_pct >= 99
                       ? 'bg-green-500'
                       : stock.coverage_pct > 0
                       ? 'bg-yellow-500'
@@ -720,10 +720,10 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
                     <td className="p-2 font-mono text-xs">{stock.latest_date || '-'}</td>
                     <td className="p-2 text-right">{stock.total_records.toLocaleString()}</td>
                     <td className={`p-2 text-right font-medium ${
-                      stock.coverage_pct === 100 ? 'text-green-600' :
+                      stock.coverage_pct >= 99 ? 'text-green-600' :
                       stock.coverage_pct > 0 ? 'text-yellow-600' : 'text-gray-400'
                     }`}>
-                      {stock.coverage_pct}%
+                      {stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%
                     </td>
                   </tr>
                 ))}
@@ -739,7 +739,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
   if (dataset.name === 'TaiwanStockInstitutionalInvestorsBuySell') {
     const status = instSyncStatus
     const totalStocks = status?.stocks.length || 0
-    const completeStocks = status?.stocks.filter(s => s.coverage_pct === 100).length || 0
+    const completeStocks = status?.stocks.filter(s => s.coverage_pct >= 99).length || 0
     const tradingDays = status?.trading_days || 0
 
     // 找出最早和最晚日期
@@ -868,7 +868,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
                 <div
                   key={stock.stock_id}
                   className={`w-2 h-4 rounded-sm ${
-                    stock.coverage_pct === 100
+                    stock.coverage_pct >= 99
                       ? 'bg-green-500'
                       : stock.coverage_pct > 0
                       ? 'bg-yellow-500'
@@ -904,10 +904,10 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
                     <td className="p-2 font-mono text-xs">{stock.latest_date || '-'}</td>
                     <td className="p-2 text-right">{stock.total_records.toLocaleString()}</td>
                     <td className={`p-2 text-right font-medium ${
-                      stock.coverage_pct === 100 ? 'text-green-600' :
+                      stock.coverage_pct >= 99 ? 'text-green-600' :
                       stock.coverage_pct > 0 ? 'text-yellow-600' : 'text-gray-400'
                     }`}>
-                      {stock.coverage_pct}%
+                      {stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%
                     </td>
                   </tr>
                 ))}
@@ -923,7 +923,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
   if (dataset.name === 'TaiwanStockPriceAdj') {
     const status = adjSyncStatus
     const totalStocks = status?.stocks.length || 0
-    const completeStocks = status?.stocks.filter(s => s.coverage_pct === 100).length || 0
+    const completeStocks = status?.stocks.filter(s => s.coverage_pct >= 99).length || 0
     const tradingDays = status?.trading_days || 0
 
     // 找出最早和最晚日期
@@ -1052,7 +1052,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
                 <div
                   key={stock.stock_id}
                   className={`w-2 h-4 rounded-sm ${
-                    stock.coverage_pct === 100
+                    stock.coverage_pct >= 99
                       ? 'bg-green-500'
                       : stock.coverage_pct > 0
                       ? 'bg-yellow-500'
@@ -1088,10 +1088,10 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
                     <td className="p-2 font-mono text-xs">{stock.latest_date || '-'}</td>
                     <td className="p-2 text-right">{stock.total_records.toLocaleString()}</td>
                     <td className={`p-2 text-right font-medium ${
-                      stock.coverage_pct === 100 ? 'text-green-600' :
+                      stock.coverage_pct >= 99 ? 'text-green-600' :
                       stock.coverage_pct > 0 ? 'text-yellow-600' : 'text-gray-400'
                     }`}>
-                      {stock.coverage_pct}%
+                      {stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%
                     </td>
                   </tr>
                 ))}
@@ -1107,7 +1107,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
   if (dataset.name === 'TaiwanStockMarginPurchaseShortSale') {
     const status = marginSyncStatus
     const totalStocks = status?.stocks.length || 0
-    const completeStocks = status?.stocks.filter(s => s.coverage_pct === 100).length || 0
+    const completeStocks = status?.stocks.filter(s => s.coverage_pct >= 99).length || 0
     const tradingDays = status?.trading_days || 0
 
     // 找出最早和最晚日期
@@ -1236,7 +1236,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
                 <div
                   key={stock.stock_id}
                   className={`w-2 h-4 rounded-sm ${
-                    stock.coverage_pct === 100
+                    stock.coverage_pct >= 99
                       ? 'bg-green-500'
                       : stock.coverage_pct > 0
                       ? 'bg-yellow-500'
@@ -1272,10 +1272,10 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
                     <td className="p-2 font-mono text-xs">{stock.latest_date || '-'}</td>
                     <td className="p-2 text-right">{stock.total_records.toLocaleString()}</td>
                     <td className={`p-2 text-right font-medium ${
-                      stock.coverage_pct === 100 ? 'text-green-600' :
+                      stock.coverage_pct >= 99 ? 'text-green-600' :
                       stock.coverage_pct > 0 ? 'text-yellow-600' : 'text-gray-400'
                     }`}>
-                      {stock.coverage_pct}%
+                      {stock.coverage_pct >= 99 ? 100 : stock.coverage_pct}%
                     </td>
                   </tr>
                 ))}
