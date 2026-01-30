@@ -57,3 +57,11 @@ def register_exception_handlers(app: FastAPI):
             status_code=exc.status_code,
             content={"error": {"code": exc.code, "message": exc.message}},
         )
+
+    @app.exception_handler(RuntimeError)
+    async def runtime_error_handler(request: Request, exc: RuntimeError):
+        """處理 RuntimeError（例如 FinMind API 錯誤）"""
+        return JSONResponse(
+            status_code=502,
+            content={"detail": str(exc)},
+        )

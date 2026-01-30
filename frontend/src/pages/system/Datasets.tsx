@@ -52,6 +52,40 @@ const getCoverageTextColor = (coveragePct: number, latestDate: string | null): s
   return isComplete ? 'text-green-600' : 'text-yellow-600'
 }
 
+// 從各種錯誤類型提取錯誤訊息
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) {
+    // Axios/fetch 錯誤可能有 response.data.detail
+    const axiosError = error as Error & { response?: { data?: { detail?: string } } }
+    if (axiosError.response?.data?.detail) {
+      return axiosError.response.data.detail
+    }
+    return error.message
+  }
+  if (typeof error === 'string') {
+    return error
+  }
+  return '未知錯誤'
+}
+
+// 檢查 sync all 回應是否有錯誤並顯示
+interface SyncAllResult {
+  stocks: number
+  total_inserted: number
+  errors: { stock_id: string; error: string }[]
+}
+
+const checkSyncResponse = (result: SyncAllResult, datasetName: string): void => {
+  if (result.errors && result.errors.length > 0) {
+    // 取前 3 個錯誤訊息
+    const errorMsgs = result.errors.slice(0, 3).map(e => `${e.stock_id}: ${e.error}`).join('\n')
+    const moreCount = result.errors.length > 3 ? `\n...還有 ${result.errors.length - 3} 個錯誤` : ''
+    alert(`${datasetName} 修復完成，但有 ${result.errors.length} 個錯誤:\n${errorMsgs}${moreCount}`)
+  } else if (result.total_inserted === 0) {
+    console.log(`${datasetName}: 資料已是最新，無需修復`)
+  }
+}
+
 export function Datasets() {
   const [datasets, setDatasets] = useState<DatasetInfo[]>([])
   const [categories, setCategories] = useState<CategoryInfo[]>([])
@@ -532,6 +566,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
         onSyncStatusRefresh()
       } catch (error) {
         console.error('Sync failed:', error)
+        alert(`同步失敗: ${getErrorMessage(error)}`)
       } finally {
         setSyncing(false)
       }
@@ -543,10 +578,12 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
         // 先同步交易日曆
         await syncApi.calendar('2020-01-01')
         // 再同步所有股票
-        await syncApi.all('2020-01-01')
+        const result = await syncApi.all('2020-01-01')
+        checkSyncResponse(result, '日K線')
         onSyncStatusRefresh()
       } catch (error) {
         console.error('Repair failed:', error)
+        alert(`修復失敗: ${getErrorMessage(error)}`)
       } finally {
         setRepairing(false)
       }
@@ -707,6 +744,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
         onSyncStatusRefresh()
       } catch (error) {
         console.error('Sync failed:', error)
+        alert(`同步失敗: ${getErrorMessage(error)}`)
       } finally {
         setSyncing(false)
       }
@@ -718,10 +756,12 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
         // 先同步交易日曆
         await syncApi.calendar('2020-01-01')
         // 再同步所有股票
-        await syncApi.perAll('2020-01-01')
+        const result = await syncApi.perAll('2020-01-01')
+        checkSyncResponse(result, 'PER/PBR/殖利率')
         onSyncStatusRefresh()
       } catch (error) {
         console.error('Repair failed:', error)
+        alert(`修復失敗: ${getErrorMessage(error)}`)
       } finally {
         setRepairing(false)
       }
@@ -882,6 +922,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
         onSyncStatusRefresh()
       } catch (error) {
         console.error('Sync failed:', error)
+        alert(`同步失敗: ${getErrorMessage(error)}`)
       } finally {
         setSyncing(false)
       }
@@ -893,10 +934,12 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
         // 先同步交易日曆
         await syncApi.calendar('2020-01-01')
         // 再同步所有股票
-        await syncApi.institutionalAll('2020-01-01')
+        const result = await syncApi.institutionalAll('2020-01-01')
+        checkSyncResponse(result, '三大法人')
         onSyncStatusRefresh()
       } catch (error) {
         console.error('Repair failed:', error)
+        alert(`修復失敗: ${getErrorMessage(error)}`)
       } finally {
         setRepairing(false)
       }
@@ -1057,6 +1100,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
         onSyncStatusRefresh()
       } catch (error) {
         console.error('Sync failed:', error)
+        alert(`同步失敗: ${getErrorMessage(error)}`)
       } finally {
         setSyncing(false)
       }
@@ -1068,10 +1112,12 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
         // 先同步交易日曆
         await syncApi.calendar('2020-01-01')
         // 再同步所有股票
-        await syncApi.adjAll('2020-01-01')
+        const result = await syncApi.adjAll('2020-01-01')
+        checkSyncResponse(result, '還原股價')
         onSyncStatusRefresh()
       } catch (error) {
         console.error('Repair failed:', error)
+        alert(`修復失敗: ${getErrorMessage(error)}`)
       } finally {
         setRepairing(false)
       }
@@ -1232,6 +1278,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
         onSyncStatusRefresh()
       } catch (error) {
         console.error('Sync failed:', error)
+        alert(`同步失敗: ${getErrorMessage(error)}`)
       } finally {
         setSyncing(false)
       }
@@ -1243,10 +1290,12 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
         // 先同步交易日曆
         await syncApi.calendar('2020-01-01')
         // 再同步所有股票
-        await syncApi.marginAll('2020-01-01')
+        const result = await syncApi.marginAll('2020-01-01')
+        checkSyncResponse(result, '融資融券')
         onSyncStatusRefresh()
       } catch (error) {
         console.error('Repair failed:', error)
+        alert(`修復失敗: ${getErrorMessage(error)}`)
       } finally {
         setRepairing(false)
       }
@@ -1406,6 +1455,7 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
         onSyncStatusRefresh()
       } catch (error) {
         console.error('Sync failed:', error)
+        alert(`同步失敗: ${getErrorMessage(error)}`)
       } finally {
         setSyncing(false)
       }
@@ -1415,10 +1465,12 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
       setRepairing(true)
       try {
         await syncApi.calendar('2020-01-01')
-        await syncApi.shareholdingAll('2020-01-01')
+        const result = await syncApi.shareholdingAll('2020-01-01')
+        checkSyncResponse(result, '外資持股')
         onSyncStatusRefresh()
       } catch (error) {
         console.error('Repair failed:', error)
+        alert(`修復失敗: ${getErrorMessage(error)}`)
       } finally {
         setRepairing(false)
       }
@@ -1571,10 +1623,12 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
       setRepairing(true)
       try {
         await syncApi.calendar('2020-01-01')
-        await syncApi.securitiesLendingAll('2020-01-01')
+        const result = await syncApi.securitiesLendingAll('2020-01-01')
+        checkSyncResponse(result, '借券明細')
         onSyncStatusRefresh()
       } catch (error) {
         console.error('Repair failed:', error)
+        alert(`修復失敗: ${getErrorMessage(error)}`)
       } finally {
         setRepairing(false)
       }
@@ -1714,10 +1768,12 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
     const handleRepair = async () => {
       setRepairing(true)
       try {
-        await syncApi.monthlyRevenueAll(2020)
+        const result = await syncApi.monthlyRevenueAll(2020)
+        checkSyncResponse(result, '月營收')
         onSyncStatusRefresh()
       } catch (error) {
         console.error('Repair failed:', error)
+        alert(`修復失敗: ${getErrorMessage(error)}`)
       } finally {
         setRepairing(false)
       }
@@ -1857,10 +1913,12 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
     const handleRepair = async () => {
       setRepairing(true)
       try {
-        await syncApi.financialAll(2020)
+        const result = await syncApi.financialAll(2020)
+        checkSyncResponse(result, '綜合損益表')
         onSyncStatusRefresh()
       } catch (error) {
         console.error('Repair failed:', error)
+        alert(`修復失敗: ${getErrorMessage(error)}`)
       } finally {
         setRepairing(false)
       }
@@ -2000,10 +2058,12 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
     const handleRepair = async () => {
       setRepairing(true)
       try {
-        await syncApi.balanceAll(2020)
+        const result = await syncApi.balanceAll(2020)
+        checkSyncResponse(result, '資產負債表')
         onSyncStatusRefresh()
       } catch (error) {
         console.error('Repair failed:', error)
+        alert(`修復失敗: ${getErrorMessage(error)}`)
       } finally {
         setRepairing(false)
       }
@@ -2143,10 +2203,12 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
     const handleRepair = async () => {
       setRepairing(true)
       try {
-        await syncApi.cashflowAll(2020)
+        const result = await syncApi.cashflowAll(2020)
+        checkSyncResponse(result, '現金流量表')
         onSyncStatusRefresh()
       } catch (error) {
         console.error('Repair failed:', error)
+        alert(`修復失敗: ${getErrorMessage(error)}`)
       } finally {
         setRepairing(false)
       }
@@ -2285,10 +2347,12 @@ function DatasetRow({ dataset, testResult, isTesting, onTest, syncStatus, perSyn
     const handleRepair = async () => {
       setRepairing(true)
       try {
-        await syncApi.dividendAll('2020-01-01')
+        const result = await syncApi.dividendAll('2020-01-01')
+        checkSyncResponse(result, '股利政策')
         onSyncStatusRefresh()
       } catch (error) {
         console.error('Repair failed:', error)
+        alert(`修復失敗: ${getErrorMessage(error)}`)
       } finally {
         setRepairing(false)
       }

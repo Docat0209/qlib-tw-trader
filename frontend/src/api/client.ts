@@ -9,8 +9,10 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   })
 
   if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error?.message || 'Request failed')
+    const error = await response.json().catch(() => ({}))
+    // FastAPI 使用 detail，其他可能用 error.message
+    const message = error.detail || error.error?.message || error.message || `HTTP ${response.status}`
+    throw new Error(message)
   }
 
   return response.json()
