@@ -9,7 +9,9 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.repositories.models import StockDaily, StockDailyInstitutional, StockDailyMargin, StockDailyPER, StockUniverse, TradingCalendar
+import yfinance as yf
+
+from src.repositories.models import StockDaily, StockDailyAdj, StockDailyInstitutional, StockDailyMargin, StockDailyPER, StockUniverse, TradingCalendar
 
 
 class SyncService:
@@ -961,6 +963,215 @@ class SyncService:
                 StockDailyMargin.stock_id == stock.stock_id,
                 StockDailyMargin.date >= start_date,
                 StockDailyMargin.date <= end_date,
+            )
+            result = self._session.execute(stmt).fetchone()
+            earliest, latest, total = result
+
+            missing = max(0, trading_days - total) if trading_days > 0 else 0
+            coverage = (total / trading_days * 100) if trading_days > 0 else 0
+
+            stocks.append({
+                "stock_id": stock.stock_id,
+                "name": stock.name,
+                "rank": stock.rank,
+                "earliest_date": earliest.isoformat() if earliest else None,
+                "latest_date": latest.isoformat() if latest else None,
+                "total_records": total,
+                "missing_count": missing,
+                "coverage_pct": round(coverage, 1),
+            })
+
+        return {
+            "trading_days": trading_days,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "stocks": stocks,
+        }
+
+    # =========================================================================
+    # 還原股價 (yfinance)
+    # =========================================================================
+
+    async def sync_adj(self, stock_id: str, start_date: date, end_date: date) -> dict:
+        """
+        同步單一股票的還原股價（使用 yfinance）
+        Returns: {"fetched": int, "inserted": int, "missing_dates": list}
+        """
+        # 取得交易日
+        trading_dates = set(self.get_trading_dates(start_date, end_date))
+        if not trading_dates:
+            return {"fetched": 0, "inserted": 0, "missing_dates": []}
+
+        # 取得已有資料的日期
+        stmt = select(StockDailyAdj.date).where(
+            StockDailyAdj.stock_id == stock_id,
+            StockDailyAdj.date >= start_date,
+            StockDailyAdj.date <= end_date,
+        )
+        existing_dates = {row[0] for row in self._session.execute(stmt).fetchall()}
+
+        # 計算缺少的日期
+        missing_dates = sorted(trading_dates - existing_dates)
+        if not missing_dates:
+            return {"fetched": 0, "inserted": 0, "missing_dates": []}
+
+        # 用 yfinance 取得資料
+        ticker = yf.Ticker(f"{stock_id}.TW")
+        # 多抓一天以確保範圍正確
+        df = ticker.history(
+            start=min(missing_dates).isoformat(),
+            end=(max(missing_dates) + timedelta(days=1)).isoformat(),
+        )
+
+        if df.empty:
+            return {"fetched": 0, "inserted": 0, "missing_dates": [d.isoformat() for d in missing_dates]}
+
+        inserted = 0
+        for idx, row in df.iterrows():
+            r_date = idx.date()
+            if r_date not in missing_dates:
+                continue
+            if r_date in existing_dates:
+                continue
+
+            adj_close = row.get("Close")  # yfinance 的 Close 已經是還原價
+            if adj_close is None or adj_close <= 0:
+                continue
+
+            self._session.add(
+                StockDailyAdj(
+                    stock_id=stock_id,
+                    date=r_date,
+                    adj_close=Decimal(str(round(adj_close, 2))),
+                )
+            )
+            inserted += 1
+
+        self._session.commit()
+
+        # 重新計算還缺少的日期
+        stmt = select(StockDailyAdj.date).where(
+            StockDailyAdj.stock_id == stock_id,
+            StockDailyAdj.date >= start_date,
+            StockDailyAdj.date <= end_date,
+        )
+        final_existing = {row[0] for row in self._session.execute(stmt).fetchall()}
+        still_missing = sorted(trading_dates - final_existing)
+
+        return {
+            "fetched": len(df),
+            "inserted": inserted,
+            "missing_dates": [d.isoformat() for d in still_missing],
+        }
+
+    async def sync_adj_bulk(self, target_date: date) -> dict:
+        """
+        同步全市場還原股價（用 yfinance 批次）
+        Returns: {"date": str, "total": int, "inserted": int}
+        """
+        # 取得股票池
+        stmt = select(StockUniverse.stock_id).order_by(StockUniverse.rank)
+        stock_ids = [row[0] for row in self._session.execute(stmt).fetchall()]
+
+        if not stock_ids:
+            return {"date": target_date.isoformat(), "total": 0, "inserted": 0}
+
+        # 取得已有資料
+        stmt = select(StockDailyAdj.stock_id).where(StockDailyAdj.date == target_date)
+        existing_stocks = {row[0] for row in self._session.execute(stmt).fetchall()}
+
+        # 批次取得資料（一次最多 50 檔以避免超時）
+        inserted = 0
+        batch_size = 50
+
+        for i in range(0, len(stock_ids), batch_size):
+            batch = stock_ids[i:i + batch_size]
+            tickers = [f"{sid}.TW" for sid in batch if sid not in existing_stocks]
+
+            if not tickers:
+                continue
+
+            # yfinance 批次下載
+            data = yf.download(
+                tickers,
+                start=target_date.isoformat(),
+                end=(target_date + timedelta(days=1)).isoformat(),
+                progress=False,
+            )
+
+            if data.empty:
+                continue
+
+            # 處理單一股票的情況（columns 結構不同）
+            if len(tickers) == 1:
+                stock_id = tickers[0].replace(".TW", "")
+                if stock_id not in existing_stocks:
+                    close_val = data["Close"].iloc[0] if not data["Close"].empty else None
+                    if close_val and close_val > 0:
+                        self._session.add(
+                            StockDailyAdj(
+                                stock_id=stock_id,
+                                date=target_date,
+                                adj_close=Decimal(str(round(close_val, 2))),
+                            )
+                        )
+                        inserted += 1
+            else:
+                # 多股票的情況
+                for ticker in tickers:
+                    stock_id = ticker.replace(".TW", "")
+                    if stock_id in existing_stocks:
+                        continue
+
+                    try:
+                        close_val = data["Close"][ticker].iloc[0]
+                        if close_val and close_val > 0:
+                            self._session.add(
+                                StockDailyAdj(
+                                    stock_id=stock_id,
+                                    date=target_date,
+                                    adj_close=Decimal(str(round(close_val, 2))),
+                                )
+                            )
+                            inserted += 1
+                    except (KeyError, IndexError):
+                        continue
+
+        self._session.commit()
+
+        return {
+            "date": target_date.isoformat(),
+            "total": len(stock_ids),
+            "inserted": inserted,
+        }
+
+    def get_adj_status(self, start_date: date, end_date: date) -> dict:
+        """取得還原股價資料狀態"""
+        from sqlalchemy import func
+
+        # 取得交易日數
+        stmt = select(func.count()).select_from(TradingCalendar).where(
+            TradingCalendar.date >= start_date,
+            TradingCalendar.date <= end_date,
+            TradingCalendar.is_trading_day == True,
+        )
+        trading_days = self._session.execute(stmt).scalar() or 0
+
+        # 取得股票池
+        stmt = select(StockUniverse).order_by(StockUniverse.rank)
+        universe = self._session.execute(stmt).scalars().all()
+
+        stocks = []
+        for stock in universe:
+            # 統計該股票的資料
+            stmt = select(
+                func.min(StockDailyAdj.date),
+                func.max(StockDailyAdj.date),
+                func.count(),
+            ).where(
+                StockDailyAdj.stock_id == stock.stock_id,
+                StockDailyAdj.date >= start_date,
+                StockDailyAdj.date <= end_date,
             )
             result = self._session.execute(stmt).fetchone()
             earliest, latest, total = result
