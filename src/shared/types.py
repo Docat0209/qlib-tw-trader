@@ -82,28 +82,6 @@ class Shareholding:
     foreign_ratio: Decimal
 
 
-# === 市場日頻 ===
-
-@dataclass
-class MarketInstitutional:
-    """整體三大法人"""
-    date: date
-    foreign_buy: Decimal
-    foreign_sell: Decimal
-    trust_buy: Decimal
-    trust_sell: Decimal
-    dealer_buy: Decimal
-    dealer_sell: Decimal
-
-
-@dataclass
-class MarketMargin:
-    """整體融資融券"""
-    date: date
-    margin_balance: Decimal
-    short_balance: Decimal
-
-
 # === 低頻 ===
 
 @dataclass

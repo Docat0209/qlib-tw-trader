@@ -7,10 +7,8 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from src.repositories.base import MarketDailyRepository, StockDailyRepository
+from src.repositories.base import StockDailyRepository
 from src.repositories.models import (
-    MarketDailyInstitutional,
-    MarketDailyMargin,
     StockDaily,
     StockDailyAdj,
     StockDailyInstitutional,
@@ -23,8 +21,6 @@ from src.shared.types import (
     AdjClose,
     Institutional,
     Margin,
-    MarketInstitutional,
-    MarketMargin,
     OHLCV,
     PER,
     SecuritiesLending,
@@ -260,72 +256,4 @@ class SecuritiesLendingRepository(StockDailyRepository[SecuritiesLending, StockD
 
     def _get_update_fields(self) -> list[str]:
         return ["lending_volume", "lending_balance"]
-
-
-# =============================================================================
-# 市場日頻
-# =============================================================================
-
-
-class MarketInstitutionalRepository(MarketDailyRepository[MarketInstitutional, MarketDailyInstitutional]):
-    """整體三大法人 Repository"""
-
-    def __init__(self, session: Session):
-        super().__init__(session, MarketDailyInstitutional)
-
-    def _to_dataclass(self, row: MarketDailyInstitutional) -> MarketInstitutional:
-        return MarketInstitutional(
-            date=row.date,
-            foreign_buy=row.foreign_buy,
-            foreign_sell=row.foreign_sell,
-            trust_buy=row.trust_buy,
-            trust_sell=row.trust_sell,
-            dealer_buy=row.dealer_buy,
-            dealer_sell=row.dealer_sell,
-        )
-
-    def _to_dict(self, data: MarketInstitutional) -> dict:
-        return {
-            "date": data.date,
-            "foreign_buy": data.foreign_buy,
-            "foreign_sell": data.foreign_sell,
-            "trust_buy": data.trust_buy,
-            "trust_sell": data.trust_sell,
-            "dealer_buy": data.dealer_buy,
-            "dealer_sell": data.dealer_sell,
-        }
-
-    def _get_conflict_keys(self) -> list[str]:
-        return ["date"]
-
-    def _get_update_fields(self) -> list[str]:
-        return ["foreign_buy", "foreign_sell", "trust_buy", "trust_sell", "dealer_buy", "dealer_sell"]
-
-
-class MarketMarginRepository(MarketDailyRepository[MarketMargin, MarketDailyMargin]):
-    """整體融資融券 Repository"""
-
-    def __init__(self, session: Session):
-        super().__init__(session, MarketDailyMargin)
-
-    def _to_dataclass(self, row: MarketDailyMargin) -> MarketMargin:
-        return MarketMargin(
-            date=row.date,
-            margin_balance=row.margin_balance,
-            short_balance=row.short_balance,
-        )
-
-    def _to_dict(self, data: MarketMargin) -> dict:
-        return {
-            "date": data.date,
-            "margin_balance": data.margin_balance,
-            "short_balance": data.short_balance,
-        }
-
-    def _get_conflict_keys(self) -> list[str]:
-        return ["date"]
-
-    def _get_update_fields(self) -> list[str]:
-        return ["margin_balance", "short_balance"]
-
 

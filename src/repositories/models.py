@@ -154,44 +154,6 @@ class StockDailySecuritiesLending(Base):
 
 
 # =============================================================================
-# 市場日頻
-# =============================================================================
-
-class MarketDailyInstitutional(Base):
-    """整體三大法人"""
-
-    __tablename__ = "market_daily_institutional"
-    __table_args__ = (
-        UniqueConstraint("date", name="uq_market_daily_inst"),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    date: Mapped[date] = mapped_column(Date, index=True)
-    foreign_buy: Mapped[Decimal] = mapped_column(Numeric(16, 0))
-    foreign_sell: Mapped[Decimal] = mapped_column(Numeric(16, 0))
-    trust_buy: Mapped[Decimal] = mapped_column(Numeric(16, 0))
-    trust_sell: Mapped[Decimal] = mapped_column(Numeric(16, 0))
-    dealer_buy: Mapped[Decimal] = mapped_column(Numeric(16, 0))
-    dealer_sell: Mapped[Decimal] = mapped_column(Numeric(16, 0))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
-
-
-class MarketDailyMargin(Base):
-    """整體融資融券"""
-
-    __tablename__ = "market_daily_margin"
-    __table_args__ = (
-        UniqueConstraint("date", name="uq_market_daily_margin"),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    date: Mapped[date] = mapped_column(Date, index=True)
-    margin_balance: Mapped[Decimal] = mapped_column(Numeric(16, 0))
-    short_balance: Mapped[Decimal] = mapped_column(Numeric(16, 0))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
-
-
-# =============================================================================
 # 低頻
 # =============================================================================
 
