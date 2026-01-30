@@ -24,9 +24,32 @@ class SyncService:
     TWSE_INSTITUTIONAL_URL = "https://www.twse.com.tw/rwd/zh/fund/T86"
     TWSE_MARGIN_URL = "https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN"
 
+    # 最低資料筆數門檻（低於此值視為不完整）
+    MIN_DAILY_RECORDS = 100      # 日頻資料
+    MIN_MONTHLY_RECORDS = 12     # 月營收（至少 1 年）
+    MIN_QUARTERLY_RECORDS = 8    # 季度財報（至少 2 年）
+
+    @staticmethod
+    def _calc_coverage(total: int, expected: int, min_records: int) -> float:
+        """
+        計算覆蓋率，考慮最低筆數門檻
+        - 如果 total < min_records，覆蓋率會被壓低
+        - 公式：min(基於期望的覆蓋率, 基於最低門檻的覆蓋率)
+        """
+        if total == 0 or expected == 0:
+            return 0.0
+        coverage_by_expected = (total / expected) * 100
+        coverage_by_min = (total / min_records) * 100
+        return min(coverage_by_expected, coverage_by_min)
+
     def __init__(self, session: Session):
         self._session = session
         self._finmind_token = os.getenv("FINMIND_KEY", "")
+        # 調試：記錄 token 狀態
+        if self._finmind_token:
+            print(f"[SyncService] FinMind token loaded: {self._finmind_token[:20]}...")
+        else:
+            print("[SyncService] WARNING: FINMIND_KEY not found in environment!")
 
     async def _fetch_finmind(self, dataset: str, params: dict, timeout: int = 60) -> dict:
         """統一的 FinMind API 呼叫"""
@@ -36,11 +59,33 @@ class SyncService:
         }
         if self._finmind_token:
             request_params["token"] = self._finmind_token
+            print(f"[FinMind] Calling {dataset} with token")
+        else:
+            print(f"[FinMind] WARNING: Calling {dataset} WITHOUT token!")
 
         async with httpx.AsyncClient() as client:
             resp = await client.get(self.FINMIND_URL, params=request_params, timeout=timeout)
-            resp.raise_for_status()
-            data = resp.json()
+            print(f"[FinMind] Response status: {resp.status_code}")
+
+            # 嘗試解析 JSON（即使是錯誤狀態碼）
+            try:
+                data = resp.json()
+            except Exception:
+                data = {}
+
+            # 檢查 HTTP 狀態碼
+            if resp.status_code == 402:
+                msg = data.get("msg", "Rate limit exceeded")
+                raise RuntimeError(f"FinMind API 速率限制: {msg}（免費版每小時 600 次，請稍後再試或升級方案）")
+
+            if resp.status_code != 200:
+                msg = data.get("msg", f"HTTP {resp.status_code}")
+                raise RuntimeError(f"FinMind API error: {msg}")
+
+        # 檢查 API 回應狀態
+        if data.get("status") == 402:
+            msg = data.get("msg", "Rate limit exceeded")
+            raise RuntimeError(f"FinMind API 速率限制: {msg}（免費版每小時 600 次，請稍後再試或升級方案）")
 
         if data.get("status") != 200:
             raise RuntimeError(f"FinMind API error: {data.get('msg', 'Unknown error')}")
@@ -508,11 +553,11 @@ class SyncService:
             result = self._session.execute(stmt).fetchone()
             earliest, latest, total = result
 
-            # 用該股票的首筆資料日期計算覆蓋率
+            # 用該股票的首筆資料日期計算覆蓋率（考慮最低筆數門檻）
             if earliest:
                 expected_days = self.count_trading_days(earliest, end_date)
                 missing = max(0, expected_days - total)
-                coverage = (total / expected_days * 100) if expected_days > 0 else 0
+                coverage = self._calc_coverage(total, expected_days, self.MIN_DAILY_RECORDS)
             else:
                 missing = 0
                 coverage = 0
@@ -738,11 +783,11 @@ class SyncService:
             result = self._session.execute(stmt).fetchone()
             earliest, latest, total = result
 
-            # 用該股票的首筆資料日期計算覆蓋率
+            # 用該股票的首筆資料日期計算覆蓋率（考慮最低筆數門檻）
             if earliest:
                 expected_days = self.count_trading_days(earliest, end_date)
                 missing = max(0, expected_days - total)
-                coverage = (total / expected_days * 100) if expected_days > 0 else 0
+                coverage = self._calc_coverage(total, expected_days, self.MIN_DAILY_RECORDS)
             else:
                 missing = 0
                 coverage = 0
@@ -957,11 +1002,11 @@ class SyncService:
             result = self._session.execute(stmt).fetchone()
             earliest, latest, total = result
 
-            # 用該股票的首筆資料日期計算覆蓋率
+            # 用該股票的首筆資料日期計算覆蓋率（考慮最低筆數門檻）
             if earliest:
                 expected_days = self.count_trading_days(earliest, end_date)
                 missing = max(0, expected_days - total)
-                coverage = (total / expected_days * 100) if expected_days > 0 else 0
+                coverage = self._calc_coverage(total, expected_days, self.MIN_DAILY_RECORDS)
             else:
                 missing = 0
                 coverage = 0
@@ -1167,11 +1212,11 @@ class SyncService:
             result = self._session.execute(stmt).fetchone()
             earliest, latest, total = result
 
-            # 用該股票的首筆資料日期計算覆蓋率
+            # 用該股票的首筆資料日期計算覆蓋率（考慮最低筆數門檻）
             if earliest:
                 expected_days = self.count_trading_days(earliest, end_date)
                 missing = max(0, expected_days - total)
-                coverage = (total / expected_days * 100) if expected_days > 0 else 0
+                coverage = self._calc_coverage(total, expected_days, self.MIN_DAILY_RECORDS)
             else:
                 missing = 0
                 coverage = 0
@@ -1367,11 +1412,11 @@ class SyncService:
             result = self._session.execute(stmt).fetchone()
             earliest, latest, total = result
 
-            # 用該股票的首筆資料日期計算覆蓋率
+            # 用該股票的首筆資料日期計算覆蓋率（考慮最低筆數門檻）
             if earliest:
                 expected_days = self.count_trading_days(earliest, end_date)
                 missing = max(0, expected_days - total)
-                coverage = (total / expected_days * 100) if expected_days > 0 else 0
+                coverage = self._calc_coverage(total, expected_days, self.MIN_DAILY_RECORDS)
             else:
                 missing = 0
                 coverage = 0
@@ -1491,11 +1536,11 @@ class SyncService:
             result = self._session.execute(stmt).fetchone()
             earliest, latest, total = result
 
-            # 用該股票的首筆資料日期計算覆蓋率
+            # 用該股票的首筆資料日期計算覆蓋率（考慮最低筆數門檻）
             if earliest:
                 expected_days = self.count_trading_days(earliest, end_date)
                 missing = max(0, expected_days - total)
-                coverage = (total / expected_days * 100) if expected_days > 0 else 0
+                coverage = self._calc_coverage(total, expected_days, self.MIN_DAILY_RECORDS)
             else:
                 missing = 0
                 coverage = 0
@@ -1665,11 +1710,11 @@ class SyncService:
                 earliest_str = f"{earliest_year}-{earliest_month:02d}"
                 latest_str = f"{latest_year}-{latest_month:02d}"
 
-                # 從首筆資料起算的期望月份數
+                # 從首筆資料起算的期望月份數（考慮最低筆數門檻）
                 months_from_start = self._get_expected_months(earliest_year, earliest_month, end_year, 12)
                 expected = len(months_from_start)
                 missing = max(0, expected - total)
-                coverage = (total / expected * 100) if expected > 0 else 0
+                coverage = self._calc_coverage(total, expected, self.MIN_MONTHLY_RECORDS)
             else:
                 earliest_str = None
                 latest_str = None
@@ -1977,10 +2022,11 @@ class SyncService:
                 earliest_str = f"{earliest_year}Q{earliest_quarter}"
                 latest_str = f"{latest_year}Q{latest_quarter}"
 
+                # 考慮最低筆數門檻
                 quarters_from_start = [q for q in expected_quarters if q >= (earliest_year, earliest_quarter)]
                 expected = len(quarters_from_start)
                 missing = max(0, expected - total)
-                coverage = (total / expected * 100) if expected > 0 else 0
+                coverage = self._calc_coverage(total, expected, self.MIN_QUARTERLY_RECORDS)
             else:
                 earliest_str = None
                 latest_str = None

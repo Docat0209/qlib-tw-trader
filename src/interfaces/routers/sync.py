@@ -2,6 +2,7 @@
 資料同步 API
 """
 
+import os
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, Query
@@ -14,6 +15,17 @@ from src.repositories.models import StockDaily, StockUniverse, TradingCalendar
 from src.services.sync_service import SyncService
 
 router = APIRouter()
+
+
+@router.get("/debug/token")
+async def debug_token():
+    """調試：檢查 FINMIND_KEY 是否載入"""
+    token = os.getenv("FINMIND_KEY", "")
+    return {
+        "token_loaded": bool(token),
+        "token_length": len(token),
+        "token_prefix": token[:20] + "..." if token else None,
+    }
 
 
 class SyncCalendarResponse(BaseModel):
@@ -261,11 +273,11 @@ async def get_data_status(
         result = session.execute(stmt).fetchone()
         earliest, latest, total = result
 
-        # 用該股票的首筆資料日期計算覆蓋率
+        # 用該股票的首筆資料日期計算覆蓋率（考慮最低筆數門檻）
         if earliest:
             expected_days = service.count_trading_days(earliest, end_date)
             missing = max(0, expected_days - total)
-            coverage = (total / expected_days * 100) if expected_days > 0 else 0
+            coverage = SyncService._calc_coverage(total, expected_days, SyncService.MIN_DAILY_RECORDS)
         else:
             missing = 0
             coverage = 0
