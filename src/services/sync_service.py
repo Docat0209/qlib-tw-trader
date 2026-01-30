@@ -164,6 +164,18 @@ class SyncService:
         result = self._session.execute(stmt).fetchone()
         return result[0] if result else None
 
+    def get_recent_trading_dates(self, days: int = 7) -> list[date]:
+        """取得最近 N 個交易日（不含今天），由舊到新排序"""
+        stmt = (
+            select(TradingCalendar.date)
+            .where(TradingCalendar.is_trading_day == True)
+            .where(TradingCalendar.date < date.today())
+            .order_by(TradingCalendar.date.desc())
+            .limit(days)
+        )
+        dates = [row[0] for row in self._session.execute(stmt).fetchall()]
+        return sorted(dates)  # 由舊到新
+
     def count_trading_days(self, start_date: date, end_date: date) -> int:
         """計算指定區間的交易日數"""
         from sqlalchemy import func

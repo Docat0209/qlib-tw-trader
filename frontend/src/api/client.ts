@@ -613,6 +613,7 @@ export interface SyncBulkResponse {
   date: string
   total: number
   inserted: number
+  days_synced?: number
   error: string | null
 }
 

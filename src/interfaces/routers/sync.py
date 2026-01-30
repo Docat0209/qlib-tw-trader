@@ -43,9 +43,10 @@ class SyncStockResponse(BaseModel):
 
 
 class SyncBulkResponse(BaseModel):
-    date: str
+    date: str  # 最新日期或日期範圍
     total: int
     inserted: int
+    days_synced: int = 1  # 同步的天數
     error: str | None = None
 
 
@@ -204,18 +205,33 @@ async def sync_bulk(
     target_date: date = Query(default=None),
     session: Session = Depends(get_db),
 ):
-    """同步全市場當日資料（TWSE RWD bulk）"""
+    """同步全市場日K線（TWSE RWD bulk，預設最近 7 個交易日）"""
     service = SyncService(session)
-    if target_date is None:
-        target_date = service.get_previous_trading_date() or date.today()
 
-    result = await service.sync_stock_daily_bulk(target_date)
+    # 指定日期時只同步該天，否則同步最近 7 天
+    if target_date is not None:
+        result = await service.sync_stock_daily_bulk(target_date)
+        return SyncBulkResponse(
+            date=result["date"],
+            total=result["total"],
+            inserted=result["inserted"],
+            error=result.get("error"),
+        )
+
+    # 同步最近 7 個交易日
+    dates = service.get_recent_trading_dates(7)
+    total = 0
+    inserted = 0
+    for d in dates:
+        result = await service.sync_stock_daily_bulk(d)
+        total += result["total"]
+        inserted += result["inserted"]
 
     return SyncBulkResponse(
-        date=result["date"],
-        total=result["total"],
-        inserted=result["inserted"],
-        error=result.get("error"),
+        date=f"{dates[0].isoformat()}~{dates[-1].isoformat()}" if dates else "",
+        total=total,
+        inserted=inserted,
+        days_synced=len(dates),
     )
 
 
@@ -334,18 +350,31 @@ async def sync_per_bulk(
     target_date: date = Query(default=None),
     session: Session = Depends(get_db),
 ):
-    """同步全市場 PER/PBR/殖利率（TWSE RWD bulk）"""
+    """同步全市場 PER/PBR/殖利率（TWSE RWD bulk，預設最近 7 個交易日）"""
     service = SyncService(session)
-    if target_date is None:
-        target_date = service.get_previous_trading_date() or date.today()
 
-    result = await service.sync_per_bulk(target_date)
+    if target_date is not None:
+        result = await service.sync_per_bulk(target_date)
+        return SyncBulkResponse(
+            date=result["date"],
+            total=result["total"],
+            inserted=result["inserted"],
+            error=result.get("error"),
+        )
+
+    dates = service.get_recent_trading_dates(7)
+    total = 0
+    inserted = 0
+    for d in dates:
+        result = await service.sync_per_bulk(d)
+        total += result["total"]
+        inserted += result["inserted"]
 
     return SyncBulkResponse(
-        date=result["date"],
-        total=result["total"],
-        inserted=result["inserted"],
-        error=result.get("error"),
+        date=f"{dates[0].isoformat()}~{dates[-1].isoformat()}" if dates else "",
+        total=total,
+        inserted=inserted,
+        days_synced=len(dates),
     )
 
 
@@ -438,18 +467,31 @@ async def sync_institutional_bulk(
     target_date: date = Query(default=None),
     session: Session = Depends(get_db),
 ):
-    """同步全市場三大法人買賣超（TWSE RWD）"""
+    """同步全市場三大法人買賣超（TWSE RWD，預設最近 7 個交易日）"""
     service = SyncService(session)
-    if target_date is None:
-        target_date = service.get_previous_trading_date() or date.today()
 
-    result = await service.sync_institutional_bulk(target_date)
+    if target_date is not None:
+        result = await service.sync_institutional_bulk(target_date)
+        return SyncBulkResponse(
+            date=result["date"],
+            total=result["total"],
+            inserted=result["inserted"],
+            error=result.get("error"),
+        )
+
+    dates = service.get_recent_trading_dates(7)
+    total = 0
+    inserted = 0
+    for d in dates:
+        result = await service.sync_institutional_bulk(d)
+        total += result["total"]
+        inserted += result["inserted"]
 
     return SyncBulkResponse(
-        date=result["date"],
-        total=result["total"],
-        inserted=result["inserted"],
-        error=result.get("error"),
+        date=f"{dates[0].isoformat()}~{dates[-1].isoformat()}" if dates else "",
+        total=total,
+        inserted=inserted,
+        days_synced=len(dates),
     )
 
 
@@ -542,18 +584,31 @@ async def sync_margin_bulk(
     target_date: date = Query(default=None),
     session: Session = Depends(get_db),
 ):
-    """同步全市場融資融券（TWSE RWD）"""
+    """同步全市場融資融券（TWSE RWD，預設最近 7 個交易日）"""
     service = SyncService(session)
-    if target_date is None:
-        target_date = service.get_previous_trading_date() or date.today()
 
-    result = await service.sync_margin_bulk(target_date)
+    if target_date is not None:
+        result = await service.sync_margin_bulk(target_date)
+        return SyncBulkResponse(
+            date=result["date"],
+            total=result["total"],
+            inserted=result["inserted"],
+            error=result.get("error"),
+        )
+
+    dates = service.get_recent_trading_dates(7)
+    total = 0
+    inserted = 0
+    for d in dates:
+        result = await service.sync_margin_bulk(d)
+        total += result["total"]
+        inserted += result["inserted"]
 
     return SyncBulkResponse(
-        date=result["date"],
-        total=result["total"],
-        inserted=result["inserted"],
-        error=result.get("error"),
+        date=f"{dates[0].isoformat()}~{dates[-1].isoformat()}" if dates else "",
+        total=total,
+        inserted=inserted,
+        days_synced=len(dates),
     )
 
 
@@ -646,18 +701,31 @@ async def sync_adj_bulk(
     target_date: date = Query(default=None),
     session: Session = Depends(get_db),
 ):
-    """同步全市場還原股價（yfinance 批次）"""
+    """同步全市場還原股價（yfinance 批次，預設最近 7 個交易日）"""
     service = SyncService(session)
-    if target_date is None:
-        target_date = service.get_previous_trading_date() or date.today()
 
-    result = await service.sync_adj_bulk(target_date)
+    if target_date is not None:
+        result = await service.sync_adj_bulk(target_date)
+        return SyncBulkResponse(
+            date=result["date"],
+            total=result["total"],
+            inserted=result["inserted"],
+            error=result.get("error"),
+        )
+
+    dates = service.get_recent_trading_dates(7)
+    total = 0
+    inserted = 0
+    for d in dates:
+        result = await service.sync_adj_bulk(d)
+        total += result["total"]
+        inserted += result["inserted"]
 
     return SyncBulkResponse(
-        date=result["date"],
-        total=result["total"],
-        inserted=result["inserted"],
-        error=result.get("error"),
+        date=f"{dates[0].isoformat()}~{dates[-1].isoformat()}" if dates else "",
+        total=total,
+        inserted=inserted,
+        days_synced=len(dates),
     )
 
 
@@ -750,18 +818,31 @@ async def sync_shareholding_bulk(
     target_date: date = Query(default=None),
     session: Session = Depends(get_db),
 ):
-    """同步全市場外資持股（TWSE RWD）"""
+    """同步全市場外資持股（TWSE RWD，預設最近 7 個交易日）"""
     service = SyncService(session)
-    if target_date is None:
-        target_date = service.get_previous_trading_date() or date.today()
 
-    result = await service.sync_shareholding_bulk(target_date)
+    if target_date is not None:
+        result = await service.sync_shareholding_bulk(target_date)
+        return SyncBulkResponse(
+            date=result["date"],
+            total=result["total"],
+            inserted=result["inserted"],
+            error=result.get("error"),
+        )
+
+    dates = service.get_recent_trading_dates(7)
+    total = 0
+    inserted = 0
+    for d in dates:
+        result = await service.sync_shareholding_bulk(d)
+        total += result["total"]
+        inserted += result["inserted"]
 
     return SyncBulkResponse(
-        date=result["date"],
-        total=result["total"],
-        inserted=result["inserted"],
-        error=result.get("error"),
+        date=f"{dates[0].isoformat()}~{dates[-1].isoformat()}" if dates else "",
+        total=total,
+        inserted=inserted,
+        days_synced=len(dates),
     )
 
 
