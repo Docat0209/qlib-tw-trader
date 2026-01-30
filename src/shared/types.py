@@ -78,8 +78,13 @@ class Shareholding:
     """外資持股"""
     date: date
     stock_id: str
-    foreign_shares: int
-    foreign_ratio: Decimal
+    total_shares: int               # 發行股數
+    foreign_shares: int             # 外資持股數
+    foreign_ratio: Decimal          # 外資持股比率
+    foreign_remaining_shares: int   # 尚可投資股數
+    foreign_remaining_ratio: Decimal  # 尚可投資比率
+    foreign_upper_limit_ratio: Decimal  # 外資投資上限比率
+    chinese_upper_limit_ratio: Decimal  # 陸資投資上限比率
 
 
 # === 低頻 ===

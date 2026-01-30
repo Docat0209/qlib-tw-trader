@@ -132,8 +132,17 @@ class StockDailyShareholding(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     stock_id: Mapped[str] = mapped_column(String(10), index=True)
     date: Mapped[date] = mapped_column(Date, index=True)
+    # 發行股數
+    total_shares: Mapped[int] = mapped_column(Integer)
+    # 外資持股
     foreign_shares: Mapped[int] = mapped_column(Integer)
     foreign_ratio: Mapped[Decimal] = mapped_column(Numeric(6, 2))
+    # 尚可投資
+    foreign_remaining_shares: Mapped[int] = mapped_column(Integer)
+    foreign_remaining_ratio: Mapped[Decimal] = mapped_column(Numeric(6, 2))
+    # 投資上限
+    foreign_upper_limit_ratio: Mapped[Decimal] = mapped_column(Numeric(6, 2))
+    chinese_upper_limit_ratio: Mapped[Decimal] = mapped_column(Numeric(6, 2))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
 
 

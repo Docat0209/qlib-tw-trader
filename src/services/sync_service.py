@@ -1282,8 +1282,8 @@ class SyncService:
             # MI_QFIIS 格式（12 欄）:
             # 0: 證券代號, 1: 證券名稱, 2: ISIN, 3: 發行股數,
             # 4: 尚可投資股數, 5: 全體外資持有股數, 6: 尚可投資比率,
-            # 7: 全體外資持股比率, 8-11: 其他欄位
-            if len(row) < 8:
+            # 7: 全體外資持股比率, 8: 外資投資上限比率, 9: 陸資投資上限比率, 10-11: 其他
+            if len(row) < 10:
                 continue
 
             stock_id = row[0].strip()
@@ -1295,19 +1295,17 @@ class SyncService:
             if stock_id in existing_stocks:
                 continue
 
-            # 持股比率可能是數字或字串（欄位 7: 全體外資持股比率）
-            ratio_val = row[7]
-            if isinstance(ratio_val, (int, float)):
-                ratio = Decimal(str(ratio_val))
-            else:
-                ratio = self._safe_decimal(ratio_val) or Decimal("0")
-
             self._session.add(
                 StockDailyShareholding(
                     stock_id=stock_id,
                     date=target_date,
-                    foreign_shares=self._safe_int(row[5]),  # 欄位 5: 全體外資持有股數
-                    foreign_ratio=ratio,
+                    total_shares=self._safe_int(row[3]),                    # 發行股數
+                    foreign_shares=self._safe_int(row[5]),                  # 全體外資持有股數
+                    foreign_ratio=self._safe_decimal(row[7]) or Decimal("0"),  # 全體外資持股比率
+                    foreign_remaining_shares=self._safe_int(row[4]),        # 尚可投資股數
+                    foreign_remaining_ratio=self._safe_decimal(row[6]) or Decimal("0"),  # 尚可投資比率
+                    foreign_upper_limit_ratio=self._safe_decimal(row[8]) or Decimal("0"),  # 外資投資上限比率
+                    chinese_upper_limit_ratio=self._safe_decimal(row[9]) or Decimal("0"),  # 陸資投資上限比率
                 )
             )
             inserted += 1
@@ -1360,14 +1358,17 @@ class SyncService:
             if r_date in existing_dates:
                 continue
 
-            ratio = self._safe_decimal(r.get("ForeignInvestmentSharesRatio")) or Decimal("0")
-
             self._session.add(
                 StockDailyShareholding(
                     stock_id=stock_id,
                     date=r_date,
+                    total_shares=self._safe_int(r.get("NumberOfSharesIssued", 0)),
                     foreign_shares=self._safe_int(r.get("ForeignInvestmentShares", 0)),
-                    foreign_ratio=ratio,
+                    foreign_ratio=self._safe_decimal(r.get("ForeignInvestmentSharesRatio")) or Decimal("0"),
+                    foreign_remaining_shares=self._safe_int(r.get("ForeignInvestmentRemainingShares", 0)),
+                    foreign_remaining_ratio=self._safe_decimal(r.get("ForeignInvestmentRemainRatio")) or Decimal("0"),
+                    foreign_upper_limit_ratio=self._safe_decimal(r.get("ForeignInvestmentUpperLimitRatio")) or Decimal("0"),
+                    chinese_upper_limit_ratio=self._safe_decimal(r.get("ChineseInvestmentUpperLimitRatio")) or Decimal("0"),
                 )
             )
             inserted += 1

@@ -210,23 +210,41 @@ class ShareholdingRepository(StockDailyRepository[Shareholding, StockDailyShareh
         return Shareholding(
             date=row.date,
             stock_id=row.stock_id,
+            total_shares=row.total_shares,
             foreign_shares=row.foreign_shares,
             foreign_ratio=row.foreign_ratio,
+            foreign_remaining_shares=row.foreign_remaining_shares,
+            foreign_remaining_ratio=row.foreign_remaining_ratio,
+            foreign_upper_limit_ratio=row.foreign_upper_limit_ratio,
+            chinese_upper_limit_ratio=row.chinese_upper_limit_ratio,
         )
 
     def _to_dict(self, data: Shareholding) -> dict:
         return {
             "stock_id": data.stock_id,
             "date": data.date,
+            "total_shares": data.total_shares,
             "foreign_shares": data.foreign_shares,
             "foreign_ratio": data.foreign_ratio,
+            "foreign_remaining_shares": data.foreign_remaining_shares,
+            "foreign_remaining_ratio": data.foreign_remaining_ratio,
+            "foreign_upper_limit_ratio": data.foreign_upper_limit_ratio,
+            "chinese_upper_limit_ratio": data.chinese_upper_limit_ratio,
         }
 
     def _get_conflict_keys(self) -> list[str]:
         return ["stock_id", "date"]
 
     def _get_update_fields(self) -> list[str]:
-        return ["foreign_shares", "foreign_ratio"]
+        return [
+            "total_shares",
+            "foreign_shares",
+            "foreign_ratio",
+            "foreign_remaining_shares",
+            "foreign_remaining_ratio",
+            "foreign_upper_limit_ratio",
+            "chinese_upper_limit_ratio",
+        ]
 
 
 class SecuritiesLendingRepository(StockDailyRepository[SecuritiesLending, StockDailySecuritiesLending]):
