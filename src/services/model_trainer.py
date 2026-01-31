@@ -285,6 +285,7 @@ class ModelTrainer:
                 "boosting_type": "gbdt",
                 "verbosity": -1,
                 "seed": 42,
+                "feature_pre_filter": False,  # 允許動態調整 min_data_in_leaf
                 # 搜索的超參數
                 "num_leaves": trial.suggest_int("num_leaves", 16, max_leaves),
                 "max_depth": trial.suggest_int("max_depth", 4, 8),
@@ -345,6 +346,7 @@ class ModelTrainer:
             "boosting_type": "gbdt",
             "verbosity": -1,
             "seed": 42,
+            "feature_pre_filter": False,
             **study.best_params,
         }
 
@@ -407,6 +409,7 @@ class ModelTrainer:
                 "lambda_l2": 10.0,
                 "verbosity": -1,
                 "seed": 42,
+                "feature_pre_filter": False,
             }
 
         # 訓練
