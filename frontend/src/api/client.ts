@@ -187,8 +187,19 @@ export interface ModelMetrics {
   icir: number | null
 }
 
+export interface FactorSummary {
+  id: string
+  name: string
+  display_name: string | null
+  category: string
+  ic_value: number | null
+}
+
 export interface Model {
   id: string
+  name: string | null
+  description: string | null
+  status: string
   trained_at: string
   factor_count: number | null
   factors: string[]
@@ -197,17 +208,30 @@ export interface Model {
   metrics: ModelMetrics
   training_duration_seconds: number | null
   is_current: boolean
+  candidate_factors: FactorSummary[]
+  selected_factors: FactorSummary[]
 }
 
-export interface ModelHistoryItem {
+export interface ModelSummary {
   id: string
+  name: string | null
+  status: string
   trained_at: string
-  factor_count: number | null
   train_period: Period | null
   valid_period: Period | null
   metrics: ModelMetrics
+  factor_count: number | null
+  candidate_count: number | null
   is_current: boolean
 }
+
+export interface ModelListResponse {
+  items: ModelSummary[]
+  total: number
+}
+
+// 向後兼容
+export type ModelHistoryItem = ModelSummary
 
 export interface ModelHistoryResponse {
   items: ModelHistoryItem[]
@@ -235,8 +259,7 @@ export interface ModelStatus {
 }
 
 export interface TrainRequest {
-  train_end: string
-  valid_end: string
+  train_end?: string
 }
 
 export interface TrainResponse {
@@ -245,7 +268,25 @@ export interface TrainResponse {
   message: string
 }
 
+export interface DeleteResponse {
+  status: string
+  id: string
+}
+
+export interface SetCurrentResponse {
+  status: string
+  id: string
+  is_current: boolean
+}
+
 export const modelApi = {
+  // 新增的方法
+  list: () => api.get<ModelListResponse>('/models'),
+  get: (id: string) => api.get<Model>(`/models/${id}`),
+  delete: (id: string) => api.delete(`/models/${id}`).then(res => res.json() as Promise<DeleteResponse>),
+  setCurrent: (id: string) => api.patch<SetCurrentResponse>(`/models/${id}/current`),
+
+  // 現有方法（向後兼容）
   current: () => api.get<Model>('/models/current'),
   history: (limit?: number) => {
     const query = limit ? `?limit=${limit}` : ''
@@ -256,7 +297,7 @@ export const modelApi = {
     return api.get<ModelComparisonResponse>(`/models/comparison${query}`)
   },
   status: () => api.get<ModelStatus>('/models/status'),
-  train: (data: TrainRequest) => api.post<TrainResponse>('/models/train', data),
+  train: (data?: TrainRequest) => api.post<TrainResponse>('/models/train', data || {}),
 }
 
 // Portfolio Types

@@ -233,6 +233,8 @@ class TrainingRun(Base):
     __tablename__ = "training_runs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str | None] = mapped_column(String(100), nullable=True)  # 2022-01~2025-01
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     train_start: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -245,6 +247,9 @@ class TrainingRun(Base):
     is_current: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(20), default="completed")
     config: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 因子池記錄（JSON 格式的 ID 列表）
+    candidate_factor_ids: Mapped[str | None] = mapped_column(Text, nullable=True)
+    selected_factor_ids: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     selected_factors: Mapped[list["TrainingFactorResult"]] = relationship(
         back_populates="training_run"

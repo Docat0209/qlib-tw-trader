@@ -137,6 +137,8 @@ class TrainingRepository:
 
     def get_status(self) -> dict:
         """取得訓練狀態"""
+        from src.shared.constants import RETRAIN_THRESHOLD_DAYS
+
         current = self.get_current()
         running_stmt = select(TrainingRun).where(TrainingRun.status == "running")
         running = self._session.execute(running_stmt).scalar()
@@ -148,7 +150,41 @@ class TrainingRepository:
         return {
             "last_trained_at": current.completed_at if current else None,
             "days_since_training": days_since,
-            "needs_retrain": days_since is not None and days_since >= 30,
-            "retrain_threshold_days": 30,
+            "needs_retrain": days_since is not None and days_since >= RETRAIN_THRESHOLD_DAYS,
+            "retrain_threshold_days": RETRAIN_THRESHOLD_DAYS,
             "current_job": running.id if running else None,
         }
+
+    def get_all(self) -> list[TrainingRun]:
+        """取得所有訓練記錄"""
+        stmt = select(TrainingRun).order_by(TrainingRun.id.desc())
+        return list(self._session.execute(stmt).scalars().all())
+
+    def get_all_factor_results(self, run_id: int) -> list[TrainingFactorResult]:
+        """取得訓練的所有因子結果（含未選中）"""
+        stmt = (
+            select(TrainingFactorResult)
+            .where(TrainingFactorResult.training_run_id == run_id)
+            .order_by(TrainingFactorResult.ic_value.desc())
+        )
+        return list(self._session.execute(stmt).scalars().all())
+
+    def delete(self, run_id: int) -> bool:
+        """刪除訓練記錄及相關結果"""
+        run = self.get_by_id(run_id)
+        if not run:
+            return False
+
+        # 刪除相關的因子結果
+        delete_results_stmt = (
+            select(TrainingFactorResult)
+            .where(TrainingFactorResult.training_run_id == run_id)
+        )
+        results = self._session.execute(delete_results_stmt).scalars().all()
+        for result in results:
+            self._session.delete(result)
+
+        # 刪除訓練記錄
+        self._session.delete(run)
+        self._session.commit()
+        return True
