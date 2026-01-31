@@ -117,3 +117,5 @@ tailwindcss   # 樣式
 - [x] Qlib 導出器
 - [x] 因子管理 API
 - [x] 前端 UI
+- [x] 模型訓練（LightGBM + IC 增量選擇）
+- [x] 即時更新（WebSocket + Zustand）
