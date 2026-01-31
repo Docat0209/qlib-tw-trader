@@ -354,6 +354,7 @@ async def get_model(
 
     # 如果有候選因子 ID，使用它們
     if candidate_ids:
+        # 先建立候選因子列表
         for fid in candidate_ids:
             factor = factor_repo.get_by_id(fid)
             if factor:
@@ -366,9 +367,21 @@ async def get_model(
                     ic_value=float(result.ic_value) if result else None,
                 )
                 candidate_factors.append(summary)
-                if fid in selected_ids:
-                    selected_factors.append(summary)
-                    factor_names.append(factor.name)
+
+        # 按 selected_ids 的順序建立 selected_factors（順序對模型預測至關重要）
+        for fid in selected_ids:
+            factor = factor_repo.get_by_id(fid)
+            if factor:
+                result = result_map.get(fid)
+                summary = FactorSummary(
+                    id=f"f{factor.id:03d}",
+                    name=factor.name,
+                    display_name=factor.display_name,
+                    category=factor.category,
+                    ic_value=float(result.ic_value) if result else None,
+                )
+                selected_factors.append(summary)
+                factor_names.append(factor.name)
     else:
         # 從 TrainingFactorResult 取得（向後兼容）
         for result in all_results:

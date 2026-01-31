@@ -117,6 +117,7 @@ class JobManager:
             await manager.broadcast({
                 "type": "job_progress",
                 "job_id": job_id,
+                "job_type": job_type,
                 "status": "running",
                 "progress": 0,
             })
@@ -127,6 +128,7 @@ class JobManager:
                 await manager.broadcast({
                     "type": "job_progress",
                     "job_id": job_id,
+                    "job_type": job_type,
                     "status": "running",
                     "progress": progress,
                     "message": message,
@@ -140,6 +142,7 @@ class JobManager:
             await manager.broadcast({
                 "type": "job_completed",
                 "job_id": job_id,
+                "job_type": job_type,
                 "status": "completed",
                 "progress": 100,
                 "result": result,
@@ -151,6 +154,7 @@ class JobManager:
             await manager.broadcast({
                 "type": "job_failed",
                 "job_id": job_id,
+                "job_type": job_type,
                 "status": "failed",
                 "error": str(e),
             })

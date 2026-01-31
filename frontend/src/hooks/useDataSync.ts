@@ -22,7 +22,7 @@ export function useDataSync() {
     }
 
     // Handle job completion events
-    if (event.type === 'job_completed') {
+    if (event.type === 'job_completed' || event.type === 'job_failed') {
       if (event.job_type === 'train') {
         invalidate(['models', 'dashboard'])
       }
