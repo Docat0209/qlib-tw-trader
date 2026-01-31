@@ -50,7 +50,7 @@ class JobRepository:
         self,
         job_id: str,
         status: str,
-        progress: int | None = None,
+        progress: float | None = None,
         message: str | None = None,
     ) -> Job | None:
         """更新任務狀態"""

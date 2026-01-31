@@ -268,6 +268,11 @@ export interface TrainResponse {
   message: string
 }
 
+export interface DataRangeResponse {
+  start: string
+  end: string
+}
+
 export interface DeleteResponse {
   status: string
   id: string
@@ -285,6 +290,7 @@ export const modelApi = {
   get: (id: string) => api.get<Model>(`/models/${id}`),
   delete: (id: string) => api.delete(`/models/${id}`).then(res => res.json() as Promise<DeleteResponse>),
   setCurrent: (id: string) => api.patch<SetCurrentResponse>(`/models/${id}/current`),
+  dataRange: () => api.get<DataRangeResponse>('/models/data-range'),
 
   // 現有方法（向後兼容）
   current: () => api.get<Model>('/models/current'),
@@ -497,6 +503,7 @@ export const jobApi = {
     return api.get<JobListResponse>(`/jobs${query}`)
   },
   get: (jobId: string) => api.get<JobDetail>(`/jobs/${jobId}`),
+  cancel: (jobId: string) => api.delete(`/jobs/${jobId}`).then(res => res.json() as Promise<{ status: string; id: string }>),
 }
 
 // Backtest Types

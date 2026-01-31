@@ -145,7 +145,13 @@ class TrainingRepository:
 
         days_since = None
         if current and current.completed_at:
-            days_since = (datetime.now(TZ_TAIPEI) - current.completed_at).days
+            # 處理 naive/aware datetime 相容性
+            now = datetime.now(TZ_TAIPEI)
+            completed_at = current.completed_at
+            if completed_at.tzinfo is None:
+                # 資料庫中的 naive datetime 視為台北時間
+                completed_at = completed_at.replace(tzinfo=TZ_TAIPEI)
+            days_since = (now - completed_at).days
 
         return {
             "last_trained_at": current.completed_at if current else None,

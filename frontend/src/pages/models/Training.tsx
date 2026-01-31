@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import {
   Play,
@@ -14,8 +14,10 @@ import {
   ChevronUp,
   Trash2,
   Star,
+  XCircle,
 } from 'lucide-react'
-import { modelApi, ModelSummary, ModelStatus, Model, FactorSummary } from '@/api/client'
+import { modelApi, ModelSummary, ModelStatus, Model, FactorSummary, DataRangeResponse } from '@/api/client'
+import { useJobs } from '@/hooks/useJobs'
 
 export function Training() {
   const [models, setModels] = useState<ModelSummary[]>([])
@@ -27,27 +29,61 @@ export function Training() {
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
+  const [dataRange, setDataRange] = useState<DataRangeResponse | null>(null)
+  const [selectedMonth, setSelectedMonth] = useState<string>('')
 
-  const fetchData = async () => {
+  // WebSocket 訓練進度追蹤
+  const { activeJob, clearJob, cancelJob, isConnected } = useJobs()
+
+  // 訓練狀態
+  const isTraining = activeJob?.job_type === 'train' &&
+    ['queued', 'running'].includes(activeJob.status)
+
+  const fetchData = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const [listRes, statusRes] = await Promise.all([
+      const [listRes, statusRes, rangeRes] = await Promise.all([
         modelApi.list(),
         modelApi.status(),
+        modelApi.dataRange().catch(() => null),
       ])
       setModels(listRes.items)
       setStatus(statusRes)
+      if (rangeRes) {
+        setDataRange(rangeRes)
+        // 預設選擇最新的月份（資料結束日期的前 6 個月作為訓練結束）
+        if (!selectedMonth) {
+          const endDate = new Date(rangeRes.end)
+          endDate.setMonth(endDate.getMonth() - 6)
+          const defaultMonth = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}`
+          setSelectedMonth(defaultMonth)
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data')
     } finally {
       setLoading(false)
     }
-  }
+  }, [selectedMonth])
 
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [fetchData])
+
+  // 監聽訓練完成，自動刷新列表
+  useEffect(() => {
+    if (activeJob?.status === 'completed' && activeJob?.job_type === 'train') {
+      fetchData()
+      // 延遲清除 job，讓用戶看到完成狀態
+      const timer = setTimeout(() => clearJob(activeJob.id), 5000)
+      return () => clearTimeout(timer)
+    }
+    if (activeJob?.status === 'failed' && activeJob?.job_type === 'train') {
+      // 失敗後也刷新列表
+      fetchData()
+    }
+  }, [activeJob?.status, activeJob?.job_type, activeJob?.id, clearJob, fetchData])
 
   const handleExpand = async (id: string) => {
     if (expandedId === id) {
@@ -97,14 +133,59 @@ export function Training() {
     }
   }
 
+  // 生成可用的月份選項（從資料開始到資料結束前 6 個月）
+  const monthOptions = useCallback(() => {
+    if (!dataRange) return []
+
+    const options: { value: string; label: string }[] = []
+    const startDate = new Date(dataRange.start)
+    const endDate = new Date(dataRange.end)
+
+    // 訓練結束日最早需要在資料開始後 2 年（TRAIN_DAYS）
+    startDate.setFullYear(startDate.getFullYear() + 2)
+    // 訓練結束日最晚需要在資料結束前 6 個月（VALID_DAYS）
+    endDate.setMonth(endDate.getMonth() - 6)
+
+    const current = new Date(startDate)
+    while (current <= endDate) {
+      const value = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`
+      const label = `${current.getFullYear()}/${String(current.getMonth() + 1).padStart(2, '0')}`
+      options.push({ value, label })
+      current.setMonth(current.getMonth() + 1)
+    }
+
+    return options.reverse() // 最新的在前
+  }, [dataRange])
+
   const handleStartTraining = async () => {
+    if (isTraining) {
+      return // 訓練進行中，不允許重複觸發
+    }
     setActionLoading(true)
     try {
-      const res = await modelApi.train()
-      alert(res.message)
+      // 計算選定月份的最後一天作為 train_end
+      const [year, month] = selectedMonth.split('-').map(Number)
+      const trainEndDate = new Date(year, month, 0) // 該月最後一天
+      const trainEnd = trainEndDate.toISOString().split('T')[0]
+
+      await modelApi.train({ train_end: trainEnd })
+      // 訓練已啟動，立即刷新列表
       await fetchData()
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to start training')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleCancelTraining = async () => {
+    if (!activeJob) return
+    setActionLoading(true)
+    try {
+      await cancelJob(activeJob.id)
+      await fetchData()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to cancel training')
     } finally {
       setActionLoading(false)
     }
@@ -159,17 +240,107 @@ export function Training() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="heading text-2xl">Models</h1>
-          <p className="subheading mt-1">Manage trained models and start new training.</p>
+          <p className="subheading mt-1">
+            Manage trained models and start new training.
+            {!isConnected && (
+              <span className="text-orange ml-2">(WebSocket disconnected)</span>
+            )}
+          </p>
         </div>
-        <button
-          className="btn btn-primary"
-          onClick={handleStartTraining}
-          disabled={actionLoading}
-        >
-          {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-          New Training
-        </button>
+        <div className="flex items-center gap-3">
+          {/* 訓練結束月份選擇 */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-muted-foreground">Train End:</label>
+            <select
+              className="px-3 py-2 rounded-lg border border-border bg-background text-sm"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              disabled={isTraining}
+            >
+              {monthOptions().map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            className="btn btn-primary"
+            onClick={handleStartTraining}
+            disabled={actionLoading || isTraining || !selectedMonth}
+          >
+            {isTraining ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Play className="h-4 w-4" />
+            )}
+            {isTraining ? 'Training...' : 'New Training'}
+          </button>
+        </div>
       </div>
+
+      {/* Training Progress */}
+      {isTraining && activeJob && (
+        <div className="p-4 rounded-lg bg-blue/10 border border-blue/20">
+          <div className="flex items-center gap-3 mb-2">
+            <Loader2 className="h-5 w-5 animate-spin text-blue" />
+            <div className="flex-1">
+              <p className="font-semibold text-blue">Training in Progress</p>
+              <p className="text-sm text-muted-foreground">
+                {activeJob.message || 'Processing...'}
+              </p>
+            </div>
+            <span className="font-mono text-lg text-blue">
+              {typeof activeJob.progress === 'number' ? activeJob.progress.toFixed(1) : activeJob.progress}%
+            </span>
+            <button
+              className="btn btn-sm btn-ghost text-red hover:bg-red/10"
+              onClick={handleCancelTraining}
+              disabled={actionLoading}
+              title="Cancel training"
+            >
+              <AlertTriangle className="h-4 w-4" />
+              Cancel
+            </button>
+          </div>
+          <div className="h-2 bg-secondary rounded-full overflow-hidden">
+            <div
+              className="h-full bg-blue transition-all duration-300"
+              style={{ width: `${activeJob.progress}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Training Completed */}
+      {activeJob?.status === 'completed' && activeJob?.job_type === 'train' && (
+        <div className="p-4 rounded-lg bg-green/10 border border-green/20">
+          <div className="flex items-center gap-3">
+            <CheckCircle className="h-5 w-5 text-green" />
+            <div>
+              <p className="font-semibold text-green">Training Completed</p>
+              <p className="text-sm text-muted-foreground">
+                Model trained successfully!
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Training Failed */}
+      {activeJob?.status === 'failed' && activeJob?.job_type === 'train' && (
+        <div className="p-4 rounded-lg bg-red/10 border border-red/20">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="h-5 w-5 text-red" />
+            <div>
+              <p className="font-semibold text-red">Training Failed</p>
+              <p className="text-sm text-muted-foreground">
+                {activeJob.error || 'An error occurred during training.'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Retrain Warning */}
       {status?.needs_retrain && (
@@ -325,12 +496,16 @@ export function Training() {
                       )}
                       {!model.is_current && (
                         <button
-                          className="btn btn-sm btn-ghost text-red hover:bg-red/10"
+                          className={`btn btn-sm btn-ghost ${['running', 'queued'].includes(model.status) ? 'text-orange hover:bg-orange/10' : 'text-red hover:bg-red/10'}`}
                           onClick={() => setDeleteConfirm(model.id)}
                           disabled={actionLoading}
-                          title="Delete"
+                          title={['running', 'queued'].includes(model.status) ? 'Cancel training' : 'Delete'}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          {['running', 'queued'].includes(model.status) ? (
+                            <XCircle className="h-4 w-4" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
                         </button>
                       )}
                     </div>

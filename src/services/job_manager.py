@@ -120,8 +120,8 @@ class JobManager:
                 "progress": 0,
             })
 
-            # 執行任務，傳入 progress callback
-            async def progress_callback(progress: int, message: str | None = None):
+            # 執行任務，傳入 progress callback（支援浮點數）
+            async def progress_callback(progress: float, message: str | None = None):
                 repo.update_status(job_id, "running", progress=progress, message=message)
                 await manager.broadcast({
                     "type": "job_progress",
@@ -162,6 +162,34 @@ class JobManager:
     def get_running_jobs(self) -> list[str]:
         """取得執行中的任務 ID"""
         return list(self._running_jobs.keys())
+
+    async def cancel_job(self, job_id: str) -> bool:
+        """
+        取消執行中的任務
+
+        Returns:
+            True if cancelled, False if not found
+        """
+        task = self._running_jobs.get(job_id)
+        if task:
+            task.cancel()
+            del self._running_jobs[job_id]
+
+            # 更新資料庫狀態
+            session = get_session()
+            repo = JobRepository(session)
+            repo.complete(job_id, result="Cancelled by user", success=False)
+            session.close()
+
+            # 廣播取消事件
+            await manager.broadcast({
+                "type": "job_cancelled",
+                "job_id": job_id,
+                "status": "cancelled",
+            })
+            return True
+
+        return False
 
 
 # 全域任務管理器

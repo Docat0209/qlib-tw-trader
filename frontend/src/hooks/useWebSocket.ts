@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 
 export interface JobEvent {
-  type: 'job_created' | 'job_progress' | 'job_completed' | 'job_failed' | 'pong'
+  type: 'job_created' | 'job_progress' | 'job_completed' | 'job_failed' | 'job_cancelled' | 'pong'
   job_id?: string
   job_type?: string
   status?: string

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from src.interfaces.dependencies import get_db
 from src.repositories.job import JobRepository
-from src.services.job_manager import manager
+from src.services.job_manager import job_manager, manager
 
 router = APIRouter()
 
@@ -87,3 +87,33 @@ async def get_job(
         "started_at": job.started_at.isoformat() if job.started_at else None,
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
     }
+
+
+@router.delete("/jobs/{job_id}")
+async def cancel_job(
+    job_id: str,
+    session: Session = Depends(get_db),
+):
+    """取消/刪除任務"""
+    repo = JobRepository(session)
+    job = repo.get(job_id)
+
+    if not job:
+        return {"error": "Job not found", "status": "error"}
+
+    # 如果是 running 或 queued，嘗試取消正在執行的任務
+    if job.status in ("running", "queued"):
+        await job_manager.cancel_job(job_id)  # 嘗試取消（可能不存在）
+
+    # 無論如何都從資料庫刪除
+    session.delete(job)
+    session.commit()
+
+    # 廣播取消事件
+    await manager.broadcast({
+        "type": "job_cancelled",
+        "job_id": job_id,
+        "status": "deleted",
+    })
+
+    return {"status": "deleted", "id": job_id}

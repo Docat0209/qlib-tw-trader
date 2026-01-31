@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Callable
 from zoneinfo import ZoneInfo
 
+import numpy as np
+import pandas as pd
 from sqlalchemy.orm import Session
 
 from src.repositories.factor import FactorRepository
@@ -51,6 +53,7 @@ class ModelTrainer:
     def __init__(self, qlib_data_dir: Path | str):
         self.data_dir = Path(qlib_data_dir)
         self._qlib_initialized = False
+        self._last_ic_std: float | None = None  # 用於 ICIR 計算
 
     def _init_qlib(self) -> None:
         """初始化 qlib"""
@@ -71,6 +74,47 @@ class ModelTrainer:
         except Exception as e:
             raise RuntimeError(f"Failed to initialize qlib: {e}")
 
+    def _get_instruments(self) -> list[str]:
+        """從 qlib instruments 目錄讀取股票清單"""
+        instruments_file = self.data_dir / "instruments" / "all.txt"
+
+        if instruments_file.exists():
+            with open(instruments_file) as f:
+                return [line.strip().split()[0] for line in f if line.strip()]
+
+        # 備選：從 features 目錄取得
+        features_dir = self.data_dir / "features"
+        if features_dir.exists():
+            return [d.name for d in features_dir.iterdir() if d.is_dir()]
+
+        return []
+
+    def get_data_date_range(self) -> tuple[date | None, date | None]:
+        """取得 qlib 資料的日期範圍"""
+        instruments_file = self.data_dir / "instruments" / "all.txt"
+
+        if not instruments_file.exists():
+            return None, None
+
+        min_start = None
+        max_end = None
+
+        with open(instruments_file) as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) >= 3:
+                    try:
+                        start = date.fromisoformat(parts[1])
+                        end = date.fromisoformat(parts[2])
+                        if min_start is None or start < min_start:
+                            min_start = start
+                        if max_end is None or end > max_end:
+                            max_end = end
+                    except ValueError:
+                        continue
+
+        return min_start, max_end
+
     def train(
         self,
         session: Session,
@@ -78,7 +122,7 @@ class ModelTrainer:
         train_end: date,
         valid_start: date,
         valid_end: date,
-        on_progress: Callable[[int, str], None] | None = None,
+        on_progress: Callable[[float, str], None] | None = None,
     ) -> TrainingResult:
         """
         執行 IC 增量選擇訓練
@@ -120,7 +164,7 @@ class ModelTrainer:
         session.commit()
 
         if on_progress:
-            on_progress(5, "Training started")
+            on_progress(0.0, "Initializing training...")
 
         try:
             # 執行 IC 增量選擇
@@ -177,7 +221,12 @@ class ModelTrainer:
             )
 
             if on_progress:
-                on_progress(100, "Training completed")
+                on_progress(95.0, "Calculating final metrics...")
+
+            # ... 後續處理 ...
+
+            if on_progress:
+                on_progress(100.0, "Training completed")
 
             return TrainingResult(
                 run_id=run.id,
@@ -202,7 +251,7 @@ class ModelTrainer:
         train_end: date,
         valid_start: date,
         valid_end: date,
-        on_progress: Callable[[int, str], None] | None = None,
+        on_progress: Callable[[float, str], None] | None = None,
     ) -> tuple[set[int], list[FactorEvalResult]]:
         """
         IC 增量選擇法
@@ -220,9 +269,10 @@ class ModelTrainer:
 
         total = len(shuffled_factors)
         for i, factor in enumerate(shuffled_factors):
+            # 進度：5% 初始化 + 90% 因子挑選（每個因子佔 90/total %）
             if on_progress:
-                progress = 10 + int((i / total) * 80)  # 10-90%
-                on_progress(progress, f"Evaluating factor: {factor.name}")
+                progress = round(5.0 + (i / total) * 90.0, 1)
+                on_progress(progress, f"Evaluating factor ({i+1}/{total}): {factor.name}")
 
             # 計算加入此因子後的 IC
             test_ids = selected_ids | {factor.id}
@@ -253,6 +303,12 @@ class ModelTrainer:
                 )
             )
 
+            # 評估完成後更新進度
+            if on_progress:
+                progress = round(5.0 + ((i + 1) / total) * 90.0, 1)
+                status = "selected" if selected else "skipped"
+                on_progress(progress, f"Factor {factor.name}: {status} (IC: {ic_contribution:.4f})")
+
         return selected_ids, all_results
 
     def _calculate_model_ic(
@@ -265,25 +321,93 @@ class ModelTrainer:
         """
         計算模型整體 IC
 
-        TODO: 實作真正的 qlib IC 計算
-        目前使用模擬值進行測試
+        IC = 因子值與未來收益率的皮爾遜相關係數
+        使用 qlib 計算因子值，然後與未來收益率計算相關性
         """
         if not selected_ids:
             return 0.0
 
-        # TODO: 使用 qlib 計算真正的 IC
-        # 暫時使用模擬邏輯（基於因子數量）
-        base_ic = 0.02
-        factor_bonus = len(selected_ids) * 0.005
-        noise = random.uniform(-0.01, 0.01)
-        return min(base_ic + factor_bonus + noise, 0.15)
+        self._init_qlib()
+
+        from qlib.data import D
+
+        # 1. 取得股票池
+        instruments = self._get_instruments()
+        if not instruments:
+            raise ValueError("No instruments found in qlib data directory")
+
+        # 2. 建立因子表達式列表
+        selected_factors = [f for f in factors if f.id in selected_ids]
+        if not selected_factors:
+            return 0.0
+
+        fields = [f.expression for f in selected_factors]
+
+        # 3. 定義未來收益率 (qlib 預設: T+1 到 T+2 的 1 日報酬)
+        label_expr = "Ref($close, -2) / Ref($close, -1) - 1"
+        all_fields = fields + [label_expr]
+
+        # 4. 讀取資料
+        try:
+            df = D.features(
+                instruments=instruments,
+                fields=all_fields,
+                start_time=valid_start.strftime("%Y-%m-%d"),
+                end_time=valid_end.strftime("%Y-%m-%d"),
+            )
+        except Exception as e:
+            raise RuntimeError(f"Failed to load qlib data: {e}")
+
+        if df.empty:
+            return 0.0
+
+        # 5. 計算組合因子分數 (標準化後等權平均)
+        factor_cols = df.columns[:-1]
+        label_col = df.columns[-1]
+
+        # 每日截面標準化
+        def zscore_by_date(group: pd.DataFrame) -> pd.DataFrame:
+            return (group - group.mean()) / (group.std() + 1e-8)
+
+        factor_zscore = df[factor_cols].groupby(level="datetime", group_keys=False).apply(
+            zscore_by_date
+        )
+        composite_score = factor_zscore.mean(axis=1)
+
+        # 6. 計算每日截面 IC
+        combined = pd.DataFrame({
+            "score": composite_score,
+            "label": df[label_col]
+        }).dropna()
+
+        if combined.empty:
+            return 0.0
+
+        def calc_corr(group: pd.DataFrame) -> float:
+            if len(group) < 2:
+                return np.nan
+            return group["score"].corr(group["label"])
+
+        daily_ic = combined.groupby(level="datetime", group_keys=False).apply(calc_corr)
+
+        # 7. 計算並保存 IC 標準差（用於 ICIR 計算）
+        self._last_ic_std = float(daily_ic.std()) if len(daily_ic) > 1 else None
+
+        # 8. 返回平均 IC
+        mean_ic = daily_ic.mean()
+        return float(mean_ic) if not np.isnan(mean_ic) else 0.0
 
     def _calculate_icir(self, ic: float, factor_count: int) -> float | None:
-        """計算 IC Information Ratio"""
-        if factor_count == 0:
+        """計算 IC Information Ratio (ICIR = IC / std(IC))"""
+        if factor_count == 0 or ic == 0:
             return None
-        # ICIR = IC / std(IC)，這裡簡化計算
-        return ic / 0.05 if ic > 0 else None
+
+        # 使用 _calculate_model_ic 計算的 IC 標準差
+        ic_std = self._last_ic_std
+        if ic_std is None or ic_std == 0:
+            return None
+
+        return ic / ic_std
 
     def _save_model_files(
         self,

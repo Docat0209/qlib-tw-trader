@@ -2,6 +2,7 @@
 模型管理 API
 """
 
+import asyncio
 import json
 import shutil
 from datetime import timedelta
@@ -211,6 +212,23 @@ async def get_training_status(
     return ModelStatus(**status)
 
 
+@router.get("/data-range")
+async def get_data_range():
+    """取得 qlib 資料的日期範圍"""
+    from src.services.model_trainer import ModelTrainer
+
+    trainer = ModelTrainer(qlib_data_dir="data/qlib")
+    data_start, data_end = trainer.get_data_date_range()
+
+    if not data_start or not data_end:
+        raise HTTPException(status_code=404, detail="No qlib data found")
+
+    return {
+        "start": data_start.isoformat(),
+        "end": data_end.isoformat(),
+    }
+
+
 @router.post("/train", response_model=TrainResponse)
 async def trigger_training(
     data: TrainRequest,
@@ -219,40 +237,84 @@ async def trigger_training(
     """觸發模型訓練（非同步）"""
     from datetime import date as date_type
 
-    repo = TrainingRepository(session)
+    from src.repositories.database import get_session
+    from src.services.job_manager import job_manager
+    from src.services.model_trainer import ModelTrainer
+
     factor_repo = FactorRepository(session)
 
-    # 計算日期
-    today = date_type.today()
-    valid_end = today
-    train_end = data.train_end or (today - timedelta(days=VALID_DAYS))
+    # 取得 qlib 資料的實際日期範圍
+    trainer = ModelTrainer(qlib_data_dir="data/qlib")
+    data_start, data_end = trainer.get_data_date_range()
+
+    if not data_end:
+        raise HTTPException(status_code=400, detail="No qlib data found")
+
+    # 使用資料結束日期（而非今天）來計算期間
+    valid_end = data_end
+    train_end = data.train_end or (valid_end - timedelta(days=VALID_DAYS))
 
     # 訓練期間
     train_start = train_end - timedelta(days=TRAIN_DAYS)
     valid_start = train_end + timedelta(days=1)
 
+    # 確保日期在資料範圍內
+    if data_start and train_start < data_start:
+        train_start = data_start
+
     # 生成模型名稱
     name = f"{train_start.strftime('%Y-%m')}~{train_end.strftime('%Y-%m')}"
 
-    # 取得啟用的因子
+    # 確認有啟用的因子
     enabled_factors = factor_repo.get_all(enabled=True)
-    candidate_ids = [f.id for f in enabled_factors]
+    if not enabled_factors:
+        raise HTTPException(status_code=400, detail="No enabled factors found")
 
-    run = repo.create_run(
-        train_start=train_start,
-        train_end=train_end,
-        valid_start=valid_start,
-        valid_end=valid_end,
+    # 定義訓練任務（使用 asyncio.to_thread 運行同步訓練）
+    async def training_task(progress_callback, **kwargs):
+        """訓練任務 wrapper"""
+        task_session = get_session()
+        loop = asyncio.get_event_loop()
+
+        try:
+            trainer = ModelTrainer(qlib_data_dir="data/qlib")
+
+            # 同步回調轉非同步（在主線程安全調用）
+            def sync_progress(progress: int, message: str):
+                loop.call_soon_threadsafe(
+                    lambda: asyncio.create_task(progress_callback(progress, message))
+                )
+
+            # 使用 to_thread 運行同步訓練
+            result = await asyncio.to_thread(
+                trainer.train,
+                session=task_session,
+                train_start=train_start,
+                train_end=train_end,
+                valid_start=valid_start,
+                valid_end=valid_end,
+                on_progress=sync_progress,
+            )
+
+            return {
+                "run_id": result.run_id,
+                "model_name": result.model_name,
+                "model_ic": result.model_ic,
+                "icir": result.icir,
+                "selected_factor_count": len(result.selected_factor_ids),
+            }
+        finally:
+            task_session.close()
+
+    # 建立非同步訓練任務
+    job_id = await job_manager.create_job(
+        job_type="train",
+        task_fn=training_task,
+        message=f"Training model: {name}",
     )
 
-    # 更新 name 和 candidate_factor_ids
-    run.name = name
-    run.candidate_factor_ids = json.dumps(candidate_ids)
-    repo._session.commit()
-
-    # TODO: 實作非同步訓練任務
     return TrainResponse(
-        job_id=f"train_{run.id}",
+        job_id=job_id,
         status="queued",
         message=f"訓練任務已排入佇列 ({name})",
     )
@@ -331,6 +393,8 @@ async def delete_model(
     session: Session = Depends(get_db),
 ):
     """刪除模型"""
+    from src.services.job_manager import job_manager
+
     run_id = _parse_model_id(model_id)
     repo = TrainingRepository(session)
 
@@ -340,6 +404,18 @@ async def delete_model(
 
     if run.is_current:
         raise HTTPException(status_code=400, detail="Cannot delete current model")
+
+    # 如果是 running/queued，嘗試取消關聯的 job
+    if run.status in ("running", "queued"):
+        # 查找關聯的 job 並取消
+        from src.repositories.job import JobRepository
+        job_repo = JobRepository(session)
+        active_jobs = job_repo.get_active()
+        for job in active_jobs:
+            if job.job_type == "train":
+                await job_manager.cancel_job(job.id)
+                session.delete(job)
+        session.commit()
 
     # 刪除模型檔案目錄
     if run.name:

@@ -6,6 +6,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     Numeric,
@@ -339,7 +340,7 @@ class Job(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)  # UUID
     job_type: Mapped[str] = mapped_column(String(20))  # train/backtest/sync
     status: Mapped[str] = mapped_column(String(20), default="queued")
-    progress: Mapped[int] = mapped_column(Integer, default=0)
+    progress: Mapped[float] = mapped_column(Float, default=0.0)
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     result: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
     started_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
