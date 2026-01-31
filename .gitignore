@@ -51,6 +51,9 @@ htmlcov/
 *.sqlite3
 data/*.db
 
+# Qlib export data
+data/qlib/
+
 # Logs
 *.log
 

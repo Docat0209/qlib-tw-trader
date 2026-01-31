@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.interfaces.exceptions import register_exception_handlers
-from src.interfaces.routers import backtest, dashboard, datasets, factor, model, performance, portfolio, sync, system, universe, websocket
+from src.interfaces.routers import backtest, dashboard, datasets, factor, model, performance, portfolio, qlib, sync, system, universe, websocket
 from src.repositories.database import init_db
 
 
@@ -47,6 +47,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["dashboard"])
     app.include_router(websocket.router, prefix="/api/v1", tags=["websocket"])
     app.include_router(backtest.router, prefix="/api/v1/backtest", tags=["backtest"])
+    app.include_router(qlib.router, prefix="/api/v1", tags=["qlib"])
 
     # 註冊例外處理
     register_exception_handlers(app)
