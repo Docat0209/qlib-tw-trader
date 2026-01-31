@@ -10,6 +10,7 @@ from src.repositories.daily import (
     SecuritiesLendingRepository,
     ShareholdingRepository,
 )
+from src.repositories.hyperparams import HyperparamsRepository
 from src.repositories.periodic import MonthlyRevenueRepository
 
 __all__ = [
@@ -28,4 +29,6 @@ __all__ = [
     "SecuritiesLendingRepository",
     # Periodic
     "MonthlyRevenueRepository",
+    # Hyperparams
+    "HyperparamsRepository",
 ]

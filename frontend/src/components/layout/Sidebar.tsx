@@ -9,6 +9,7 @@ import {
   Settings,
   Zap,
   Layers,
+  SlidersHorizontal,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -22,6 +23,7 @@ const navigation: NavigationType[] = [
     name: 'Models',
     items: [
       { name: 'Factors', href: '/models/factors', icon: Brain },
+      { name: 'Hyperparams', href: '/models/hyperparams', icon: SlidersHorizontal },
       { name: 'Training', href: '/models/training', icon: LineChart },
       { name: 'Backtest', href: '/models/backtest', icon: BarChart3 },
     ],

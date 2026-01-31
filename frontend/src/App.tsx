@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom'
 import { Layout } from '@/components/layout/Layout'
 import { Dashboard } from '@/pages/Dashboard'
 import { Factors } from '@/pages/models/Factors'
+import { Hyperparams } from '@/pages/models/Hyperparams'
 import { Training } from '@/pages/models/Training'
 import { Backtest } from '@/pages/models/Backtest'
 import { Positions } from '@/pages/portfolio/Positions'
@@ -18,6 +19,7 @@ function App() {
         <Route index element={<Dashboard />} />
         <Route path="models">
           <Route path="factors" element={<Factors />} />
+          <Route path="hyperparams" element={<Hyperparams />} />
           <Route path="training" element={<Training />} />
           <Route path="backtest" element={<Backtest />} />
         </Route>

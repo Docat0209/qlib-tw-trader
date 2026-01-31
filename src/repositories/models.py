@@ -251,6 +251,10 @@ class TrainingRun(Base):
     # 因子池記錄（JSON 格式的 ID 列表）
     candidate_factor_ids: Mapped[str | None] = mapped_column(Text, nullable=True)
     selected_factor_ids: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 使用的超參數組
+    hyperparams_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("hyperparams.id"), nullable=True
+    )
 
     selected_factors: Mapped[list["TrainingFactorResult"]] = relationship(
         back_populates="training_run"
@@ -361,4 +365,25 @@ class Backtest(Base):
     result: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
     equity_curve: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
     status: Mapped[str] = mapped_column(String(20), default="queued")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
+
+
+# =============================================================================
+# 超參數
+# =============================================================================
+
+
+class Hyperparams(Base):
+    """超參數組"""
+
+    __tablename__ = "hyperparams"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True)
+    cultivated_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
+    n_periods: Mapped[int] = mapped_column(Integer)
+    params_json: Mapped[str] = mapped_column(Text)  # LightGBM 超參數 JSON
+    stability_json: Mapped[str] = mapped_column(Text)  # 穩定性指標 JSON
+    periods_json: Mapped[str] = mapped_column(Text)  # 各窗口結果 JSON
+    is_current: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)

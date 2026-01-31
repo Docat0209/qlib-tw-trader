@@ -373,6 +373,14 @@ async def trigger_training(
     if not enabled_factors:
         raise HTTPException(status_code=400, detail="No enabled factors found")
 
+    # 驗證 hyperparams_id（若有指定）
+    if data.hyperparams_id:
+        from src.repositories.hyperparams import HyperparamsRepository
+        hp_repo = HyperparamsRepository(session)
+        hp = hp_repo.get_by_id(data.hyperparams_id)
+        if not hp:
+            raise HTTPException(status_code=404, detail="Hyperparams not found")
+
     # 定義訓練任務（使用 asyncio.to_thread 運行同步訓練）
     async def training_task(progress_callback, **kwargs):
         """訓練任務 wrapper"""
@@ -397,6 +405,7 @@ async def trigger_training(
                 valid_start=valid_start,
                 valid_end=valid_end,
                 on_progress=sync_progress,
+                hyperparams_id=data.hyperparams_id,
             )
 
             return {

@@ -16,7 +16,8 @@ import {
   Star,
   XCircle,
 } from 'lucide-react'
-import { modelApi, ModelSummary, ModelStatus, Model, FactorSummary, DataRangeResponse } from '@/api/client'
+import { modelApi, ModelSummary, ModelStatus, Model, FactorSummary, DataRangeResponse, hyperparamsApi, HyperparamsSummary } from '@/api/client'
+import { Link } from 'react-router-dom'
 import { useJobs } from '@/hooks/useJobs'
 import { useFetchOnChange } from '@/hooks/useFetchOnChange'
 
@@ -32,6 +33,8 @@ export function Training() {
   const [actionLoading, setActionLoading] = useState(false)
   const [dataRange, setDataRange] = useState<DataRangeResponse | null>(null)
   const [selectedMonth, setSelectedMonth] = useState<string>('')
+  const [hyperparamsList, setHyperparamsList] = useState<HyperparamsSummary[]>([])
+  const [selectedHpId, setSelectedHpId] = useState<number | null>(null)
 
   // WebSocket 訓練進度追蹤
   const { activeJob, clearJob, cancelJob, isConnected } = useJobs()
@@ -44,10 +47,11 @@ export function Training() {
     setLoading(true)
     setError(null)
     try {
-      const [listRes, statusRes, rangeRes] = await Promise.all([
+      const [listRes, statusRes, rangeRes, hpRes] = await Promise.all([
         modelApi.list(),
         modelApi.status(),
         modelApi.dataRange().catch(() => null),
+        hyperparamsApi.list().catch(() => ({ items: [] })),
       ])
       setModels(listRes.items)
       setStatus(statusRes)
@@ -61,20 +65,27 @@ export function Training() {
           setSelectedMonth(defaultMonth)
         }
       }
+      // 載入超參數列表並預設選擇 current
+      setHyperparamsList(hpRes.items)
+      if (selectedHpId === null && hpRes.items.length > 0) {
+        const current = hpRes.items.find(hp => hp.is_current)
+        setSelectedHpId(current?.id ?? hpRes.items[0].id)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data')
     } finally {
       setLoading(false)
     }
-  }, [selectedMonth])
+  }, [selectedMonth, selectedHpId])
 
   // 初始載入
   useEffect(() => {
     fetchData()
   }, [fetchData])
 
-  // 自動刷新（監聽 data_updated 事件）
+  // 自動刷新（監聯 data_updated 事件）
   useFetchOnChange('models', fetchData)
+  useFetchOnChange('hyperparams', fetchData)
 
   // 監聽訓練完成，自動刷新列表
   useEffect(() => {
@@ -173,7 +184,10 @@ export function Training() {
       const trainEndDate = new Date(year, month, 0) // 該月最後一天
       const trainEnd = trainEndDate.toISOString().split('T')[0]
 
-      await modelApi.train({ train_end: trainEnd })
+      await modelApi.train({
+        train_end: trainEnd,
+        hyperparams_id: selectedHpId ?? undefined,
+      })
       // 訓練已啟動，立即刷新列表
       await fetchData()
     } catch (err) {
@@ -269,10 +283,35 @@ export function Training() {
               ))}
             </select>
           </div>
+          {/* 超參數選擇 */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-muted-foreground">Hyperparams:</label>
+            {hyperparamsList.length > 0 ? (
+              <select
+                className="px-3 py-2 rounded-lg border border-border bg-background text-sm"
+                value={selectedHpId ?? ''}
+                onChange={(e) => setSelectedHpId(e.target.value ? Number(e.target.value) : null)}
+                disabled={isTraining}
+              >
+                {hyperparamsList.map((hp) => (
+                  <option key={hp.id} value={hp.id}>
+                    {hp.name}{hp.is_current ? ' (Current)' : ''}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <Link
+                to="/models/hyperparams"
+                className="text-sm text-blue hover:underline"
+              >
+                Cultivate First
+              </Link>
+            )}
+          </div>
           <button
             className="btn btn-primary"
             onClick={handleStartTraining}
-            disabled={actionLoading || isTraining || !selectedMonth}
+            disabled={actionLoading || isTraining || !selectedMonth || hyperparamsList.length === 0}
           >
             {isTraining ? (
               <Loader2 className="h-4 w-4 animate-spin" />

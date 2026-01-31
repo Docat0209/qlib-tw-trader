@@ -500,6 +500,7 @@ class ModelTrainer:
         valid_start: date,
         valid_end: date,
         on_progress: Callable[[float, str], None] | None = None,
+        hyperparams_id: int | None = None,
     ) -> TrainingResult:
         """
         執行 LightGBM IC 增量選擇訓練
@@ -511,6 +512,7 @@ class ModelTrainer:
             valid_start: 驗證開始日期
             valid_end: 驗證結束日期
             on_progress: 進度回調 (progress: 0-100, message: str)
+            hyperparams_id: 指定使用的超參數組 ID
 
         Returns:
             TrainingResult
@@ -537,6 +539,7 @@ class ModelTrainer:
         )
         run.name = model_name
         run.candidate_factor_ids = json.dumps(candidate_ids)
+        run.hyperparams_id = hyperparams_id
         run.status = "running"
         session.commit()
 
@@ -557,14 +560,25 @@ class ModelTrainer:
             if all_data.empty:
                 raise ValueError("No data available for the specified date range")
 
-            # === 超參數載入（優先使用已培養的超參數）===
-            cultivated_params = self.load_cultivated_hyperparameters()
+            # === 超參數載入 ===
+            cultivated_params = None
+
+            # 優先從 DB 載入（若指定了 hyperparams_id）
+            if hyperparams_id:
+                from src.repositories.hyperparams import HyperparamsRepository
+                hp_repo = HyperparamsRepository(session)
+                cultivated_params = hp_repo.get_params(hyperparams_id)
+                if cultivated_params and on_progress:
+                    on_progress(10.0, f"Using hyperparams (id={hyperparams_id})")
+
+            # Fallback: 嘗試從檔案載入（向後兼容）
+            if not cultivated_params:
+                cultivated_params = self.load_cultivated_hyperparameters()
+                if cultivated_params and on_progress:
+                    on_progress(10.0, "Using pre-cultivated hyperparameters (file)")
 
             if cultivated_params:
-                # 使用已培養的超參數
                 self._optimized_params = cultivated_params
-                if on_progress:
-                    on_progress(10.0, "Using pre-cultivated hyperparameters")
             else:
                 # 無培養超參數，執行 Optuna 優化
                 if on_progress:
@@ -1160,7 +1174,7 @@ class ModelTrainer:
             periods=period_results,
         )
 
-        self._save_cultivated_hyperparameters(result)
+        # 注意：不再保存到檔案，由 API 層存入資料庫
 
         if on_progress:
             on_progress(100.0, f"Cultivation complete: {len(period_results)} periods")
