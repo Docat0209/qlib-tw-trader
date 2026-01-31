@@ -1,13 +1,13 @@
 """
-模型訓練服務 - IC 增量選擇法
+模型訓練服務 - LightGBM IC 增量選擇法
 """
 
 import json
-import random
+import pickle
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -48,12 +48,13 @@ class TrainingResult:
 
 
 class ModelTrainer:
-    """模型訓練器 - IC 增量選擇法"""
+    """模型訓練器 - LightGBM IC 增量選擇法"""
 
     def __init__(self, qlib_data_dir: Path | str):
         self.data_dir = Path(qlib_data_dir)
         self._qlib_initialized = False
         self._last_ic_std: float | None = None  # 用於 ICIR 計算
+        self._data_cache: dict[str, pd.DataFrame] = {}  # 資料快取
 
     def _init_qlib(self) -> None:
         """初始化 qlib"""
@@ -115,6 +116,190 @@ class ModelTrainer:
 
         return min_start, max_end
 
+    def _load_data(
+        self,
+        factors: list[Factor],
+        start_date: date,
+        end_date: date,
+    ) -> pd.DataFrame:
+        """
+        載入因子資料和標籤
+
+        Returns:
+            DataFrame with columns: [factor1, factor2, ..., label]
+            Index: MultiIndex (datetime, instrument)
+        """
+        self._init_qlib()
+        from qlib.data import D
+
+        instruments = self._get_instruments()
+        if not instruments:
+            raise ValueError("No instruments found in qlib data directory")
+
+        # 構建因子表達式
+        fields = [f.expression for f in factors]
+        names = [f.name for f in factors]
+
+        # 標籤：未來 1 日收益率
+        label_expr = "Ref($close, -2) / Ref($close, -1) - 1"
+        all_fields = fields + [label_expr]
+        all_names = names + ["label"]
+
+        # 讀取資料
+        df = D.features(
+            instruments=instruments,
+            fields=all_fields,
+            start_time=start_date.strftime("%Y-%m-%d"),
+            end_time=end_date.strftime("%Y-%m-%d"),
+        )
+
+        if df.empty:
+            return df
+
+        # 重命名欄位
+        df.columns = all_names
+
+        return df
+
+    def _prepare_train_valid_data(
+        self,
+        df: pd.DataFrame,
+        train_start: date,
+        train_end: date,
+        valid_start: date,
+        valid_end: date,
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+        """
+        準備訓練和驗證資料
+
+        Returns:
+            (X_train, X_valid, y_train, y_valid)
+        """
+        # 分離特徵和標籤
+        feature_cols = [c for c in df.columns if c != "label"]
+        X = df[feature_cols]
+        y = df["label"]
+
+        # 按日期分割
+        train_mask = (df.index.get_level_values("datetime").date >= train_start) & \
+                     (df.index.get_level_values("datetime").date <= train_end)
+        valid_mask = (df.index.get_level_values("datetime").date >= valid_start) & \
+                     (df.index.get_level_values("datetime").date <= valid_end)
+
+        X_train = X[train_mask].dropna()
+        X_valid = X[valid_mask].dropna()
+        y_train = y[train_mask].dropna()
+        y_valid = y[valid_mask].dropna()
+
+        # 對齊索引
+        common_train = X_train.index.intersection(y_train.index)
+        common_valid = X_valid.index.intersection(y_valid.index)
+
+        return (
+            X_train.loc[common_train],
+            X_valid.loc[common_valid],
+            y_train.loc[common_train],
+            y_valid.loc[common_valid],
+        )
+
+    def _train_lgbm(
+        self,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_valid: pd.DataFrame,
+        y_valid: pd.Series,
+    ) -> Any:
+        """
+        訓練 LightGBM 模型
+
+        Returns:
+            訓練好的 LightGBM Booster
+        """
+        import lightgbm as lgb
+
+        # 每日截面標準化
+        def zscore_by_date(df: pd.DataFrame) -> pd.DataFrame:
+            return df.groupby(level="datetime", group_keys=False).apply(
+                lambda x: (x - x.mean()) / (x.std() + 1e-8)
+            )
+
+        X_train_norm = zscore_by_date(X_train)
+        X_valid_norm = zscore_by_date(X_valid)
+
+        # 建立 LightGBM Dataset
+        train_data = lgb.Dataset(X_train_norm.values, label=y_train.values)
+        valid_data = lgb.Dataset(X_valid_norm.values, label=y_valid.values, reference=train_data)
+
+        # 訓練參數
+        params = {
+            "objective": "regression",
+            "metric": "mse",
+            "boosting_type": "gbdt",
+            "num_leaves": 31,
+            "learning_rate": 0.05,
+            "feature_fraction": 0.8,
+            "bagging_fraction": 0.8,
+            "bagging_freq": 5,
+            "verbose": -1,
+            "seed": 42,
+        }
+
+        # 訓練
+        model = lgb.train(
+            params,
+            train_data,
+            num_boost_round=500,
+            valid_sets=[valid_data],
+            callbacks=[
+                lgb.early_stopping(stopping_rounds=50, verbose=False),
+            ],
+        )
+
+        return model
+
+    def _calculate_prediction_ic(
+        self,
+        model: Any,
+        X_valid: pd.DataFrame,
+        y_valid: pd.Series,
+    ) -> float:
+        """
+        計算模型預測的 IC
+
+        Returns:
+            平均 IC 值
+        """
+        # 標準化驗證資料
+        def zscore_by_date(df: pd.DataFrame) -> pd.DataFrame:
+            return df.groupby(level="datetime", group_keys=False).apply(
+                lambda x: (x - x.mean()) / (x.std() + 1e-8)
+            )
+
+        X_valid_norm = zscore_by_date(X_valid)
+
+        # 預測
+        predictions = model.predict(X_valid_norm.values)
+
+        # 構建 DataFrame
+        pred_df = pd.DataFrame({
+            "pred": predictions,
+            "label": y_valid.values,
+        }, index=y_valid.index)
+
+        # 計算每日截面 IC
+        def calc_corr(group: pd.DataFrame) -> float:
+            if len(group) < 2:
+                return np.nan
+            return group["pred"].corr(group["label"])
+
+        daily_ic = pred_df.groupby(level="datetime").apply(calc_corr)
+
+        # 保存 IC 標準差
+        self._last_ic_std = float(daily_ic.std()) if len(daily_ic) > 1 else None
+
+        mean_ic = daily_ic.mean()
+        return float(mean_ic) if not np.isnan(mean_ic) else 0.0
+
     def train(
         self,
         session: Session,
@@ -125,7 +310,7 @@ class ModelTrainer:
         on_progress: Callable[[float, str], None] | None = None,
     ) -> TrainingResult:
         """
-        執行 IC 增量選擇訓練
+        執行 LightGBM IC 增量選擇訓練
 
         Args:
             session: 資料庫 Session
@@ -167,9 +352,23 @@ class ModelTrainer:
             on_progress(0.0, "Initializing training...")
 
         try:
-            # 執行 IC 增量選擇
-            selected_ids, all_results = self._incremental_ic_selection(
+            # 預載入所有因子資料
+            if on_progress:
+                on_progress(2.0, "Loading factor data...")
+
+            all_data = self._load_data(
                 factors=enabled_factors,
+                start_date=train_start,
+                end_date=valid_end,
+            )
+
+            if all_data.empty:
+                raise ValueError("No data available for the specified date range")
+
+            # 執行 IC 增量選擇
+            selected_factors, all_results, best_model = self._incremental_ic_selection(
+                factors=enabled_factors,
+                all_data=all_data,
                 train_start=train_start,
                 train_end=train_end,
                 valid_start=valid_start,
@@ -177,16 +376,28 @@ class ModelTrainer:
                 on_progress=on_progress,
             )
 
-            # 計算最終模型 IC
-            model_ic = self._calculate_model_ic(
-                selected_ids=[f.id for f in enabled_factors if f.id in selected_ids],
-                factors=enabled_factors,
-                valid_start=valid_start,
-                valid_end=valid_end,
-            )
+            # 計算最終模型 IC（使用最佳模型的 IC）
+            # 注意：必須使用 selected_factors 的原始順序，因為 LightGBM 按位置識別特徵
+            if best_model is not None and selected_factors:
+                factor_names = [f.name for f in selected_factors]
+                X_valid = all_data[factor_names]
+                y_valid = all_data["label"]
+
+                # 分割驗證資料
+                valid_mask = (all_data.index.get_level_values("datetime").date >= valid_start) & \
+                             (all_data.index.get_level_values("datetime").date <= valid_end)
+                X_valid = X_valid[valid_mask].dropna()
+                y_valid = y_valid[valid_mask].dropna()
+                common_idx = X_valid.index.intersection(y_valid.index)
+                X_valid = X_valid.loc[common_idx]
+                y_valid = y_valid.loc[common_idx]
+
+                model_ic = self._calculate_prediction_ic(best_model, X_valid, y_valid)
+            else:
+                model_ic = 0.0
 
             # 計算 ICIR
-            icir = self._calculate_icir(model_ic, len(selected_ids))
+            icir = self._calculate_icir(model_ic, len(selected_factors))
 
             # 保存因子結果
             for result in all_results:
@@ -198,18 +409,18 @@ class ModelTrainer:
                 )
 
             # 完成訓練
-            run.selected_factor_ids = json.dumps(list(selected_ids))
+            run.selected_factor_ids = json.dumps([f.id for f in selected_factors])
             training_repo.complete_run(
                 run_id=run.id,
                 model_ic=model_ic,
                 icir=icir,
-                factor_count=len(selected_ids),
+                factor_count=len(selected_factors),
             )
 
-            # 保存模型檔案
+            # 保存模型檔案（必須使用原始 selected_factors 保持順序）
             self._save_model_files(
                 model_name=model_name,
-                selected_factors=[f for f in enabled_factors if f.id in selected_ids],
+                selected_factors=selected_factors,
                 config={
                     "train_start": train_start.isoformat(),
                     "train_end": train_end.isoformat(),
@@ -218,12 +429,8 @@ class ModelTrainer:
                     "model_ic": model_ic,
                     "icir": icir,
                 },
+                model=best_model,
             )
-
-            if on_progress:
-                on_progress(95.0, "Calculating final metrics...")
-
-            # ... 後續處理 ...
 
             if on_progress:
                 on_progress(100.0, "Training completed")
@@ -233,7 +440,7 @@ class ModelTrainer:
                 model_name=model_name,
                 model_ic=model_ic,
                 icir=icir,
-                selected_factor_ids=list(selected_ids),
+                selected_factor_ids=[f.id for f in selected_factors],
                 all_results=all_results,
             )
 
@@ -244,61 +451,143 @@ class ModelTrainer:
             session.commit()
             raise e
 
+    def _calculate_single_factor_ic(
+        self,
+        factor: Factor,
+        all_data: pd.DataFrame,
+        train_start: date,
+        train_end: date,
+    ) -> float:
+        """
+        計算單因子 IC（用於排序）
+
+        注意：只使用訓練期資料，避免資料洩漏
+        """
+        try:
+            # 只使用訓練期資料（不可偷看驗證期）
+            train_mask = (all_data.index.get_level_values("datetime").date >= train_start) & \
+                         (all_data.index.get_level_values("datetime").date <= train_end)
+
+            factor_data = all_data[[factor.name, "label"]][train_mask].dropna()
+            if len(factor_data) < 100:
+                return 0.0
+
+            # 計算每日截面 IC（因子值與標籤的相關性）
+            def calc_corr(group: pd.DataFrame) -> float:
+                if len(group) < 5:
+                    return np.nan
+                return group[factor.name].corr(group["label"])
+
+            daily_ic = factor_data.groupby(level="datetime").apply(calc_corr)
+            mean_ic = daily_ic.mean()
+            return float(mean_ic) if not np.isnan(mean_ic) else 0.0
+        except Exception:
+            return 0.0
+
     def _incremental_ic_selection(
         self,
         factors: list[Factor],
+        all_data: pd.DataFrame,
         train_start: date,
         train_end: date,
         valid_start: date,
         valid_end: date,
         on_progress: Callable[[float, str], None] | None = None,
-    ) -> tuple[set[int], list[FactorEvalResult]]:
+    ) -> tuple[list[Factor], list[FactorEvalResult], Any]:
         """
-        IC 增量選擇法
+        LightGBM IC 增量選擇法
+
+        1. 先計算每個因子的單獨 IC
+        2. 按 IC 絕對值降序排列（高預測力因子優先）
+        3. 依序測試加入，若模型 IC 提升則納入
 
         Returns:
-            (selected_factor_ids, all_results)
+            (selected_factors, all_results, best_model)
+            注意：selected_factors 保持選擇順序，這對模型預測至關重要
         """
-        # 隨機打亂因子順序
-        shuffled_factors = factors.copy()
-        random.shuffle(shuffled_factors)
+        if on_progress:
+            on_progress(3.0, "Calculating single-factor ICs...")
 
-        selected_ids: set[int] = set()
+        # 計算每個因子的單獨 IC（只用訓練期，避免資料洩漏）
+        factor_ics: list[tuple[Factor, float]] = []
+        for factor in factors:
+            ic = self._calculate_single_factor_ic(factor, all_data, train_start, train_end)
+            factor_ics.append((factor, ic))
+
+        # 按 IC 絕對值降序排列（高預測力因子優先測試）
+        sorted_factors = sorted(factor_ics, key=lambda x: abs(x[1]), reverse=True)
+
+        if on_progress:
+            on_progress(5.0, f"Sorted {len(sorted_factors)} factors by IC")
+
+        selected_factors: list[Factor] = []
         all_results: list[FactorEvalResult] = []
         current_ic = 0.0
+        best_model = None
 
-        total = len(shuffled_factors)
-        for i, factor in enumerate(shuffled_factors):
-            # 進度：5% 初始化 + 90% 因子挑選（每個因子佔 90/total %）
+        total = len(sorted_factors)
+        for i, (factor, single_ic) in enumerate(sorted_factors):
+            # 進度：5% 初始化 + 90% 因子挑選
             if on_progress:
                 progress = round(5.0 + (i / total) * 90.0, 1)
-                on_progress(progress, f"Evaluating factor ({i+1}/{total}): {factor.name}")
+                on_progress(progress, f"Evaluating ({i+1}/{total}): {factor.name} (single IC: {single_ic:.4f})")
 
-            # 計算加入此因子後的 IC
-            test_ids = selected_ids | {factor.id}
-            new_ic = self._calculate_model_ic(
-                selected_ids=list(test_ids),
-                factors=factors,
-                valid_start=valid_start,
-                valid_end=valid_end,
+            # 測試加入此因子
+            test_factors = selected_factors + [factor]
+            test_factor_names = [f.name for f in test_factors]
+
+            # 準備資料
+            X = all_data[test_factor_names]
+            y = all_data["label"]
+
+            X_train, X_valid, y_train, y_valid = self._prepare_train_valid_data(
+                pd.concat([X, y], axis=1),
+                train_start, train_end, valid_start, valid_end,
             )
 
-            # 記錄因子的 IC 貢獻
-            ic_contribution = new_ic - current_ic
+            if X_train.empty or X_valid.empty:
+                # 資料不足，跳過此因子
+                all_results.append(
+                    FactorEvalResult(
+                        factor_id=factor.id,
+                        factor_name=factor.name,
+                        ic_value=0.0,
+                        selected=False,
+                    )
+                )
+                continue
+
+            # 訓練 LightGBM
+            try:
+                model = self._train_lgbm(X_train, y_train, X_valid, y_valid)
+                new_ic = self._calculate_prediction_ic(model, X_valid, y_valid)
+            except Exception as e:
+                # 訓練失敗，跳過此因子
+                all_results.append(
+                    FactorEvalResult(
+                        factor_id=factor.id,
+                        factor_name=factor.name,
+                        ic_value=0.0,
+                        selected=False,
+                    )
+                )
+                continue
 
             # 嚴格大於才入選
             if new_ic > current_ic:
-                selected_ids.add(factor.id)
+                selected_factors.append(factor)
                 current_ic = new_ic
+                best_model = model
                 selected = True
             else:
                 selected = False
 
+            # 記錄結果（使用單因子 IC，更能反映因子品質）
             all_results.append(
                 FactorEvalResult(
                     factor_id=factor.id,
                     factor_name=factor.name,
-                    ic_value=ic_contribution,
+                    ic_value=single_ic,
                     selected=selected,
                 )
             )
@@ -307,102 +596,17 @@ class ModelTrainer:
             if on_progress:
                 progress = round(5.0 + ((i + 1) / total) * 90.0, 1)
                 status = "selected" if selected else "skipped"
-                on_progress(progress, f"Factor {factor.name}: {status} (IC: {ic_contribution:.4f})")
+                on_progress(progress, f"Factor {factor.name}: {status} (IC: {new_ic:.4f})")
 
-        return selected_ids, all_results
-
-    def _calculate_model_ic(
-        self,
-        selected_ids: list[int],
-        factors: list[Factor],
-        valid_start: date,
-        valid_end: date,
-    ) -> float:
-        """
-        計算模型整體 IC
-
-        IC = 因子值與未來收益率的皮爾遜相關係數
-        使用 qlib 計算因子值，然後與未來收益率計算相關性
-        """
-        if not selected_ids:
-            return 0.0
-
-        self._init_qlib()
-
-        from qlib.data import D
-
-        # 1. 取得股票池
-        instruments = self._get_instruments()
-        if not instruments:
-            raise ValueError("No instruments found in qlib data directory")
-
-        # 2. 建立因子表達式列表
-        selected_factors = [f for f in factors if f.id in selected_ids]
-        if not selected_factors:
-            return 0.0
-
-        fields = [f.expression for f in selected_factors]
-
-        # 3. 定義未來收益率 (qlib 預設: T+1 到 T+2 的 1 日報酬)
-        label_expr = "Ref($close, -2) / Ref($close, -1) - 1"
-        all_fields = fields + [label_expr]
-
-        # 4. 讀取資料
-        try:
-            df = D.features(
-                instruments=instruments,
-                fields=all_fields,
-                start_time=valid_start.strftime("%Y-%m-%d"),
-                end_time=valid_end.strftime("%Y-%m-%d"),
-            )
-        except Exception as e:
-            raise RuntimeError(f"Failed to load qlib data: {e}")
-
-        if df.empty:
-            return 0.0
-
-        # 5. 計算組合因子分數 (標準化後等權平均)
-        factor_cols = df.columns[:-1]
-        label_col = df.columns[-1]
-
-        # 每日截面標準化
-        def zscore_by_date(group: pd.DataFrame) -> pd.DataFrame:
-            return (group - group.mean()) / (group.std() + 1e-8)
-
-        factor_zscore = df[factor_cols].groupby(level="datetime", group_keys=False).apply(
-            zscore_by_date
-        )
-        composite_score = factor_zscore.mean(axis=1)
-
-        # 6. 計算每日截面 IC
-        combined = pd.DataFrame({
-            "score": composite_score,
-            "label": df[label_col]
-        }).dropna()
-
-        if combined.empty:
-            return 0.0
-
-        def calc_corr(group: pd.DataFrame) -> float:
-            if len(group) < 2:
-                return np.nan
-            return group["score"].corr(group["label"])
-
-        daily_ic = combined.groupby(level="datetime", group_keys=False).apply(calc_corr)
-
-        # 7. 計算並保存 IC 標準差（用於 ICIR 計算）
-        self._last_ic_std = float(daily_ic.std()) if len(daily_ic) > 1 else None
-
-        # 8. 返回平均 IC
-        mean_ic = daily_ic.mean()
-        return float(mean_ic) if not np.isnan(mean_ic) else 0.0
+        # 返回 selected_factors 列表（保持順序），不是 set
+        # 順序對 LightGBM 預測至關重要，因為模型用 .values 訓練，只認位置不認名稱
+        return selected_factors, all_results, best_model
 
     def _calculate_icir(self, ic: float, factor_count: int) -> float | None:
         """計算 IC Information Ratio (ICIR = IC / std(IC))"""
         if factor_count == 0 or ic == 0:
             return None
 
-        # 使用 _calculate_model_ic 計算的 IC 標準差
         ic_std = self._last_ic_std
         if ic_std is None or ic_std == 0:
             return None
@@ -414,8 +618,9 @@ class ModelTrainer:
         model_name: str,
         selected_factors: list[Factor],
         config: dict,
+        model: Any = None,
     ) -> None:
-        """保存模型檔案"""
+        """保存模型檔案（含 LightGBM .pkl）"""
         model_dir = MODELS_DIR / model_name
         model_dir.mkdir(parents=True, exist_ok=True)
 
@@ -436,6 +641,12 @@ class ModelTrainer:
         factors_path = model_dir / "factors.json"
         with open(factors_path, "w", encoding="utf-8") as f:
             json.dump(factors_data, f, indent=2, ensure_ascii=False)
+
+        # 保存 LightGBM 模型
+        if model is not None:
+            model_path = model_dir / "model.pkl"
+            with open(model_path, "wb") as f:
+                pickle.dump(model, f)
 
 
 def run_training(

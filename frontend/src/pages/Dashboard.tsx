@@ -1,14 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { TrendingUp, TrendingDown, Database, Brain, DollarSign, Activity, Loader2, RefreshCw, AlertTriangle } from 'lucide-react'
 import { dashboardApi, DashboardSummary } from '@/api/client'
+import { useFetchOnChange } from '@/hooks/useFetchOnChange'
 
 export function Dashboard() {
   const [data, setData] = useState<DashboardSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -19,11 +20,14 @@ export function Dashboard() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [fetchData])
+
+  // 自動刷新（監聽 data_updated 事件）
+  useFetchOnChange('dashboard', fetchData)
 
   const formatPercent = (value: number | null) => {
     if (value === null) return '---'

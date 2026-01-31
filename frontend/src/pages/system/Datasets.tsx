@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { datasetsApi, universeApi, syncApi, DatasetInfo, TestResult, CategoryInfo, StockInfo, SyncStatusResponse, MonthlyStatusResponse } from '@/api/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Loader2, CheckCircle, XCircle, Play, ChevronDown, ChevronRight, RefreshCw, Wrench, Download } from 'lucide-react'
+import { useFetchOnChange } from '@/hooks/useFetchOnChange'
 
 const statusColors: Record<string, string> = {
   available: 'bg-green-500',
@@ -108,11 +109,7 @@ export function Datasets() {
   const [securitiesLendingStatus, setSecuritiesLendingStatus] = useState<SyncStatusResponse | null>(null)
   const [monthlyRevenueStatus, setMonthlyRevenueStatus] = useState<MonthlyStatusResponse | null>(null)
 
-  useEffect(() => {
-    loadData()
-  }, [])
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [
         datasetsRes, categoriesRes, universeRes,
@@ -148,7 +145,14 @@ export function Datasets() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
+
+  // 自動刷新（監聽 data_updated 事件）
+  useFetchOnChange('datasets', loadData)
 
   const refreshSyncStatus = async () => {
     try {

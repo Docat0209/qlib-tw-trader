@@ -28,6 +28,7 @@ from src.interfaces.schemas.model import (
 )
 from src.repositories.factor import FactorRepository
 from src.repositories.training import TrainingRepository
+from src.services.job_manager import broadcast_data_updated
 from src.shared.constants import TRAIN_DAYS, VALID_DAYS
 
 router = APIRouter()
@@ -426,6 +427,8 @@ async def delete_model(
     # 刪除資料庫記錄
     repo.delete(run_id)
 
+    await broadcast_data_updated("models", "delete", model_id)
+
     return {"status": "deleted", "id": model_id}
 
 
@@ -446,5 +449,7 @@ async def set_current_model(
         raise HTTPException(status_code=400, detail="Model is not completed")
 
     repo.set_current(run_id)
+
+    await broadcast_data_updated("models", "update", model_id)
 
     return {"status": "success", "id": model_id, "is_current": True}

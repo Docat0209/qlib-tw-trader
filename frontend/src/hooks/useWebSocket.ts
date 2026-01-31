@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 
+export type EntityType = 'factors' | 'models' | 'datasets' | 'backtests'
+export type ActionType = 'create' | 'update' | 'delete'
+
 export interface JobEvent {
-  type: 'job_created' | 'job_progress' | 'job_completed' | 'job_failed' | 'job_cancelled' | 'pong'
+  type: 'job_created' | 'job_progress' | 'job_completed' | 'job_failed' | 'job_cancelled' | 'data_updated' | 'pong'
   job_id?: string
   job_type?: string
   status?: string
@@ -9,6 +12,10 @@ export interface JobEvent {
   message?: string
   result?: unknown
   error?: string
+  entity?: EntityType
+  action?: ActionType
+  entity_id?: string
+  timestamp?: string
 }
 
 interface UseWebSocketOptions {

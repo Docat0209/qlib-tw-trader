@@ -14,6 +14,7 @@ from fastapi import WebSocket
 
 from src.repositories.database import get_session
 from src.repositories.job import JobRepository
+from src.shared.constants import TZ_TAIPEI
 
 
 class ConnectionManager:
@@ -194,3 +195,25 @@ class JobManager:
 
 # 全域任務管理器
 job_manager = JobManager()
+
+
+async def broadcast_data_updated(
+    entity: str,
+    action: str,
+    entity_id: str | int | None = None,
+) -> None:
+    """
+    廣播資料更新事件
+
+    Args:
+        entity: 資料類型 ("factors" | "models" | "datasets" | "backtests")
+        action: 操作類型 ("create" | "update" | "delete")
+        entity_id: 資料 ID
+    """
+    await manager.broadcast({
+        "type": "data_updated",
+        "entity": entity,
+        "action": action,
+        "entity_id": str(entity_id) if entity_id else None,
+        "timestamp": datetime.now(TZ_TAIPEI).isoformat(),
+    })

@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Plus, Edit2, ToggleLeft, ToggleRight, Brain, CheckCircle, Loader2, RefreshCw } from 'lucide-react'
 import { factorApi, Factor } from '@/api/client'
 import { FactorFormDialog } from '@/components/factors/FactorFormDialog'
+import { useFetchOnChange } from '@/hooks/useFetchOnChange'
 
 export function Factors() {
   const [factors, setFactors] = useState<Factor[]>([])
@@ -11,7 +12,7 @@ export function Factors() {
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [editingFactor, setEditingFactor] = useState<Factor | null>(null)
 
-  const fetchFactors = async () => {
+  const fetchFactors = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -22,11 +23,14 @@ export function Factors() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     fetchFactors()
-  }, [])
+  }, [fetchFactors])
+
+  // 自動刷新（監聽 data_updated 事件）
+  useFetchOnChange('factors', fetchFactors)
 
   const handleToggle = async (factor: Factor) => {
     try {

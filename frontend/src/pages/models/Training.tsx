@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { modelApi, ModelSummary, ModelStatus, Model, FactorSummary, DataRangeResponse } from '@/api/client'
 import { useJobs } from '@/hooks/useJobs'
+import { useFetchOnChange } from '@/hooks/useFetchOnChange'
 
 export function Training() {
   const [models, setModels] = useState<ModelSummary[]>([])
@@ -67,9 +68,13 @@ export function Training() {
     }
   }, [selectedMonth])
 
+  // 初始載入
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // 自動刷新（監聽 data_updated 事件）
+  useFetchOnChange('models', fetchData)
 
   // 監聽訓練完成，自動刷新列表
   useEffect(() => {

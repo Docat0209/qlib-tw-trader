@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Play, Clock, BarChart3, Loader2, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react'
 import { backtestApi, BacktestItem, BacktestDetail, modelApi, ModelHistoryItem } from '@/api/client'
 import { useJobs } from '@/hooks/useJobs'
+import { useFetchOnChange } from '@/hooks/useFetchOnChange'
 
 export function Backtest() {
   const [backtests, setBacktests] = useState<BacktestItem[]>([])
@@ -19,7 +20,7 @@ export function Backtest() {
 
   const { activeJob } = useJobs()
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -34,7 +35,7 @@ export function Backtest() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   const handleRun = async () => {
     if (!modelId) {
@@ -70,14 +71,17 @@ export function Backtest() {
 
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [fetchData])
+
+  // 自動刷新（監聽 data_updated 事件）
+  useFetchOnChange('backtests', fetchData)
 
   // Refresh when job completes
   useEffect(() => {
     if (activeJob?.status === 'completed' && activeJob.job_type === 'backtest') {
       fetchData()
     }
-  }, [activeJob])
+  }, [activeJob, fetchData])
 
   const formatPercent = (value: number | null) => {
     if (value === null) return '---'

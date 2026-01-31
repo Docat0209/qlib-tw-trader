@@ -20,6 +20,7 @@ from src.interfaces.schemas.factor import (
 )
 from src.repositories.factor import FactorRepository, seed_factors
 from src.services.factor_validator import FactorValidator
+from src.services.job_manager import broadcast_data_updated
 
 router = APIRouter()
 
@@ -110,6 +111,8 @@ async def create_factor(
         description=data.description,
     )
 
+    await broadcast_data_updated("factors", "create", factor.id)
+
     stats = repo.get_selection_stats(factor.id)
     return _factor_to_response(factor, stats)
 
@@ -141,6 +144,8 @@ async def update_factor(
     if not factor:
         raise HTTPException(status_code=404, detail="Factor not found")
 
+    await broadcast_data_updated("factors", "update", factor_id)
+
     stats = repo.get_selection_stats(factor_id)
     return _factor_to_response(factor, stats)
 
@@ -156,6 +161,8 @@ async def delete_factor(
     if not repo.delete(factor_id):
         raise HTTPException(status_code=404, detail="Factor not found")
 
+    await broadcast_data_updated("factors", "delete", factor_id)
+
 
 @router.patch("/{factor_id}/toggle", response_model=FactorResponse)
 async def toggle_factor(
@@ -168,6 +175,8 @@ async def toggle_factor(
 
     if not factor:
         raise HTTPException(status_code=404, detail="Factor not found")
+
+    await broadcast_data_updated("factors", "update", factor_id)
 
     stats = repo.get_selection_stats(factor_id)
     return _factor_to_response(factor, stats)
@@ -200,6 +209,9 @@ async def seed_default_factors(
             inserted=0,
             message="Factors already exist. Use force=true to re-seed.",
         )
+
+    await broadcast_data_updated("factors", "create")
+
     return SeedResponse(
         success=True,
         inserted=inserted,

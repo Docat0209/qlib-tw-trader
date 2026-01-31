@@ -7,8 +7,11 @@ import { Backtest } from '@/pages/models/Backtest'
 import { Positions } from '@/pages/portfolio/Positions'
 import { Performance } from '@/pages/portfolio/Performance'
 import { Datasets } from '@/pages/system/Datasets'
+import { useDataSync } from '@/hooks/useDataSync'
 
 function App() {
+  useDataSync()
+
   return (
     <Routes>
       <Route path="/" element={<Layout />}>

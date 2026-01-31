@@ -1,5 +1,11 @@
 """訓練相關常數"""
 
+from zoneinfo import ZoneInfo
+
+# === 時區 ===
+
+TZ_TAIPEI = ZoneInfo("Asia/Taipei")
+
 # === 訓練期設定 ===
 
 TRAIN_DAYS = 756  # 訓練期：3 年 (約 252 交易日/年)
