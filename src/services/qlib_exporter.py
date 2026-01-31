@@ -227,6 +227,10 @@ class QlibExporter:
         """
         導出單一股票的所有欄位
 
+        Qlib .bin 格式：
+        - 開頭 4 bytes: start_index (float32) - 資料在日曆中的起始位置
+        - 之後: 資料陣列 (float32)
+
         Returns:
             寫入的檔案數
         """
@@ -238,6 +242,9 @@ class QlibExporter:
 
         # 預先載入所有資料
         data_cache = self._load_stock_data(stock_id, start_date, end_date)
+
+        # 找出該股票有資料的第一個日期索引
+        start_index = self._find_start_index(data_cache, date_to_idx)
 
         files_written = 0
         for field in fields:
@@ -265,12 +272,34 @@ class QlibExporter:
                         if value is not None:
                             arr[idx] = float(value)
 
-            # 寫入 .bin 檔
+            # 寫入 .bin 檔（qlib 格式：start_index + data）
             bin_path = output_dir / f"{field}.day.bin"
-            arr.tofile(bin_path)
+            with open(bin_path, "wb") as f:
+                # 先寫入 start_index
+                np.array([start_index], dtype="<f").tofile(f)
+                # 再寫入資料（從 start_index 開始）
+                arr[start_index:].astype("<f").tofile(f)
             files_written += 1
 
         return files_written
+
+    def _find_start_index(
+        self,
+        data_cache: dict,
+        date_to_idx: dict[date, int],
+    ) -> int:
+        """找出該股票有資料的第一個日期索引"""
+        min_idx = float("inf")
+
+        # 從 OHLCV 找最早日期
+        ohlcv_records = data_cache.get("ohlcv", [])
+        if ohlcv_records:
+            for rec in ohlcv_records:
+                if rec.date in date_to_idx:
+                    min_idx = min(min_idx, date_to_idx[rec.date])
+                    break  # 已排序，第一個就是最早的
+
+        return int(min_idx) if min_idx != float("inf") else 0
 
     def _load_stock_data(
         self,
