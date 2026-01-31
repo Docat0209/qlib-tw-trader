@@ -48,13 +48,18 @@ class TrainingResult:
 
 
 class ModelTrainer:
-    """模型訓練器 - LightGBM IC 增量選擇法"""
+    """模型訓練器 - LightGBM IC 增量選擇法 + Optuna 超參數優化"""
+
+    # Optuna 調參設定
+    OPTUNA_N_TRIALS = 50  # 搜索次數
+    OPTUNA_TIMEOUT = 300  # 超時秒數（5分鐘）
 
     def __init__(self, qlib_data_dir: Path | str):
         self.data_dir = Path(qlib_data_dir)
         self._qlib_initialized = False
         self._last_ic_std: float | None = None  # 用於 ICIR 計算
         self._data_cache: dict[str, pd.DataFrame] = {}  # 資料快取
+        self._optimized_params: dict | None = None  # Optuna 優化後的參數
 
     def _init_qlib(self) -> None:
         """初始化 qlib"""
@@ -222,15 +227,144 @@ class ModelTrainer:
             lambda x: (x - x.mean()) / (x.std() + 1e-8)
         )
 
+    def _optimize_hyperparameters(
+        self,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_valid: pd.DataFrame,
+        y_valid: pd.Series,
+        n_trials: int | None = None,
+        timeout: int | None = None,
+        on_progress: Callable[[float, str], None] | None = None,
+    ) -> dict:
+        """
+        使用 Optuna 優化 LightGBM 超參數
+
+        Args:
+            X_train, y_train: 訓練資料
+            X_valid, y_valid: 驗證資料
+            n_trials: 搜索次數（預設 OPTUNA_N_TRIALS）
+            timeout: 超時秒數（預設 OPTUNA_TIMEOUT）
+            on_progress: 進度回調
+
+        Returns:
+            最佳超參數字典
+        """
+        import optuna
+        import lightgbm as lgb
+
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+        n_trials = n_trials or self.OPTUNA_N_TRIALS
+        timeout = timeout or self.OPTUNA_TIMEOUT
+
+        # 預處理資料（只做一次）
+        X_train_processed = self._process_inf(X_train)
+        X_valid_processed = self._process_inf(X_valid)
+        X_train_norm = self._zscore_by_date(X_train_processed).fillna(0)
+        X_valid_norm = self._zscore_by_date(X_valid_processed).fillna(0)
+
+        train_data = lgb.Dataset(X_train_norm.values, label=y_train.values)
+        valid_data = lgb.Dataset(X_valid_norm.values, label=y_valid.values, reference=train_data)
+
+        # 計算數據特徵，用於動態設定搜索範圍
+        n_samples = len(X_train)
+        n_features = X_train.shape[1]
+
+        # 動態計算搜索範圍
+        max_leaves = min(256, max(32, int(n_samples ** 0.4)))
+        max_min_data = max(100, n_samples // 100)
+
+        best_ic = [0.0]  # 用 list 以便在閉包中修改
+        trial_count = [0]
+
+        def objective(trial: optuna.Trial) -> float:
+            params = {
+                "objective": "regression",
+                "metric": "mse",
+                "boosting_type": "gbdt",
+                "verbosity": -1,
+                "seed": 42,
+                # 搜索的超參數
+                "num_leaves": trial.suggest_int("num_leaves", 16, max_leaves),
+                "max_depth": trial.suggest_int("max_depth", 4, 8),
+                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
+                "feature_fraction": trial.suggest_float("feature_fraction", 0.5, 1.0),
+                "bagging_fraction": trial.suggest_float("bagging_fraction", 0.5, 1.0),
+                "bagging_freq": trial.suggest_int("bagging_freq", 1, 7),
+                "lambda_l1": trial.suggest_float("lambda_l1", 0.1, 50.0, log=True),
+                "lambda_l2": trial.suggest_float("lambda_l2", 0.1, 50.0, log=True),
+                "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 20, max_min_data),
+            }
+
+            # 訓練模型
+            model = lgb.train(
+                params,
+                train_data,
+                num_boost_round=300,
+                valid_sets=[valid_data],
+                callbacks=[
+                    lgb.early_stopping(stopping_rounds=30, verbose=False),
+                ],
+            )
+
+            # 計算 IC
+            predictions = model.predict(X_valid_norm.values)
+            pred_df = pd.DataFrame({
+                "pred": predictions,
+                "label": y_valid.values,
+            }, index=y_valid.index)
+
+            daily_ic = pred_df.groupby(level="datetime").apply(
+                lambda g: g["pred"].corr(g["label"]) if len(g) >= 2 else np.nan
+            )
+            mean_ic = daily_ic.mean()
+            ic = float(mean_ic) if not np.isnan(mean_ic) else 0.0
+
+            # 更新進度
+            trial_count[0] += 1
+            if ic > best_ic[0]:
+                best_ic[0] = ic
+
+            if on_progress:
+                on_progress(
+                    round(2.0 + (trial_count[0] / n_trials) * 8.0, 1),
+                    f"Optuna trial {trial_count[0]}/{n_trials}: IC={ic:.4f} (best: {best_ic[0]:.4f})"
+                )
+
+            return ic
+
+        # 執行優化
+        study = optuna.create_study(direction="maximize")
+        study.optimize(objective, n_trials=n_trials, timeout=timeout, show_progress_bar=False)
+
+        # 返回最佳參數
+        best_params = {
+            "objective": "regression",
+            "metric": "mse",
+            "boosting_type": "gbdt",
+            "verbosity": -1,
+            "seed": 42,
+            **study.best_params,
+        }
+
+        return best_params
+
     def _train_lgbm(
         self,
         X_train: pd.DataFrame,
         y_train: pd.Series,
         X_valid: pd.DataFrame,
         y_valid: pd.Series,
+        params: dict | None = None,
     ) -> Any:
         """
         訓練 LightGBM 模型
+
+        Args:
+            X_train, y_train: 訓練資料
+            X_valid, y_valid: 驗證資料
+            params: 超參數（若為 None，使用優化後的參數或預設值）
 
         Returns:
             訓練好的 LightGBM Booster
@@ -253,28 +387,27 @@ class ModelTrainer:
         train_data = lgb.Dataset(X_train_norm.values, label=y_train.values)
         valid_data = lgb.Dataset(X_valid_norm.values, label=y_valid.values, reference=train_data)
 
-        # 訓練參數
-        # 注意：qlib 官方參數針對大數據集（7年、300檔、158因子）
-        # 我們的數據集較小（3年、100檔、30因子），需要調整
-        params = {
-            "objective": "regression",
-            "metric": "mse",
-            "boosting_type": "gbdt",
-            # 樹結構（適度複雜）
-            "num_leaves": 64,
-            "max_depth": 6,
-            "learning_rate": 0.05,
-            # 抽樣
-            "feature_fraction": 0.8,
-            "bagging_fraction": 0.8,
-            "bagging_freq": 5,
-            # L1/L2 正則化（適度，避免過擬合）
-            "lambda_l1": 10.0,
-            "lambda_l2": 10.0,
-            # 其他
-            "verbose": -1,
-            "seed": 42,
-        }
+        # 使用參數優先級：傳入參數 > 優化後參數 > 預設參數
+        if params is None:
+            params = self._optimized_params
+
+        if params is None:
+            # 預設參數（作為 fallback）
+            params = {
+                "objective": "regression",
+                "metric": "mse",
+                "boosting_type": "gbdt",
+                "num_leaves": 64,
+                "max_depth": 6,
+                "learning_rate": 0.05,
+                "feature_fraction": 0.8,
+                "bagging_fraction": 0.8,
+                "bagging_freq": 5,
+                "lambda_l1": 10.0,
+                "lambda_l2": 10.0,
+                "verbosity": -1,
+                "seed": 42,
+            }
 
         # 訓練
         model = lgb.train(
@@ -394,7 +527,34 @@ class ModelTrainer:
             if all_data.empty:
                 raise ValueError("No data available for the specified date range")
 
-            # 執行 IC 增量選擇
+            # === Optuna 超參數優化 ===
+            if on_progress:
+                on_progress(2.5, "Optimizing hyperparameters with Optuna...")
+
+            # 準備優化用的資料（使用所有因子）
+            factor_names = [f.name for f in enabled_factors]
+            X_all = all_data[factor_names]
+            y_all = all_data["label"]
+
+            X_train_opt, X_valid_opt, y_train_opt, y_valid_opt = self._prepare_train_valid_data(
+                pd.concat([X_all, y_all], axis=1),
+                train_start, train_end, valid_start, valid_end,
+            )
+
+            if not X_train_opt.empty and not X_valid_opt.empty:
+                self._optimized_params = self._optimize_hyperparameters(
+                    X_train_opt, y_train_opt,
+                    X_valid_opt, y_valid_opt,
+                    on_progress=on_progress,
+                )
+                if on_progress:
+                    on_progress(10.0, f"Optuna done: best params found")
+            else:
+                self._optimized_params = None
+                if on_progress:
+                    on_progress(10.0, "Skipped Optuna (insufficient data)")
+
+            # 執行 IC 增量選擇（使用優化後的參數）
             selected_factors, all_results, best_model = self._incremental_ic_selection(
                 factors=enabled_factors,
                 all_data=all_data,
@@ -447,17 +607,25 @@ class ModelTrainer:
             )
 
             # 保存模型檔案（必須使用原始 selected_factors 保持順序）
+            # 包含 Optuna 優化後的超參數
+            config = {
+                "train_start": train_start.isoformat(),
+                "train_end": train_end.isoformat(),
+                "valid_start": valid_start.isoformat(),
+                "valid_end": valid_end.isoformat(),
+                "model_ic": model_ic,
+                "icir": icir,
+            }
+            if self._optimized_params:
+                # 只保存調參的部分（不含 objective, metric 等固定參數）
+                tuned_params = {k: v for k, v in self._optimized_params.items()
+                               if k not in ("objective", "metric", "boosting_type", "verbosity", "seed")}
+                config["hyperparameters"] = tuned_params
+
             self._save_model_files(
                 model_name=model_name,
                 selected_factors=selected_factors,
-                config={
-                    "train_start": train_start.isoformat(),
-                    "train_end": train_end.isoformat(),
-                    "valid_start": valid_start.isoformat(),
-                    "valid_end": valid_end.isoformat(),
-                    "model_ic": model_ic,
-                    "icir": icir,
-                },
+                config=config,
                 model=best_model,
             )
 
@@ -535,7 +703,7 @@ class ModelTrainer:
             注意：selected_factors 保持選擇順序，這對模型預測至關重要
         """
         if on_progress:
-            on_progress(3.0, "Calculating single-factor ICs...")
+            on_progress(11.0, "Calculating single-factor ICs...")
 
         # 計算每個因子的單獨 IC（只用訓練期，避免資料洩漏）
         factor_ics: list[tuple[Factor, float]] = []
@@ -547,7 +715,7 @@ class ModelTrainer:
         sorted_factors = sorted(factor_ics, key=lambda x: abs(x[1]), reverse=True)
 
         if on_progress:
-            on_progress(5.0, f"Sorted {len(sorted_factors)} factors by IC")
+            on_progress(13.0, f"Sorted {len(sorted_factors)} factors by IC")
 
         selected_factors: list[Factor] = []
         all_results: list[FactorEvalResult] = []
@@ -556,9 +724,9 @@ class ModelTrainer:
 
         total = len(sorted_factors)
         for i, (factor, single_ic) in enumerate(sorted_factors):
-            # 進度：5% 初始化 + 90% 因子挑選
+            # 進度：13% 初始化 + 82% 因子挑選（10% Optuna + 3% 單因子 IC）
             if on_progress:
-                progress = round(5.0 + (i / total) * 90.0, 1)
+                progress = round(13.0 + (i / total) * 82.0, 1)
                 on_progress(progress, f"Evaluating ({i+1}/{total}): {factor.name} (single IC: {single_ic:.4f})")
 
             # 測試加入此因子
@@ -623,7 +791,7 @@ class ModelTrainer:
 
             # 評估完成後更新進度
             if on_progress:
-                progress = round(5.0 + ((i + 1) / total) * 90.0, 1)
+                progress = round(13.0 + ((i + 1) / total) * 82.0, 1)
                 status = "selected" if selected else "skipped"
                 on_progress(progress, f"Factor {factor.name}: {status} (IC: {new_ic:.4f})")
 
