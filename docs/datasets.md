@@ -1,13 +1,30 @@
 # Dataset 資料來源總表
 
+## 已實現的資料集（9 種）
+
+| 資料集 | 說明 | 來源 |
+|--------|------|------|
+| stock_daily | 日K線 | TWSE RWD / FinMind |
+| stock_daily_adj | 還原股價 | yfinance |
+| stock_daily_per | PER/PBR/殖利率 | TWSE RWD / FinMind |
+| stock_daily_institutional | 三大法人 | TWSE RWD / FinMind |
+| stock_daily_margin | 融資融券 | TWSE RWD / FinMind |
+| stock_daily_shareholding | 外資持股 | TWSE RWD / FinMind |
+| stock_daily_securities_lending | 借券 | FinMind |
+| stock_monthly_revenue | 月營收 | FinMind |
+| trading_calendar | 交易日曆 | 自動推算 |
+
+---
+
 ## 資料來源
 
-| 來源 | 說明 | 限制 |
-|------|------|------|
-| TWSE OpenAPI | 證交所官方 | 5秒/3次，僅當日 |
-| FinMind | 第三方整合 | 600次/時（免費） |
-| yfinance | Yahoo Finance | 免費，有還原股價 |
-| TAIFEX | 期交所（經 FinMind） | 同 FinMind |
+| 來源 | 說明 | 限制 | 狀態 |
+|------|------|------|------|
+| TWSE RWD | 證交所 Bulk API | 當日 17:30 後 | ✅ 主要來源 |
+| FinMind | 第三方整合 | 600次/時（免費） | ✅ 歷史補全 |
+| yfinance | Yahoo Finance | 免費，有還原股價 | ✅ |
+| TWSE OpenAPI | 證交所官方 | 5秒/3次，僅當日 | ❌ 不建議 |
+| TAIFEX | 期交所（經 FinMind） | 同 FinMind | 未使用 |
 
 ## 更新時間（實測 2026-01-29）
 

@@ -31,6 +31,18 @@
 
 ---
 
+## 0. System API ✅
+
+### GET /api/v1/system/health ✅
+
+健康檢查。
+
+### GET /api/v1/system/data-status ✅
+
+資料完整度狀態。
+
+---
+
 ## 1. Dashboard API
 
 ### GET /api/v1/dashboard/summary
@@ -78,9 +90,9 @@
 
 ---
 
-## 2. Factors API
+## 2. Factors API ✅
 
-### GET /api/v1/factors
+### GET /api/v1/factors ✅
 
 取得因子清單。
 
@@ -114,7 +126,7 @@
 - `times_selected`: 被模型選中的次數
 - `times_evaluated`: 參與訓練評估的總次數
 
-### GET /api/v1/factors/{factor_id}
+### GET /api/v1/factors/{factor_id} ✅
 
 取得單一因子詳情。
 
@@ -140,7 +152,7 @@
 }
 ```
 
-### POST /api/v1/factors
+### POST /api/v1/factors ✅
 
 新增因子。
 
@@ -155,17 +167,29 @@
 }
 ```
 
-### PUT /api/v1/factors/{factor_id}
+### PUT /api/v1/factors/{factor_id} ✅
 
 更新因子。
 
-### DELETE /api/v1/factors/{factor_id}
+### DELETE /api/v1/factors/{factor_id} ✅
 
 刪除因子。
 
-### PATCH /api/v1/factors/{factor_id}/toggle
+### PATCH /api/v1/factors/{factor_id}/toggle ✅
 
 切換因子啟用狀態。
+
+### POST /api/v1/factors/validate ✅
+
+驗證因子表達式語法。
+
+### POST /api/v1/factors/seed ✅
+
+插入 30 個預設因子。
+
+### GET /api/v1/factors/available ✅
+
+取得可用欄位和運算符。
 
 ---
 
@@ -449,9 +473,9 @@
 
 ---
 
-## 6. Data Status API
+## 6. Data Status API ✅
 
-### GET /api/v1/data/status
+### GET /api/v1/data/status ✅
 
 取得資料完整度狀態。
 
@@ -484,7 +508,7 @@
 }
 ```
 
-### POST /api/v1/data/sync
+### POST /api/v1/data/sync ✅
 
 手動觸發資料同步。
 
@@ -526,6 +550,30 @@
   "total": 10
 }
 ```
+
+---
+
+## 6.5 Qlib Export API ✅
+
+### POST /api/v1/qlib/export/sync ✅
+
+同步導出 qlib .bin 格式資料。
+
+**Request:**
+```json
+{
+  "start_date": "2022-01-01",
+  "end_date": "2025-01-01"
+}
+```
+
+### GET /api/v1/qlib/export/status ✅
+
+取得導出狀態。
+
+### GET /api/v1/qlib/export/fields ✅
+
+取得可用欄位列表（30 個欄位）。
 
 ---
 
