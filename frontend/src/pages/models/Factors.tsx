@@ -2,11 +2,14 @@ import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Plus, Edit2, ToggleLeft, ToggleRight, Brain, CheckCircle, Loader2, RefreshCw } from 'lucide-react'
 import { factorApi, Factor } from '@/api/client'
+import { FactorFormDialog } from '@/components/factors/FactorFormDialog'
 
 export function Factors() {
   const [factors, setFactors] = useState<Factor[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isFormOpen, setIsFormOpen] = useState(false)
+  const [editingFactor, setEditingFactor] = useState<Factor | null>(null)
 
   const fetchFactors = async () => {
     setLoading(true)
@@ -35,9 +38,24 @@ export function Factors() {
     }
   }
 
+  const handleAdd = () => {
+    setEditingFactor(null)
+    setIsFormOpen(true)
+  }
+
+  const handleEdit = (factor: Factor) => {
+    setEditingFactor(factor)
+    setIsFormOpen(true)
+  }
+
+  const handleFormSubmit = () => {
+    fetchFactors()
+  }
+
   const enabledCount = factors.filter(f => f.enabled).length
-  const avgSelectionRate = factors.length > 0
-    ? factors.reduce((sum, f) => sum + f.selection_rate, 0) / factors.length
+  const evaluatedFactors = factors.filter(f => f.times_evaluated > 0)
+  const avgSelectionRate = evaluatedFactors.length > 0
+    ? evaluatedFactors.reduce((sum, f) => sum + f.selection_rate, 0) / evaluatedFactors.length
     : 0
 
   if (loading) {
@@ -68,7 +86,7 @@ export function Factors() {
           <h1 className="heading text-2xl">Factor Management</h1>
           <p className="subheading mt-1">Manage your alpha factors and expressions.</p>
         </div>
-        <button className="btn btn-primary">
+        <button className="btn btn-primary" onClick={handleAdd}>
           <Plus className="h-4 w-4" />
           Add Factor
         </button>
@@ -102,8 +120,11 @@ export function Factors() {
             </div>
           </div>
           <p className="stat-value">
-            {(avgSelectionRate * 100).toFixed(0)}%
+            {evaluatedFactors.length > 0 ? `${(avgSelectionRate * 100).toFixed(0)}%` : '—'}
           </p>
+          {evaluatedFactors.length > 0 && (
+            <p className="text-xs text-muted-foreground">{evaluatedFactors.length} evaluated</p>
+          )}
         </div>
       </div>
 
@@ -160,12 +181,18 @@ export function Factors() {
                       </td>
                       <td className="table-cell px-5 text-right">
                         <div>
-                          <span className={`mono font-semibold ${factor.selection_rate >= 0.5 ? 'text-green' : 'text-muted-foreground'}`}>
-                            {(factor.selection_rate * 100).toFixed(0)}%
-                          </span>
-                          <p className="text-xs text-muted-foreground">
-                            {factor.times_selected}/{factor.times_evaluated}
-                          </p>
+                          {factor.times_evaluated === 0 ? (
+                            <span className="text-muted-foreground text-sm">尚未評估</span>
+                          ) : (
+                            <>
+                              <span className={`mono font-semibold ${factor.selection_rate >= 0.5 ? 'text-green' : 'text-muted-foreground'}`}>
+                                {(factor.selection_rate * 100).toFixed(0)}%
+                              </span>
+                              <p className="text-xs text-muted-foreground">
+                                ({factor.times_selected}/{factor.times_evaluated})
+                              </p>
+                            </>
+                          )}
                         </div>
                       </td>
                       <td className="table-cell px-5 text-center">
@@ -177,7 +204,10 @@ export function Factors() {
                       </td>
                       <td className="table-cell px-5">
                         <div className="flex items-center justify-center gap-2">
-                          <button className="p-2 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
+                          <button
+                            className="p-2 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+                            onClick={() => handleEdit(factor)}
+                          >
                             <Edit2 className="h-4 w-4" />
                           </button>
                           <button
@@ -200,6 +230,14 @@ export function Factors() {
           )}
         </CardContent>
       </Card>
+
+      {/* Factor Form Dialog */}
+      <FactorFormDialog
+        isOpen={isFormOpen}
+        onClose={() => setIsFormOpen(false)}
+        onSubmit={handleFormSubmit}
+        factor={editingFactor}
+      />
     </div>
   )
 }

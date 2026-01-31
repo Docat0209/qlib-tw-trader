@@ -64,3 +64,34 @@ class FactorListResponse(BaseModel):
 
     items: list[FactorResponse]
     total: int
+
+
+class ValidateRequest(BaseModel):
+    """驗證請求"""
+
+    expression: str
+
+
+class ValidateResponse(BaseModel):
+    """驗證回應"""
+
+    valid: bool
+    error: str | None = None
+    fields_used: list[str] = []
+    operators_used: list[str] = []
+    warnings: list[str] = []
+
+
+class SeedResponse(BaseModel):
+    """Seed 回應"""
+
+    success: bool
+    inserted: int
+    message: str
+
+
+class AvailableFieldsResponse(BaseModel):
+    """可用欄位回應"""
+
+    fields: list[str]
+    operators: list[str]

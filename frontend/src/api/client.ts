@@ -136,6 +136,25 @@ export const systemApi = {
   sync: (data: SyncRequest) => api.post<SyncResponse>('/system/sync', data),
 }
 
+export interface ValidateResponse {
+  valid: boolean
+  error?: string
+  fields_used: string[]
+  operators_used: string[]
+  warnings: string[]
+}
+
+export interface SeedResponse {
+  success: boolean
+  inserted: number
+  message: string
+}
+
+export interface AvailableFieldsResponse {
+  fields: string[]
+  operators: string[]
+}
+
 export const factorApi = {
   list: (category?: string, enabled?: boolean) => {
     const params = new URLSearchParams()
@@ -149,6 +168,12 @@ export const factorApi = {
   update: (id: number, data: FactorUpdate) => api.put<Factor>(`/factors/${id}`, data),
   delete: (id: number) => api.delete(`/factors/${id}`),
   toggle: (id: number) => api.patch<Factor>(`/factors/${id}/toggle`),
+  validate: (expression: string) => api.post<ValidateResponse>('/factors/validate', { expression }),
+  seed: (force?: boolean) => {
+    const query = force ? '?force=true' : ''
+    return api.post<SeedResponse>(`/factors/seed${query}`, {})
+  },
+  available: () => api.get<AvailableFieldsResponse>('/factors/available'),
 }
 
 // Model Types

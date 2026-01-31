@@ -7,14 +7,19 @@ from sqlalchemy.orm import Session
 
 from src.interfaces.dependencies import get_db
 from src.interfaces.schemas.factor import (
+    AvailableFieldsResponse,
     FactorCreate,
     FactorDetailResponse,
     FactorListResponse,
     FactorResponse,
     FactorUpdate,
+    SeedResponse,
     SelectionHistory,
+    ValidateRequest,
+    ValidateResponse,
 )
-from src.repositories.factor import FactorRepository
+from src.repositories.factor import FactorRepository, seed_factors
+from src.services.factor_validator import FactorValidator
 
 router = APIRouter()
 
@@ -166,3 +171,47 @@ async def toggle_factor(
 
     stats = repo.get_selection_stats(factor_id)
     return _factor_to_response(factor, stats)
+
+
+@router.post("/validate", response_model=ValidateResponse)
+async def validate_expression(data: ValidateRequest):
+    """驗證因子表達式"""
+    validator = FactorValidator()
+    result = validator.validate(data.expression)
+    return ValidateResponse(
+        valid=result.valid,
+        error=result.error,
+        fields_used=result.fields_used,
+        operators_used=result.operators_used,
+        warnings=result.warnings,
+    )
+
+
+@router.post("/seed", response_model=SeedResponse)
+async def seed_default_factors(
+    force: bool = Query(False, description="強制重新插入（會先清空現有因子）"),
+    session: Session = Depends(get_db),
+):
+    """插入預設因子"""
+    inserted = seed_factors(session, force=force)
+    if inserted == 0 and not force:
+        return SeedResponse(
+            success=True,
+            inserted=0,
+            message="Factors already exist. Use force=true to re-seed.",
+        )
+    return SeedResponse(
+        success=True,
+        inserted=inserted,
+        message=f"Inserted {inserted} default factors.",
+    )
+
+
+@router.get("/available", response_model=AvailableFieldsResponse)
+async def get_available_fields():
+    """取得可用欄位和運算符"""
+    validator = FactorValidator()
+    return AvailableFieldsResponse(
+        fields=validator.get_available_fields(),
+        operators=validator.get_available_operators(),
+    )
