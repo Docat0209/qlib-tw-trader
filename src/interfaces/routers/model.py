@@ -13,7 +13,10 @@ from sqlalchemy.orm import Session
 
 from src.interfaces.dependencies import get_db
 from src.interfaces.schemas.model import (
+    CultivationRequest,
+    CultivationResponse,
     FactorSummary,
+    HyperparamsInfo,
     ModelComparisonItem,
     ModelComparisonResponse,
     ModelHistoryResponse,
@@ -228,6 +231,105 @@ async def get_data_range():
         "start": data_start.isoformat(),
         "end": data_end.isoformat(),
     }
+
+
+@router.get("/hyperparams", response_model=HyperparamsInfo)
+async def get_hyperparams():
+    """取得已培養的超參數資訊"""
+    from src.services.model_trainer import ModelTrainer
+
+    info = ModelTrainer.get_cultivation_info()
+
+    if not info:
+        return HyperparamsInfo(
+            cultivated_at=None,
+            n_periods=None,
+            params=None,
+            stability=None,
+            periods=None,
+        )
+
+    return HyperparamsInfo(
+        cultivated_at=info.get("cultivated_at"),
+        n_periods=info.get("n_periods"),
+        params=info.get("params"),
+        stability=info.get("stability"),
+        periods=info.get("periods"),
+    )
+
+
+@router.post("/cultivate-hyperparams", response_model=CultivationResponse)
+async def cultivate_hyperparams(
+    data: CultivationRequest,
+    session: Session = Depends(get_db),
+):
+    """
+    執行超參數培養（非同步）
+
+    基於 Walk Forward Optimization + Median Aggregation 方法：
+    - 生成多個歷史窗口
+    - 每個窗口獨立運行 Optuna
+    - 取各窗口最佳參數的中位數
+    - 計算穩定性指標 (CV < 0.3 = 穩定)
+    """
+    from src.repositories.database import get_session
+    from src.services.job_manager import job_manager
+    from src.services.model_trainer import ModelTrainer
+
+    factor_repo = FactorRepository(session)
+
+    # 確認有啟用的因子
+    enabled_factors = factor_repo.get_all(enabled=True)
+    if not enabled_factors:
+        raise HTTPException(status_code=400, detail="No enabled factors found")
+
+    # 定義培養任務
+    async def cultivation_task(progress_callback, **kwargs):
+        """培養任務 wrapper"""
+        task_session = get_session()
+        task_factor_repo = FactorRepository(task_session)
+        loop = asyncio.get_event_loop()
+
+        try:
+            factors = task_factor_repo.get_all(enabled=True)
+            trainer = ModelTrainer(qlib_data_dir="data/qlib")
+
+            # 同步回調轉非同步
+            def sync_progress(progress: float, message: str):
+                loop.call_soon_threadsafe(
+                    lambda: asyncio.create_task(progress_callback(progress, message))
+                )
+
+            # 使用 to_thread 運行同步培養
+            result = await asyncio.to_thread(
+                trainer.cultivate_hyperparameters,
+                factors=factors,
+                n_periods=data.n_periods,
+                n_trials_per_period=data.n_trials_per_period,
+                on_progress=sync_progress,
+            )
+
+            return {
+                "cultivated_at": result.cultivated_at,
+                "n_periods": result.n_periods,
+                "params": result.params,
+                "stability": result.stability,
+            }
+        finally:
+            task_session.close()
+
+    # 建立非同步培養任務
+    job_id = await job_manager.create_job(
+        job_type="cultivate",
+        task_fn=cultivation_task,
+        message=f"Cultivating hyperparameters ({data.n_periods} periods, {data.n_trials_per_period} trials/period)",
+    )
+
+    return CultivationResponse(
+        job_id=job_id,
+        status="queued",
+        message=f"超參數培養任務已排入佇列",
+    )
 
 
 @router.post("/train", response_model=TrainResponse)

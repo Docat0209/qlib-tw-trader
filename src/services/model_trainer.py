@@ -4,8 +4,9 @@
 
 import json
 import pickle
-from dataclasses import dataclass
-from datetime import date, datetime
+import statistics
+from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
@@ -23,6 +24,9 @@ TZ_TAIPEI = ZoneInfo("Asia/Taipei")
 
 # 模型檔案目錄
 MODELS_DIR = Path("data/models")
+
+# 超參數檔案路徑
+HYPERPARAMS_FILE = Path("data/hyperparams.json")
 
 
 @dataclass
@@ -45,6 +49,29 @@ class TrainingResult:
     icir: float | None
     selected_factor_ids: list[int]
     all_results: list[FactorEvalResult]
+
+
+@dataclass
+class PeriodResult:
+    """單一窗口的優化結果"""
+
+    train_start: date
+    train_end: date
+    valid_start: date
+    valid_end: date
+    best_ic: float
+    params: dict
+
+
+@dataclass
+class CultivationResult:
+    """超參數培養結果"""
+
+    cultivated_at: str
+    n_periods: int
+    params: dict
+    stability: dict[str, float]
+    periods: list[PeriodResult] = field(default_factory=list)
 
 
 class ModelTrainer:
@@ -530,32 +557,41 @@ class ModelTrainer:
             if all_data.empty:
                 raise ValueError("No data available for the specified date range")
 
-            # === Optuna 超參數優化 ===
-            if on_progress:
-                on_progress(2.5, "Optimizing hyperparameters with Optuna...")
+            # === 超參數載入（優先使用已培養的超參數）===
+            cultivated_params = self.load_cultivated_hyperparameters()
 
-            # 準備優化用的資料（使用所有因子）
-            factor_names = [f.name for f in enabled_factors]
-            X_all = all_data[factor_names]
-            y_all = all_data["label"]
-
-            X_train_opt, X_valid_opt, y_train_opt, y_valid_opt = self._prepare_train_valid_data(
-                pd.concat([X_all, y_all], axis=1),
-                train_start, train_end, valid_start, valid_end,
-            )
-
-            if not X_train_opt.empty and not X_valid_opt.empty:
-                self._optimized_params = self._optimize_hyperparameters(
-                    X_train_opt, y_train_opt,
-                    X_valid_opt, y_valid_opt,
-                    on_progress=on_progress,
-                )
+            if cultivated_params:
+                # 使用已培養的超參數
+                self._optimized_params = cultivated_params
                 if on_progress:
-                    on_progress(10.0, f"Optuna done: best params found")
+                    on_progress(10.0, "Using pre-cultivated hyperparameters")
             else:
-                self._optimized_params = None
+                # 無培養超參數，執行 Optuna 優化
                 if on_progress:
-                    on_progress(10.0, "Skipped Optuna (insufficient data)")
+                    on_progress(2.5, "No cultivated params, running Optuna...")
+
+                # 準備優化用的資料（使用所有因子）
+                factor_names = [f.name for f in enabled_factors]
+                X_all = all_data[factor_names]
+                y_all = all_data["label"]
+
+                X_train_opt, X_valid_opt, y_train_opt, y_valid_opt = self._prepare_train_valid_data(
+                    pd.concat([X_all, y_all], axis=1),
+                    train_start, train_end, valid_start, valid_end,
+                )
+
+                if not X_train_opt.empty and not X_valid_opt.empty:
+                    self._optimized_params = self._optimize_hyperparameters(
+                        X_train_opt, y_train_opt,
+                        X_valid_opt, y_valid_opt,
+                        on_progress=on_progress,
+                    )
+                    if on_progress:
+                        on_progress(10.0, f"Optuna done: best params found")
+                else:
+                    self._optimized_params = None
+                    if on_progress:
+                        on_progress(10.0, "Skipped Optuna (insufficient data)")
 
             # 執行 IC 增量選擇（使用優化後的參數）
             selected_factors, all_results, best_model = self._incremental_ic_selection(
@@ -847,6 +883,344 @@ class ModelTrainer:
             model_path = model_dir / "model.pkl"
             with open(model_path, "wb") as f:
                 pickle.dump(model, f)
+
+    # === 超參數培養 ===
+
+    def _generate_walk_forward_periods(
+        self,
+        data_start: date,
+        data_end: date,
+        n_periods: int = 5,
+    ) -> list[tuple[date, date, date, date]]:
+        """
+        生成 Walk Forward 窗口
+
+        Returns:
+            list of (train_start, train_end, valid_start, valid_end)
+        """
+        total_days = (data_end - data_start).days
+        period_length = TRAIN_DAYS + VALID_DAYS  # 訓練期 + 驗證期
+
+        # 確保有足夠的資料
+        if total_days < period_length:
+            raise ValueError(
+                f"Insufficient data: need {period_length} days, have {total_days}"
+            )
+
+        # 計算可用的窗口數量
+        available_periods = (total_days - TRAIN_DAYS) // VALID_DAYS
+        actual_periods = min(n_periods, max(1, available_periods))
+
+        periods = []
+        # 從最新資料開始向前推算
+        for i in range(actual_periods):
+            # 驗證期結束：從 data_end 向前推 i 個驗證期
+            valid_end = data_end - timedelta(days=i * VALID_DAYS)
+            valid_start = valid_end - timedelta(days=VALID_DAYS - 1)
+            train_end = valid_start - timedelta(days=1)
+            train_start = train_end - timedelta(days=TRAIN_DAYS - 1)
+
+            # 確保訓練起始日不早於資料起始日
+            if train_start < data_start:
+                break
+
+            periods.append((train_start, train_end, valid_start, valid_end))
+
+        # 反轉使最早的窗口在前面（方便閱讀）
+        return list(reversed(periods))
+
+    def _aggregate_median(self, all_params: list[dict]) -> dict:
+        """
+        聚合多個窗口的參數，取中位數
+
+        Args:
+            all_params: 各窗口最佳參數列表
+
+        Returns:
+            中位數參數
+        """
+        if not all_params:
+            return {}
+
+        # 需要取中位數的參數（數值型）
+        numeric_params = [
+            "num_leaves", "max_depth", "learning_rate", "feature_fraction",
+            "bagging_fraction", "bagging_freq", "lambda_l1", "lambda_l2",
+            "min_data_in_leaf"
+        ]
+
+        result = {}
+        for param in numeric_params:
+            values = [p.get(param) for p in all_params if param in p]
+            if values:
+                if isinstance(values[0], int):
+                    result[param] = int(statistics.median(values))
+                else:
+                    result[param] = float(statistics.median(values))
+
+        # 固定參數
+        result.update({
+            "objective": "regression",
+            "metric": "mse",
+            "boosting_type": "gbdt",
+            "verbosity": -1,
+            "seed": 42,
+            "feature_pre_filter": False,
+        })
+
+        return result
+
+    def _calculate_stability(self, all_params: list[dict]) -> dict[str, float]:
+        """
+        計算參數穩定性（變異係數 CV = std / mean）
+
+        Returns:
+            各參數的 CV 值（CV < 0.3 表示穩定）
+        """
+        if len(all_params) < 2:
+            return {}
+
+        numeric_params = [
+            "num_leaves", "max_depth", "learning_rate", "feature_fraction",
+            "bagging_fraction", "lambda_l1", "lambda_l2", "min_data_in_leaf"
+        ]
+
+        stability = {}
+        for param in numeric_params:
+            values = [p.get(param) for p in all_params if param in p]
+            if len(values) >= 2:
+                mean = statistics.mean(values)
+                if mean != 0:
+                    std = statistics.stdev(values)
+                    stability[param] = round(std / abs(mean), 3)
+                else:
+                    stability[param] = 0.0
+
+        return stability
+
+    def cultivate_hyperparameters(
+        self,
+        factors: list[Factor],
+        n_periods: int = 5,
+        n_trials_per_period: int = 20,
+        on_progress: Callable[[float, str], None] | None = None,
+    ) -> CultivationResult:
+        """
+        執行多窗口超參數培養
+
+        基於 Walk Forward Optimization + Median Aggregation 方法：
+        1. 生成多個歷史窗口
+        2. 每個窗口獨立運行 Optuna
+        3. 取各窗口最佳參數的中位數
+        4. 計算穩定性指標 (CV)
+
+        Args:
+            factors: 因子列表
+            n_periods: 窗口數量（建議 5）
+            n_trials_per_period: 每窗口 Optuna 試驗次數（建議 20）
+            on_progress: 進度回調
+
+        Returns:
+            CultivationResult
+        """
+        self._init_qlib()
+
+        if on_progress:
+            on_progress(0.0, "Initializing hyperparameter cultivation...")
+
+        # 取得資料日期範圍
+        data_start, data_end = self.get_data_date_range()
+        if not data_start or not data_end:
+            raise ValueError("No qlib data found")
+
+        # 生成 Walk Forward 窗口
+        periods = self._generate_walk_forward_periods(
+            data_start, data_end, n_periods
+        )
+
+        if not periods:
+            raise ValueError("Cannot generate walk forward periods with available data")
+
+        if on_progress:
+            on_progress(2.0, f"Generated {len(periods)} walk-forward periods")
+
+        # 載入所有資料（一次載入，避免重複讀取）
+        if on_progress:
+            on_progress(3.0, "Loading factor data...")
+
+        all_data = self._load_data(
+            factors=factors,
+            start_date=data_start,
+            end_date=data_end,
+        )
+
+        if all_data.empty:
+            raise ValueError("No data available for cultivation")
+
+        # 各窗口優化
+        all_params = []
+        period_results = []
+
+        for i, (train_start, train_end, valid_start, valid_end) in enumerate(periods):
+            period_name = f"{train_start.strftime('%Y-%m')} ~ {valid_end.strftime('%Y-%m')}"
+
+            if on_progress:
+                base_progress = 5.0 + (i / len(periods)) * 85.0
+                on_progress(base_progress, f"Optimizing period {i+1}/{len(periods)}: {period_name}")
+
+            # 準備該窗口的資料
+            factor_names = [f.name for f in factors]
+            X = all_data[factor_names]
+            y = all_data["label"]
+
+            X_train, X_valid, y_train, y_valid = self._prepare_train_valid_data(
+                pd.concat([X, y], axis=1),
+                train_start, train_end, valid_start, valid_end,
+            )
+
+            if X_train.empty or X_valid.empty:
+                if on_progress:
+                    on_progress(base_progress + 3, f"Skipped period {i+1} (insufficient data)")
+                continue
+
+            # Optuna 優化（減少試驗次數以加速）
+            def period_progress(p: float, msg: str) -> None:
+                if on_progress:
+                    inner_progress = base_progress + (p - 2.0) * (80.0 / len(periods) / 8.0)
+                    on_progress(inner_progress, f"[{i+1}/{len(periods)}] {msg}")
+
+            best_params = self._optimize_hyperparameters(
+                X_train, y_train, X_valid, y_valid,
+                n_trials=n_trials_per_period,
+                timeout=120,  # 每窗口 2 分鐘
+                on_progress=period_progress,
+            )
+
+            # 計算最佳 IC
+            import lightgbm as lgb
+            X_train_norm = self._zscore_by_date(self._process_inf(X_train)).fillna(0)
+            X_valid_norm = self._zscore_by_date(self._process_inf(X_valid)).fillna(0)
+            train_data = lgb.Dataset(X_train_norm.values, label=y_train.values)
+            valid_data = lgb.Dataset(X_valid_norm.values, label=y_valid.values, reference=train_data)
+
+            model = lgb.train(
+                best_params, train_data,
+                num_boost_round=300,
+                valid_sets=[valid_data],
+                callbacks=[lgb.early_stopping(30, verbose=False)],
+            )
+            predictions = model.predict(X_valid_norm.values)
+            pred_df = pd.DataFrame({
+                "pred": predictions, "label": y_valid.values
+            }, index=y_valid.index)
+            daily_ic = pred_df.groupby(level="datetime").apply(
+                lambda g: g["pred"].corr(g["label"]) if len(g) >= 2 else np.nan
+            )
+            best_ic = float(daily_ic.mean())
+
+            # 只保存調參的部分
+            tuned_params = {k: v for k, v in best_params.items()
+                           if k not in ("objective", "metric", "boosting_type", "verbosity", "seed", "feature_pre_filter")}
+            all_params.append(tuned_params)
+
+            period_results.append(PeriodResult(
+                train_start=train_start,
+                train_end=train_end,
+                valid_start=valid_start,
+                valid_end=valid_end,
+                best_ic=best_ic,
+                params=tuned_params,
+            ))
+
+            if on_progress:
+                on_progress(
+                    5.0 + ((i + 1) / len(periods)) * 85.0,
+                    f"Period {i+1} done: IC={best_ic:.4f}"
+                )
+
+        if not all_params:
+            raise ValueError("No successful optimization in any period")
+
+        # 聚合中位數
+        if on_progress:
+            on_progress(92.0, "Aggregating parameters...")
+
+        final_params = self._aggregate_median(all_params)
+        stability = self._calculate_stability(all_params)
+
+        # 保存到檔案
+        if on_progress:
+            on_progress(95.0, "Saving hyperparameters...")
+
+        result = CultivationResult(
+            cultivated_at=datetime.now(TZ_TAIPEI).isoformat(),
+            n_periods=len(period_results),
+            params=final_params,
+            stability=stability,
+            periods=period_results,
+        )
+
+        self._save_cultivated_hyperparameters(result)
+
+        if on_progress:
+            on_progress(100.0, f"Cultivation complete: {len(period_results)} periods")
+
+        return result
+
+    def _save_cultivated_hyperparameters(self, result: CultivationResult) -> None:
+        """保存培養結果到檔案"""
+        HYPERPARAMS_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+        data = {
+            "cultivated_at": result.cultivated_at,
+            "n_periods": result.n_periods,
+            "params": result.params,
+            "stability": result.stability,
+            "periods": [
+                {
+                    "train_start": p.train_start.isoformat(),
+                    "train_end": p.train_end.isoformat(),
+                    "valid_start": p.valid_start.isoformat(),
+                    "valid_end": p.valid_end.isoformat(),
+                    "best_ic": p.best_ic,
+                    "params": p.params,
+                }
+                for p in result.periods
+            ],
+        }
+
+        with open(HYPERPARAMS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+    @staticmethod
+    def load_cultivated_hyperparameters() -> dict | None:
+        """
+        載入已培養的超參數
+
+        Returns:
+            超參數字典，若檔案不存在則返回 None
+        """
+        if not HYPERPARAMS_FILE.exists():
+            return None
+
+        with open(HYPERPARAMS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        return data.get("params")
+
+    @staticmethod
+    def get_cultivation_info() -> dict | None:
+        """
+        取得培養資訊（含穩定性指標）
+
+        Returns:
+            完整培養資訊，若檔案不存在則返回 None
+        """
+        if not HYPERPARAMS_FILE.exists():
+            return None
+
+        with open(HYPERPARAMS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
 
 
 def run_training(

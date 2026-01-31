@@ -117,3 +117,39 @@ class TrainResponse(BaseModel):
     job_id: str
     status: str
     message: str
+
+
+class CultivationPeriod(BaseModel):
+    """培養窗口結果"""
+
+    train_start: date
+    train_end: date
+    valid_start: date
+    valid_end: date
+    best_ic: float
+    params: dict
+
+
+class CultivationRequest(BaseModel):
+    """超參數培養請求"""
+
+    n_periods: int = 5  # 窗口數量
+    n_trials_per_period: int = 20  # 每窗口試驗次數
+
+
+class CultivationResponse(BaseModel):
+    """超參數培養回應"""
+
+    job_id: str
+    status: str
+    message: str
+
+
+class HyperparamsInfo(BaseModel):
+    """超參數資訊"""
+
+    cultivated_at: str | None
+    n_periods: int | None
+    params: dict | None
+    stability: dict[str, float] | None
+    periods: list[CultivationPeriod] | None
