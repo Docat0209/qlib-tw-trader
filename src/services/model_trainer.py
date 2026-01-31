@@ -202,6 +202,26 @@ class ModelTrainer:
             y_valid.loc[common_valid],
         )
 
+    def _process_inf(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        處理無窮大值（仿 qlib ProcessInf）
+
+        將 inf/-inf 替換為該欄位的均值
+        """
+        df = df.copy()
+        for col in df.columns:
+            mask = np.isinf(df[col])
+            if mask.any():
+                col_mean = df.loc[~mask, col].mean()
+                df.loc[mask, col] = col_mean if not np.isnan(col_mean) else 0
+        return df
+
+    def _zscore_by_date(self, df: pd.DataFrame) -> pd.DataFrame:
+        """每日截面標準化（仿 qlib CSZScoreNorm）"""
+        return df.groupby(level="datetime", group_keys=False).apply(
+            lambda x: (x - x.mean()) / (x.std() + 1e-8)
+        )
+
     def _train_lgbm(
         self,
         X_train: pd.DataFrame,
@@ -217,29 +237,41 @@ class ModelTrainer:
         """
         import lightgbm as lgb
 
-        # 每日截面標準化
-        def zscore_by_date(df: pd.DataFrame) -> pd.DataFrame:
-            return df.groupby(level="datetime", group_keys=False).apply(
-                lambda x: (x - x.mean()) / (x.std() + 1e-8)
-            )
+        # 1. 處理無窮大值
+        X_train = self._process_inf(X_train)
+        X_valid = self._process_inf(X_valid)
 
-        X_train_norm = zscore_by_date(X_train)
-        X_valid_norm = zscore_by_date(X_valid)
+        # 2. 每日截面標準化
+        X_train_norm = self._zscore_by_date(X_train)
+        X_valid_norm = self._zscore_by_date(X_valid)
+
+        # 3. 填補 NaN（標準化後可能產生 NaN）
+        X_train_norm = X_train_norm.fillna(0)
+        X_valid_norm = X_valid_norm.fillna(0)
 
         # 建立 LightGBM Dataset
         train_data = lgb.Dataset(X_train_norm.values, label=y_train.values)
         valid_data = lgb.Dataset(X_valid_norm.values, label=y_valid.values, reference=train_data)
 
         # 訓練參數
+        # 注意：qlib 官方參數針對大數據集（7年、300檔、158因子）
+        # 我們的數據集較小（3年、100檔、30因子），需要調整
         params = {
             "objective": "regression",
             "metric": "mse",
             "boosting_type": "gbdt",
-            "num_leaves": 31,
+            # 樹結構（適度複雜）
+            "num_leaves": 64,
+            "max_depth": 6,
             "learning_rate": 0.05,
+            # 抽樣
             "feature_fraction": 0.8,
             "bagging_fraction": 0.8,
             "bagging_freq": 5,
+            # L1/L2 正則化（適度，避免過擬合）
+            "lambda_l1": 10.0,
+            "lambda_l2": 10.0,
+            # 其他
             "verbose": -1,
             "seed": 42,
         }
@@ -269,13 +301,10 @@ class ModelTrainer:
         Returns:
             平均 IC 值
         """
-        # 標準化驗證資料
-        def zscore_by_date(df: pd.DataFrame) -> pd.DataFrame:
-            return df.groupby(level="datetime", group_keys=False).apply(
-                lambda x: (x - x.mean()) / (x.std() + 1e-8)
-            )
-
-        X_valid_norm = zscore_by_date(X_valid)
+        # 處理無窮大 + 標準化 + 填補 NaN
+        X_valid_processed = self._process_inf(X_valid)
+        X_valid_norm = self._zscore_by_date(X_valid_processed)
+        X_valid_norm = X_valid_norm.fillna(0)
 
         # 預測
         predictions = model.predict(X_valid_norm.values)
