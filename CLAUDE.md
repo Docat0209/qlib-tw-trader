@@ -40,6 +40,7 @@ curl -X POST http://localhost:8000/api/v1/qlib/export/sync \
 
 ## 待完成
 
+- [ ] **新增因子**（解決模型區分能力不足問題）
 - [ ] **排程系統**（每日自動同步+訓練）
 
 ## 關鍵規則
@@ -130,6 +131,34 @@ lambda_l1/l2: 縮小      # 低維需較少正則化
 | IC 範圍 | 0.03-0.04 | 0.05-0.06 |
 
 **原因**：適當的模型複雜度讓系統能正確檢測因子貢獻，而非因過擬合提早停止選擇。
+
+## Top-K 選股與 Tie-Breaking
+
+### 已知問題：模型區分能力不足
+
+目前模型可能產生大量相同分數的股票（例如 100 支股票只有 7 種分數）。
+這導致 Top-K 選股結果取決於資料順序，而非模型判斷。
+
+### Tie-Breaking 機制
+
+為確保結果穩定可重現，Predictor 和 Backtester 都採用相同的排序邏輯：
+
+```python
+# 先按分數降序，再按股票代碼升序
+df.sort_values(by=["score", "symbol"], ascending=[False, True]).head(top_k)
+```
+
+### 驗證一致性
+
+Predictor 和 Backtester 的 Top-K 選股結果應**完全一致**（包含順序）。
+可用 `sandbox/verify_backtest.py` 腳本驗證。
+
+### 根本解決方案
+
+新增更多有效因子，提升模型區分能力。目標：
+- 增加 unique scores 數量
+- 減少分數相同的股票比例
+- 讓 Top-K 選股真正基於模型預測
 
 ## 資料來源
 

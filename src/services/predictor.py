@@ -153,8 +153,11 @@ class Predictor:
             "score": predictions,
         })
 
-        # 排序取 Top K
-        result_df = result_df.nlargest(top_k, "score")
+        # 排序取 Top K（使用 symbol 作為 tie-breaker 確保穩定排序）
+        result_df = result_df.sort_values(
+            by=["score", "symbol"],
+            ascending=[False, True],
+        ).head(top_k)
         result_df["rank"] = range(1, len(result_df) + 1)
 
         signals = [

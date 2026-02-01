@@ -130,8 +130,14 @@ class TopKStrategy(bt.Strategy):
         if scores.empty:
             return
 
-        # 選擇 Top-K
-        topk_stocks = scores.nlargest(self.params.topk).index.tolist()
+        # 選擇 Top-K（使用 symbol 作為 tie-breaker 確保穩定排序）
+        scores_df = scores.reset_index()
+        scores_df.columns = ["symbol", "score"]
+        scores_df = scores_df.sort_values(
+            by=["score", "symbol"],
+            ascending=[False, True],
+        ).head(self.params.topk)
+        topk_stocks = scores_df["symbol"].tolist()
 
         # 計算每檔權重
         weight = 1.0 / self.params.topk
