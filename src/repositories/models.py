@@ -276,20 +276,8 @@ class TrainingFactorResult(Base):
 
 
 # =============================================================================
-# 持倉 & 交易
+# 交易記錄
 # =============================================================================
-
-
-class Position(Base):
-    """持倉記錄"""
-
-    __tablename__ = "positions"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    stock_id: Mapped[str] = mapped_column(String(10), unique=True)
-    shares: Mapped[int] = mapped_column(Integer)
-    avg_cost: Mapped[Decimal] = mapped_column(Numeric(10, 2))
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
 
 
 class Trade(Base):
@@ -309,24 +297,6 @@ class Trade(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(16, 2))
     commission: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
-
-
-class Prediction(Base):
-    """預測記錄"""
-
-    __tablename__ = "predictions"
-    __table_args__ = (
-        UniqueConstraint("date", "stock_id", name="uq_prediction"),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    date: Mapped[date] = mapped_column(Date, index=True)
-    model_id: Mapped[int] = mapped_column(Integer, ForeignKey("training_runs.id"))
-    stock_id: Mapped[str] = mapped_column(String(10), index=True)
-    score: Mapped[float] = mapped_column(Numeric(10, 6))
-    rank: Mapped[int] = mapped_column(Integer)
-    signal: Mapped[str] = mapped_column(String(10))  # buy/sell/hold
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
 
 

@@ -15,10 +15,8 @@ from src.interfaces.schemas.dashboard import (
     ModelSummary,
     PerformanceSummaryBrief,
     PredictionSummary,
-    TopPick,
 )
 from src.repositories.factor import FactorRepository
-from src.repositories.portfolio import PredictionRepository
 from src.repositories.training import TrainingRepository
 
 router = APIRouter()
@@ -33,7 +31,6 @@ async def get_dashboard_summary(
     """取得 Dashboard 摘要"""
     factor_repo = FactorRepository(session)
     training_repo = TrainingRepository(session)
-    prediction_repo = PredictionRepository(session)
 
     # 因子摘要
     all_factors = factor_repo.get_all()
@@ -57,20 +54,12 @@ async def get_dashboard_summary(
         icir=float(current_model.icir) if current_model and current_model.icir else None,
     )
 
-    # 預測摘要
-    predictions = prediction_repo.get_latest()
-    buy_signals = sum(1 for p in predictions if p.signal == "buy")
-    sell_signals = sum(1 for p in predictions if p.signal == "sell")
-    top_pick = None
-    if predictions:
-        top = predictions[0]
-        top_pick = TopPick(symbol=top.stock_id, score=float(top.score))
-
+    # 預測摘要（待實作）
     prediction_summary = PredictionSummary(
-        date=predictions[0].date.isoformat() if predictions else None,
-        buy_signals=buy_signals,
-        sell_signals=sell_signals,
-        top_pick=top_pick,
+        date=None,
+        buy_signals=0,
+        sell_signals=0,
+        top_pick=None,
     )
 
     # 資料狀態摘要（簡化版）
