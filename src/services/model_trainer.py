@@ -3,6 +3,7 @@
 """
 
 import json
+import math
 import pickle
 import statistics
 from dataclasses import dataclass, field
@@ -72,6 +73,118 @@ class CultivationResult:
     params: dict
     stability: dict[str, float]
     periods: list[PeriodResult] = field(default_factory=list)
+
+
+def scale_params_for_factor_count(
+    base_params: dict,
+    base_factor_count: int,
+    actual_factor_count: int,
+) -> dict:
+    """
+    根據實際因子數量縮放超參數
+
+    原理：
+    - 超參數是針對 base_factor_count 個因子優化的
+    - 但實際使用時可能只有 actual_factor_count 個因子
+    - 需要調整模型複雜度以避免過擬合
+
+    縮放規則：
+    - num_leaves: sqrt 縮放，下限 8
+    - max_depth: 減少 log2(base/actual)，下限 3
+    - min_data_in_leaf: sqrt 縮放，下限 10
+    - lambda_l1/l2: sqrt 縮放（低維需較少正則化）
+    - feature_fraction: 少因子時用 1.0
+    """
+    if actual_factor_count >= base_factor_count:
+        return base_params.copy()
+
+    ratio = actual_factor_count / base_factor_count
+    sqrt_ratio = math.sqrt(ratio)
+
+    scaled = base_params.copy()
+
+    # num_leaves: 與因子數正相關
+    if "num_leaves" in base_params:
+        scaled["num_leaves"] = max(8, int(base_params["num_leaves"] * sqrt_ratio))
+
+    # max_depth: 對數縮減
+    if "max_depth" in base_params:
+        reduction = int(math.log2(max(1, base_factor_count / actual_factor_count)))
+        scaled["max_depth"] = max(3, base_params["max_depth"] - reduction)
+
+    # min_data_in_leaf: 允許更小的葉節點
+    if "min_data_in_leaf" in base_params:
+        scaled["min_data_in_leaf"] = max(10, int(base_params["min_data_in_leaf"] * sqrt_ratio))
+
+    # 正則化：低維需較少正則化
+    if "lambda_l1" in base_params:
+        scaled["lambda_l1"] = base_params["lambda_l1"] * sqrt_ratio
+    if "lambda_l2" in base_params:
+        scaled["lambda_l2"] = base_params["lambda_l2"] * sqrt_ratio
+
+    # feature_fraction：少因子時使用全部
+    if "feature_fraction" in base_params and actual_factor_count <= 5:
+        scaled["feature_fraction"] = 1.0
+
+    return scaled
+
+
+def get_conservative_default_params(factor_count: int) -> dict:
+    """
+    根據因子數量返回保守的預設參數
+
+    設計原則：寧可欠擬合也不過擬合
+    """
+    base = {
+        "objective": "regression",
+        "metric": "mse",
+        "boosting_type": "gbdt",
+        "verbosity": -1,
+        "seed": 42,
+        "feature_pre_filter": False,
+        "learning_rate": 0.05,
+        "bagging_fraction": 0.8,
+        "bagging_freq": 5,
+    }
+
+    if factor_count <= 3:
+        base.update({
+            "num_leaves": 8,
+            "max_depth": 3,
+            "min_data_in_leaf": 15,
+            "feature_fraction": 1.0,
+            "lambda_l1": 2.0,
+            "lambda_l2": 2.0,
+        })
+    elif factor_count <= 6:
+        base.update({
+            "num_leaves": 12,
+            "max_depth": 4,
+            "min_data_in_leaf": 18,
+            "feature_fraction": 0.9,
+            "lambda_l1": 3.0,
+            "lambda_l2": 3.0,
+        })
+    elif factor_count <= 12:
+        base.update({
+            "num_leaves": 16,
+            "max_depth": 4,
+            "min_data_in_leaf": 20,
+            "feature_fraction": 0.8,
+            "lambda_l1": 5.0,
+            "lambda_l2": 5.0,
+        })
+    else:
+        base.update({
+            "num_leaves": 24,
+            "max_depth": 5,
+            "min_data_in_leaf": 30,
+            "feature_fraction": 0.8,
+            "lambda_l1": 8.0,
+            "lambda_l2": 8.0,
+        })
+
+    return base
 
 
 class ModelTrainer:
@@ -606,7 +719,7 @@ class ModelTrainer:
                     if on_progress:
                         on_progress(10.0, "Skipped Optuna (insufficient data)")
 
-            # 執行 IC 增量選擇（使用優化後的參數）
+            # 執行 IC 增量選擇（使用優化後的參數，並根據因子數動態調整）
             selected_factors, all_results, best_model = self._incremental_ic_selection(
                 factors=enabled_factors,
                 all_data=all_data,
@@ -615,6 +728,7 @@ class ModelTrainer:
                 valid_start=valid_start,
                 valid_end=valid_end,
                 on_progress=on_progress,
+                base_factor_count=len(enabled_factors),  # 培養時使用的因子數
             )
 
             # 計算最終模型 IC（使用最佳模型的 IC）
@@ -742,18 +856,26 @@ class ModelTrainer:
         valid_start: date,
         valid_end: date,
         on_progress: Callable[[float, str], None] | None = None,
+        base_factor_count: int | None = None,
     ) -> tuple[list[Factor], list[FactorEvalResult], Any]:
         """
-        LightGBM IC 增量選擇法
+        LightGBM IC 增量選擇法（含因子數量自適應參數）
 
         1. 先計算每個因子的單獨 IC
         2. 按 IC 絕對值降序排列（高預測力因子優先）
         3. 依序測試加入，若模型 IC 提升則納入
+        4. 超參數會根據當前因子數量動態調整
+
+        Args:
+            base_factor_count: 培養超參數時使用的因子數（用於縮放）
 
         Returns:
             (selected_factors, all_results, best_model)
             注意：selected_factors 保持選擇順序，這對模型預測至關重要
         """
+        # 確定基準因子數（培養時的因子數）
+        if base_factor_count is None:
+            base_factor_count = len(factors)
         if on_progress:
             on_progress(11.0, "Calculating single-factor ICs...")
 
@@ -806,9 +928,18 @@ class ModelTrainer:
                 )
                 continue
 
-            # 訓練 LightGBM
+            # 根據當前因子數量調整超參數
+            current_factor_count = len(test_factors)
+            base_params = self._optimized_params or get_conservative_default_params(current_factor_count)
+            adapted_params = scale_params_for_factor_count(
+                base_params,
+                base_factor_count=base_factor_count,
+                actual_factor_count=current_factor_count,
+            )
+
+            # 訓練 LightGBM（使用調整後的參數）
             try:
-                model = self._train_lgbm(X_train, y_train, X_valid, y_valid)
+                model = self._train_lgbm(X_train, y_train, X_valid, y_valid, params=adapted_params)
                 new_ic = self._calculate_prediction_ic(model, X_valid, y_valid)
             except Exception as e:
                 # 訓練失敗，跳過此因子
