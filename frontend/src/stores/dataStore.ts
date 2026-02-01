@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-type EntityType = 'factors' | 'models' | 'datasets' | 'backtests' | 'dashboard'
+type EntityType = 'factors' | 'models' | 'datasets' | 'backtests' | 'dashboard' | 'hyperparams'
 
 interface DataState {
   timestamps: Record<EntityType, number>
@@ -14,6 +14,7 @@ export const useDataStore = create<DataState>((set) => ({
     datasets: Date.now(),
     backtests: Date.now(),
     dashboard: Date.now(),
+    hyperparams: Date.now(),
   },
   invalidate: (entity) => {
     const entities = Array.isArray(entity) ? entity : [entity]

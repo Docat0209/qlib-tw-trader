@@ -1,9 +1,19 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { Play, Clock, BarChart3, Loader2, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react'
-import { backtestApi, BacktestItem, BacktestDetail, modelApi, ModelHistoryItem } from '@/api/client'
+import { Play, Clock, BarChart3, Loader2, RefreshCw, AlertCircle, CheckCircle, TrendingUp } from 'lucide-react'
+import {
+  backtestApi,
+  BacktestItem,
+  BacktestDetail,
+  modelApi,
+  ModelHistoryItem,
+  StockTradeInfo,
+  StockKlineResponse,
+} from '@/api/client'
 import { useJobs } from '@/hooks/useJobs'
 import { useFetchOnChange } from '@/hooks/useFetchOnChange'
+import { EquityCurve } from '@/components/charts/EquityCurve'
+import { StockKlineChart } from '@/components/charts/StockKlineChart'
 
 export function Backtest() {
   const [backtests, setBacktests] = useState<BacktestItem[]>([])
@@ -13,10 +23,24 @@ export function Backtest() {
   const [error, setError] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
 
+  // 股票交易相關
+  const [tradedStocks, setTradedStocks] = useState<StockTradeInfo[]>([])
+  const [selectedStock, setSelectedStock] = useState<string | null>(null)
+  const [stockKline, setStockKline] = useState<StockKlineResponse | null>(null)
+  const [loadingKline, setLoadingKline] = useState(false)
+
   // Form state
-  const [modelId, setModelId] = useState<number | ''>('')
+  const [modelId, setModelId] = useState<string>('')
   const [initialCapital, setInitialCapital] = useState('1000000')
   const [maxPositions, setMaxPositions] = useState('10')
+
+  // 將 "m001" 格式轉為數字 ID
+  const parseModelId = (id: string): number => {
+    if (id.startsWith('m')) {
+      return parseInt(id.slice(1), 10)
+    }
+    return parseInt(id, 10)
+  }
 
   const { activeJob } = useJobs()
 
@@ -47,11 +71,10 @@ export function Backtest() {
     setError(null)
     try {
       await backtestApi.run({
-        model_id: Number(modelId),
+        model_id: parseModelId(modelId),
         initial_capital: Number(initialCapital),
         max_positions: Number(maxPositions),
       })
-      // Refresh list after starting
       setTimeout(fetchData, 1000)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start backtest')
@@ -64,8 +87,36 @@ export function Backtest() {
     try {
       const detail = await backtestApi.get(id)
       setSelectedBacktest(detail)
+
+      // 載入交易過的股票
+      if (detail.status === 'completed') {
+        try {
+          const stocksRes = await backtestApi.getStocks(id)
+          setTradedStocks(stocksRes.items)
+          setSelectedStock(null)
+          setStockKline(null)
+        } catch {
+          setTradedStocks([])
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load backtest detail')
+    }
+  }
+
+  const handleSelectStock = async (stockId: string) => {
+    if (!selectedBacktest) return
+
+    setSelectedStock(stockId)
+    setLoadingKline(true)
+    try {
+      const klineRes = await backtestApi.getStockKline(selectedBacktest.id, stockId)
+      setStockKline(klineRes)
+    } catch (err) {
+      console.error('Failed to load K-line:', err)
+      setStockKline(null)
+    } finally {
+      setLoadingKline(false)
     }
   }
 
@@ -73,18 +124,21 @@ export function Backtest() {
     fetchData()
   }, [fetchData])
 
-  // 自動刷新（監聽 data_updated 事件）
   useFetchOnChange('backtests', fetchData)
 
-  // Refresh when job completes
   useEffect(() => {
-    if (activeJob?.status === 'completed' && activeJob.job_type === 'backtest') {
-      fetchData()
+    if (activeJob?.job_type === 'backtest') {
+      if (activeJob.status === 'completed') {
+        fetchData()
+      } else if (activeJob.status === 'failed') {
+        setError(activeJob.error || 'Backtest failed')
+        fetchData()
+      }
     }
   }, [activeJob, fetchData])
 
-  const formatPercent = (value: number | null) => {
-    if (value === null) return '---'
+  const formatPercent = (value: number | null | undefined) => {
+    if (value === null || value === undefined) return '---'
     const prefix = value >= 0 ? '+' : ''
     return `${prefix}${value.toFixed(2)}%`
   }
@@ -122,7 +176,7 @@ export function Backtest() {
       )}
 
       {/* Active Job Progress */}
-      {activeJob && activeJob.job_type === 'backtest' && (
+      {activeJob && activeJob.job_type === 'backtest' && ['queued', 'running'].includes(activeJob.status) && (
         <Card>
           <CardContent className="p-5">
             <div className="flex items-center gap-4">
@@ -145,6 +199,7 @@ export function Backtest() {
         </Card>
       )}
 
+      {/* Top Row: Run + Equity Curve */}
       <div className="grid gap-6 md:grid-cols-2">
         {/* Run New Backtest */}
         <Card>
@@ -160,7 +215,7 @@ export function Backtest() {
               <select
                 className="input w-full"
                 value={modelId}
-                onChange={(e) => setModelId(e.target.value ? Number(e.target.value) : '')}
+                onChange={(e) => setModelId(e.target.value)}
               >
                 <option value="">Select a model...</option>
                 {models.map((m) => (
@@ -170,7 +225,7 @@ export function Backtest() {
                 ))}
               </select>
               <p className="text-xs text-muted-foreground mt-1">
-                Backtest period is determined by the model's validation end date to today.
+                Backtest period: valid_end + 1 month
               </p>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -208,68 +263,144 @@ export function Backtest() {
           </CardContent>
         </Card>
 
-        {/* Selected Backtest Detail */}
+        {/* Equity Curve Preview */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-blue" />
-              Backtest Detail
+              <TrendingUp className="h-4 w-4 text-blue" />
+              Equity Curve
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {selectedBacktest ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 rounded-lg bg-secondary">
-                    <p className="text-xs text-muted-foreground">Total Return</p>
-                    <p className={`text-xl font-semibold ${(selectedBacktest.metrics?.total_return || 0) >= 0 ? 'text-green' : 'text-red'}`}>
-                      {formatPercent(selectedBacktest.metrics?.total_return || null)}
-                    </p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-secondary">
-                    <p className="text-xs text-muted-foreground">Annual Return</p>
-                    <p className={`text-xl font-semibold ${(selectedBacktest.metrics?.annual_return || 0) >= 0 ? 'text-green' : 'text-red'}`}>
-                      {formatPercent(selectedBacktest.metrics?.annual_return || null)}
-                    </p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 rounded-lg bg-secondary">
-                    <p className="text-xs text-muted-foreground">Sharpe Ratio</p>
-                    <p className="text-lg font-semibold">{selectedBacktest.metrics?.sharpe_ratio?.toFixed(2) || '---'}</p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-secondary">
-                    <p className="text-xs text-muted-foreground">Max Drawdown</p>
-                    <p className="text-lg font-semibold text-red">-{selectedBacktest.metrics?.max_drawdown?.toFixed(2) || '---'}%</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="p-3 rounded-lg bg-secondary">
-                    <p className="text-xs text-muted-foreground">Win Rate</p>
-                    <p className="font-semibold">{selectedBacktest.metrics?.win_rate?.toFixed(1) || '---'}%</p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-secondary">
-                    <p className="text-xs text-muted-foreground">Profit Factor</p>
-                    <p className="font-semibold">{selectedBacktest.metrics?.profit_factor?.toFixed(2) || '---'}</p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-secondary">
-                    <p className="text-xs text-muted-foreground">Total Trades</p>
-                    <p className="font-semibold">{selectedBacktest.metrics?.total_trades || '---'}</p>
-                  </div>
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  Period: {selectedBacktest.start_date} ~ {selectedBacktest.end_date}
-                </div>
-              </div>
+            {selectedBacktest?.equity_curve && selectedBacktest.equity_curve.length > 0 ? (
+              <EquityCurve
+                data={selectedBacktest.equity_curve}
+                initialCapital={selectedBacktest.initial_capital}
+                height={180}
+              />
             ) : (
-              <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-                <BarChart3 className="h-12 w-12 mb-4 opacity-50" />
-                <p>Select a backtest to view details</p>
+              <div className="flex flex-col items-center justify-center h-[180px] text-muted-foreground">
+                <TrendingUp className="h-12 w-12 mb-4 opacity-50" />
+                <p>Select a backtest to view equity curve</p>
               </div>
             )}
           </CardContent>
         </Card>
       </div>
+
+      {/* Metrics Summary */}
+      {selectedBacktest && selectedBacktest.metrics && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-blue" />
+              Backtest #{selectedBacktest.id} Metrics
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="p-3 rounded-lg bg-secondary">
+                <p className="text-xs text-muted-foreground">Return (with cost)</p>
+                <p className={`text-xl font-semibold ${(selectedBacktest.metrics.total_return_with_cost || selectedBacktest.metrics.total_return || 0) >= 0 ? 'text-green' : 'text-red'}`}>
+                  {formatPercent(selectedBacktest.metrics.total_return_with_cost || selectedBacktest.metrics.total_return)}
+                </p>
+              </div>
+              <div className="p-3 rounded-lg bg-secondary">
+                <p className="text-xs text-muted-foreground">Return (no cost)</p>
+                <p className={`text-xl font-semibold ${(selectedBacktest.metrics.total_return_without_cost || 0) >= 0 ? 'text-green' : 'text-red'}`}>
+                  {formatPercent(selectedBacktest.metrics.total_return_without_cost)}
+                </p>
+              </div>
+              <div className="p-3 rounded-lg bg-secondary">
+                <p className="text-xs text-muted-foreground">Sharpe Ratio</p>
+                <p className="text-xl font-semibold">{selectedBacktest.metrics.sharpe_ratio?.toFixed(2) || '---'}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-secondary">
+                <p className="text-xs text-muted-foreground">Max Drawdown</p>
+                <p className="text-xl font-semibold text-red">-{selectedBacktest.metrics.max_drawdown?.toFixed(2) || '---'}%</p>
+              </div>
+              <div className="p-3 rounded-lg bg-secondary">
+                <p className="text-xs text-muted-foreground">Win Rate</p>
+                <p className="font-semibold">{selectedBacktest.metrics.win_rate?.toFixed(1) || '---'}%</p>
+              </div>
+              <div className="p-3 rounded-lg bg-secondary">
+                <p className="text-xs text-muted-foreground">Total Trades</p>
+                <p className="font-semibold">{selectedBacktest.metrics.total_trades || '---'}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-secondary">
+                <p className="text-xs text-muted-foreground">Total Cost</p>
+                <p className="font-semibold">${selectedBacktest.metrics.total_cost?.toLocaleString() || '---'}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-secondary">
+                <p className="text-xs text-muted-foreground">Period</p>
+                <p className="font-semibold text-sm">{selectedBacktest.start_date} ~ {selectedBacktest.end_date}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Stock K-line Section */}
+      {selectedBacktest && selectedBacktest.status === 'completed' && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-blue" />
+              Stock K-line + Trades
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-4">
+              {/* Stock List */}
+              <div className="w-48 shrink-0 border-r pr-4">
+                <p className="text-xs text-muted-foreground mb-2">Traded Stocks ({tradedStocks.length})</p>
+                <div className="space-y-1 max-h-[400px] overflow-y-auto">
+                  {tradedStocks.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No trades</p>
+                  ) : (
+                    tradedStocks.map((stock) => (
+                      <button
+                        key={stock.stock_id}
+                        onClick={() => handleSelectStock(stock.stock_id)}
+                        className={`w-full text-left p-2 rounded text-sm hover:bg-secondary transition-colors ${
+                          selectedStock === stock.stock_id ? 'bg-blue-50 text-blue' : ''
+                        }`}
+                      >
+                        <span className="font-semibold">{stock.stock_id}</span>
+                        <span className="text-xs text-muted-foreground ml-2">
+                          B:{stock.buy_count} S:{stock.sell_count}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* K-line Chart */}
+              <div className="flex-1">
+                {loadingKline ? (
+                  <div className="flex items-center justify-center h-[400px]">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : stockKline ? (
+                  <div>
+                    <p className="text-sm font-semibold mb-2">
+                      {stockKline.stock_id} - {stockKline.name}
+                    </p>
+                    <StockKlineChart
+                      klines={stockKline.klines}
+                      trades={stockKline.trades}
+                      height={380}
+                    />
+                  </div>
+                ) : (
+                  <StockKlineChart klines={[]} trades={[]} height={400} />
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Backtest History */}
       <Card>
@@ -296,7 +427,8 @@ export function Backtest() {
                   <tr className="border-b border-border bg-secondary/50">
                     <th className="table-header px-5 py-3 text-left">ID</th>
                     <th className="table-header px-5 py-3 text-left">Period</th>
-                    <th className="table-header px-5 py-3 text-right">Return</th>
+                    <th className="table-header px-5 py-3 text-right">Return (w/cost)</th>
+                    <th className="table-header px-5 py-3 text-right">Return (no cost)</th>
                     <th className="table-header px-5 py-3 text-right">Sharpe</th>
                     <th className="table-header px-5 py-3 text-right">Max DD</th>
                     <th className="table-header px-5 py-3 text-center">Status</th>
@@ -316,8 +448,13 @@ export function Backtest() {
                         <span className="text-sm">{bt.start_date} ~ {bt.end_date}</span>
                       </td>
                       <td className="table-cell px-5 text-right">
-                        <span className={`font-semibold ${(bt.metrics?.total_return || 0) >= 0 ? 'text-green' : 'text-red'}`}>
-                          {formatPercent(bt.metrics?.total_return || null)}
+                        <span className={`font-semibold ${(bt.metrics?.total_return_with_cost || bt.metrics?.total_return || 0) >= 0 ? 'text-green' : 'text-red'}`}>
+                          {formatPercent(bt.metrics?.total_return_with_cost || bt.metrics?.total_return)}
+                        </span>
+                      </td>
+                      <td className="table-cell px-5 text-right">
+                        <span className={`font-semibold ${(bt.metrics?.total_return_without_cost || 0) >= 0 ? 'text-green' : 'text-red'}`}>
+                          {formatPercent(bt.metrics?.total_return_without_cost)}
                         </span>
                       </td>
                       <td className="table-cell px-5 text-right">

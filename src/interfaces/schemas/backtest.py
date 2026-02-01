@@ -2,8 +2,6 @@
 回測相關 Schema
 """
 
-from datetime import date, datetime
-
 from pydantic import BaseModel
 
 
@@ -18,13 +16,20 @@ class BacktestRequest(BaseModel):
 class BacktestMetrics(BaseModel):
     """回測績效指標"""
 
-    total_return: float | None
-    annual_return: float | None
-    sharpe_ratio: float | None
-    max_drawdown: float | None
-    win_rate: float | None
-    profit_factor: float | None
-    total_trades: int | None
+    total_return_with_cost: float | None = None
+    total_return_without_cost: float | None = None
+    annual_return_with_cost: float | None = None
+    annual_return_without_cost: float | None = None
+    sharpe_ratio: float | None = None
+    max_drawdown: float | None = None
+    win_rate: float | None = None
+    total_trades: int | None = None
+    total_cost: float | None = None
+
+    # 向後兼容舊欄位
+    total_return: float | None = None
+    annual_return: float | None = None
+    profit_factor: float | None = None
 
 
 class EquityCurvePoint(BaseModel):
@@ -70,3 +75,53 @@ class BacktestRunResponse(BaseModel):
     job_id: str
     status: str
     message: str
+
+
+# === 新增：股票交易 API ===
+
+
+class StockTradeInfo(BaseModel):
+    """股票交易摘要"""
+
+    stock_id: str
+    name: str
+    buy_count: int
+    sell_count: int
+    total_pnl: float | None = None
+
+
+class StockTradeListResponse(BaseModel):
+    """股票交易清單"""
+
+    backtest_id: int
+    items: list[StockTradeInfo]
+    total: int
+
+
+class KlinePoint(BaseModel):
+    """K 線資料點"""
+
+    date: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+
+
+class TradePoint(BaseModel):
+    """交易點"""
+
+    date: str
+    side: str  # buy / sell
+    price: float
+    shares: int
+
+
+class StockKlineResponse(BaseModel):
+    """個股 K 線回應"""
+
+    stock_id: str
+    name: str
+    klines: list[KlinePoint]
+    trades: list[TradePoint]

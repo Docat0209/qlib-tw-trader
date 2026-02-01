@@ -298,6 +298,9 @@ class Trade(Base):
     __tablename__ = "trades"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    backtest_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("backtests.id"), nullable=True, index=True
+    )
     date: Mapped[date] = mapped_column(Date, index=True)
     stock_id: Mapped[str] = mapped_column(String(10), index=True)
     side: Mapped[str] = mapped_column(String(10))  # buy/sell

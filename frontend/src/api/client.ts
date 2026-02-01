@@ -562,13 +562,20 @@ export const jobApi = {
 
 // Backtest Types
 export interface BacktestMetrics {
-  total_return: number | null
-  annual_return: number | null
+  // 新格式
+  total_return_with_cost: number | null
+  total_return_without_cost: number | null
+  annual_return_with_cost: number | null
+  annual_return_without_cost: number | null
   sharpe_ratio: number | null
   max_drawdown: number | null
   win_rate: number | null
-  profit_factor: number | null
   total_trades: number | null
+  total_cost: number | null
+  // 向後兼容
+  total_return: number | null
+  annual_return: number | null
+  profit_factor: number | null
 }
 
 export interface EquityCurvePoint {
@@ -612,6 +619,43 @@ export interface BacktestRunResponse {
   message: string
 }
 
+export interface StockTradeInfo {
+  stock_id: string
+  name: string
+  buy_count: number
+  sell_count: number
+  total_pnl: number | null
+}
+
+export interface StockTradeListResponse {
+  backtest_id: number
+  items: StockTradeInfo[]
+  total: number
+}
+
+export interface KlinePoint {
+  date: string
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+}
+
+export interface TradePoint {
+  date: string
+  side: 'buy' | 'sell'
+  price: number
+  shares: number
+}
+
+export interface StockKlineResponse {
+  stock_id: string
+  name: string
+  klines: KlinePoint[]
+  trades: TradePoint[]
+}
+
 export const backtestApi = {
   list: (modelId?: number, limit?: number) => {
     const params = new URLSearchParams()
@@ -622,6 +666,9 @@ export const backtestApi = {
   },
   get: (backtestId: number) => api.get<BacktestDetail>(`/backtest/${backtestId}`),
   run: (data: BacktestRequest) => api.post<BacktestRunResponse>('/backtest/run', data),
+  getStocks: (backtestId: number) => api.get<StockTradeListResponse>(`/backtest/${backtestId}/stocks`),
+  getStockKline: (backtestId: number, stockId: string) =>
+    api.get<StockKlineResponse>(`/backtest/${backtestId}/stocks/${stockId}`),
 }
 
 // Dataset Types

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Returns(BaseModel):
@@ -47,11 +47,8 @@ class MonthlyReturn(BaseModel):
 
     year: int
     month: int
-    return_: float  # 'return' is reserved
+    return_: float = Field(serialization_alias="return")  # 'return' is reserved
     benchmark: float | None
-
-    class Config:
-        fields = {"return_": "return"}
 
 
 class MonthlyReturnsResponse(BaseModel):

@@ -11,7 +11,7 @@ import {
   Zap,
   X,
 } from 'lucide-react'
-import { hyperparamsApi, HyperparamsSummary, HyperparamsDetail, CultivateRequest } from '@/api/client'
+import { hyperparamsApi, HyperparamsSummary, HyperparamsDetail } from '@/api/client'
 import { useJobs } from '@/hooks/useJobs'
 import { useFetchOnChange } from '@/hooks/useFetchOnChange'
 import { cn } from '@/lib/utils'
