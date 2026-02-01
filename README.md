@@ -10,7 +10,7 @@
 - **超參數培養**：Walk Forward Optimization + Optuna，自動調參
 - **模型訓練**：LightGBM + IC 增量選擇法 + 因子數量自適應縮放
 - **即時更新**：WebSocket + Zustand，CRUD 後自動刷新 UI
-- **回測系統**：績效分析（開發中）
+- **回測系統**：backtrader 整合，Equity Curve，K-line 圖表，績效指標
 
 ## 技術棧
 
@@ -20,6 +20,7 @@
 | 前端 | React 18 + Vite + Tailwind |
 | 預測 | qlib + LightGBM |
 | 調參 | Optuna + Walk Forward Optimization |
+| 回測 | backtrader |
 | 資料庫 | SQLite |
 
 ## 安裝

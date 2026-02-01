@@ -45,6 +45,9 @@ uvicorn       # ASGI 伺服器
 apscheduler   # 應用內排程
 httpx         # 非同步 HTTP（爬蟲）
 sqlalchemy    # ORM
+backtrader    # 回測引擎
+lightgbm      # 預測模型
+optuna        # 超參數優化
 pytest        # 測試框架
 pytest-asyncio # 非同步測試
 ```
@@ -122,3 +125,4 @@ tailwindcss   # 樣式
 - [x] 超參數培養（Walk Forward Optimization + Optuna）
 - [x] 超參數管理 UI（培養、選擇、刪除）
 - [x] 因子數量自適應縮放
+- [x] 回測系統（backtrader 整合）

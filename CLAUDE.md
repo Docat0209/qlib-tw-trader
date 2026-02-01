@@ -35,6 +35,7 @@ curl -X POST http://localhost:8000/api/v1/qlib/export/sync \
 - [x] **超參數培養**（Walk Forward Optimization + Optuna）
 - [x] **超參數管理 UI**（培養、選擇、刪除）
 - [x] **因子數量自適應縮放**（sqrt(ratio) 縮放公式）
+- [x] **回測系統**（backtrader 整合，Equity Curve，績效指標，K-line 圖表）
 
 ## 待完成
 

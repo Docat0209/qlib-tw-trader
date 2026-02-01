@@ -417,9 +417,35 @@
 
 ---
 
-## 4. Backtest API
+## 4. Backtest API ✅
 
-### POST /api/v1/backtest/run
+### GET /api/v1/backtests ✅
+
+取得回測紀錄列表。
+
+### POST /api/v1/backtests ✅
+
+執行回測（非同步）。
+
+### GET /api/v1/backtests/{backtest_id} ✅
+
+取得回測結果。
+
+### DELETE /api/v1/backtests/{backtest_id} ✅
+
+刪除回測紀錄。
+
+### GET /api/v1/backtests/{backtest_id}/trades ✅
+
+取得回測的所有交易明細（FIFO 配對計算 PnL）。
+
+### GET /api/v1/backtests/{backtest_id}/trades/{stock_id} ✅
+
+取得回測的個股交易明細。
+
+---
+
+### （舊文檔參考）POST /api/v1/backtest/run
 
 執行回測（非同步）。
 
