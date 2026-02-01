@@ -517,12 +517,12 @@ function CultivateDialog({
               value={nPeriods}
               onChange={(e) => setNPeriods(Number(e.target.value))}
               min={3}
-              max={10}
+              max={24}
               step={1}
             />
             <div className="flex justify-between text-xs text-muted-foreground mt-1">
               <span>3 (fast)</span>
-              <span>10 (stable)</span>
+              <span>24 (stable)</span>
             </div>
           </div>
 
