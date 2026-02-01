@@ -131,7 +131,9 @@ class AllTradesResponse(BaseModel):
 
     backtest_id: int
     items: list[TradePoint]
-    total_pnl: float
+    total_pnl: float  # 已實現盈虧
+    unrealized_pnl: float = 0.0  # 未實現盈虧（持倉）
+    total_equity_pnl: float = 0.0  # 總計（已實現 + 未實現）
     total: int
 
 

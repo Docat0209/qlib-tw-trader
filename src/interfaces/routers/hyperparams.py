@@ -132,6 +132,37 @@ async def cultivate_hyperparams(
         loop = asyncio.get_event_loop()
 
         try:
+            # 從資料庫獲取日期範圍
+            from pathlib import Path
+
+            from sqlalchemy import func
+
+            from src.repositories.models import StockDaily
+            from src.services.qlib_exporter import ExportConfig, QlibExporter
+
+            db_range = task_session.query(
+                func.min(StockDaily.date),
+                func.max(StockDaily.date),
+            ).first()
+
+            if not db_range[0] or not db_range[1]:
+                raise ValueError("No stock data available")
+
+            # 導出 qlib 資料
+            await progress_callback(2, "Exporting qlib data...")
+
+            def do_export():
+                exporter = QlibExporter(task_session)
+                export_config = ExportConfig(
+                    start_date=db_range[0],
+                    end_date=db_range[1],
+                    output_dir=Path("data/qlib"),
+                )
+                return exporter.export(export_config)
+
+            export_result = await asyncio.to_thread(do_export)
+            await progress_callback(8, f"Exported {export_result.stocks_exported} stocks")
+
             factors = task_factor_repo.get_all(enabled=True)
             trainer = ModelTrainer(qlib_data_dir="data/qlib")
 

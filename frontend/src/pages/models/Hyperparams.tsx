@@ -4,7 +4,6 @@ import {
   SlidersHorizontal,
   Loader2,
   RefreshCw,
-  Star,
   Trash2,
   CheckCircle,
   AlertTriangle,
@@ -84,18 +83,6 @@ export function Hyperparams() {
       fetchData()
     }
   }, [activeJob?.status, activeJob?.job_type, activeJob?.id, clearJob, fetchData])
-
-  const handleSetCurrent = async (id: number) => {
-    setActionLoading(true)
-    try {
-      await hyperparamsApi.setCurrent(id)
-      await fetchData()
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to set current')
-    } finally {
-      setActionLoading(false)
-    }
-  }
 
   const handleDelete = async (id: number) => {
     setActionLoading(true)
@@ -242,10 +229,11 @@ export function Hyperparams() {
         </div>
       )}
 
-      {/* Main Content: 2 Column Layout */}
-      <div className="grid grid-cols-3 gap-6">
+      {/* Main Content: Left-Right Layout */}
+      <div className="flex gap-6 h-[calc(100vh-200px)]">
         {/* Left: List */}
-        <Card className="col-span-1">
+        <div className="w-72 shrink-0 flex flex-col">
+        <Card className="flex-1 flex flex-col overflow-hidden">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <SlidersHorizontal className="h-4 w-4 text-purple" />
@@ -269,16 +257,23 @@ export function Hyperparams() {
                   <div
                     key={hp.id}
                     className={cn(
-                      "p-4 cursor-pointer transition-colors",
+                      "p-4 cursor-pointer transition-colors group",
                       selectedId === hp.id ? "bg-primary/10" : "hover:bg-secondary/50"
                     )}
                     onClick={() => setSelectedId(hp.id)}
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-medium">{hp.name}</span>
-                      {hp.is_current && (
-                        <span className="badge badge-green">Current</span>
-                      )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setDeleteConfirm(hp.id)
+                        }}
+                        className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red/10 transition-opacity"
+                        title="Delete"
+                      >
+                        <Trash2 className="h-3 w-3 text-red" />
+                      </button>
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">
                       {formatDate(hp.cultivated_at)} | {hp.n_periods} periods
@@ -294,38 +289,18 @@ export function Hyperparams() {
             )}
           </CardContent>
         </Card>
+        </div>
 
         {/* Right: Detail */}
-        <Card className="col-span-2">
+        <Card className="flex-1 overflow-y-auto">
           {loadingDetail ? (
             <div className="flex items-center justify-center h-64">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
             </div>
           ) : detail ? (
             <>
-              <CardHeader className="flex flex-row items-center justify-between">
+              <CardHeader>
                 <CardTitle>{detail.name}</CardTitle>
-                <div className="flex items-center gap-2">
-                  {!detail.is_current && (
-                    <button
-                      className="btn btn-sm btn-secondary"
-                      onClick={() => handleSetCurrent(detail.id)}
-                      disabled={actionLoading}
-                    >
-                      <Star className="h-4 w-4" />
-                      Set Current
-                    </button>
-                  )}
-                  {!detail.is_current && (
-                    <button
-                      className="btn btn-sm btn-ghost text-red hover:bg-red/10"
-                      onClick={() => setDeleteConfirm(detail.id)}
-                      disabled={actionLoading}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
               </CardHeader>
               <CardContent className="space-y-6">
                 {/* Meta */}

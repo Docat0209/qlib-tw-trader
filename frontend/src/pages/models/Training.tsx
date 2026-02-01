@@ -10,24 +10,22 @@ import {
   Loader2,
   RefreshCw,
   AlertTriangle,
-  ChevronDown,
-  ChevronUp,
   Trash2,
-  Star,
   XCircle,
 } from 'lucide-react'
 import { modelApi, ModelSummary, ModelStatus, Model, FactorSummary, DataRangeResponse, hyperparamsApi, HyperparamsSummary } from '@/api/client'
 import { Link } from 'react-router-dom'
 import { useJobs } from '@/hooks/useJobs'
 import { useFetchOnChange } from '@/hooks/useFetchOnChange'
+import { cn } from '@/lib/utils'
 
 export function Training() {
   const [models, setModels] = useState<ModelSummary[]>([])
   const [status, setStatus] = useState<ModelStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [expandedModel, setExpandedModel] = useState<Model | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedModel, setSelectedModel] = useState<Model | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
@@ -77,6 +75,19 @@ export function Training() {
     }
   }, [selectedMonth, selectedHpId])
 
+  // 載入選中模型詳情
+  useEffect(() => {
+    if (!selectedId) {
+      setSelectedModel(null)
+      return
+    }
+    setLoadingDetail(true)
+    modelApi.get(selectedId)
+      .then(setSelectedModel)
+      .catch(() => setSelectedModel(null))
+      .finally(() => setLoadingDetail(false))
+  }, [selectedId])
+
   // 初始載入
   useEffect(() => {
     fetchData()
@@ -100,45 +111,14 @@ export function Training() {
     }
   }, [activeJob?.status, activeJob?.job_type, activeJob?.id, clearJob, fetchData])
 
-  const handleExpand = async (id: string) => {
-    if (expandedId === id) {
-      setExpandedId(null)
-      setExpandedModel(null)
-      return
-    }
-
-    setExpandedId(id)
-    setLoadingDetail(true)
-    try {
-      const detail = await modelApi.get(id)
-      setExpandedModel(detail)
-    } catch (err) {
-      console.error('Failed to load model detail:', err)
-    } finally {
-      setLoadingDetail(false)
-    }
-  }
-
-  const handleSetCurrent = async (id: string) => {
-    setActionLoading(true)
-    try {
-      await modelApi.setCurrent(id)
-      await fetchData()
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to set current model')
-    } finally {
-      setActionLoading(false)
-    }
-  }
-
   const handleDelete = async (id: string) => {
     setActionLoading(true)
     try {
       await modelApi.delete(id)
       setDeleteConfirm(null)
-      if (expandedId === id) {
-        setExpandedId(null)
-        setExpandedModel(null)
+      if (selectedId === id) {
+        setSelectedId(null)
+        setSelectedModel(null)
       }
       await fetchData()
     } catch (err) {
@@ -257,392 +237,402 @@ export function Training() {
     : null
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="heading text-2xl">Models</h1>
-          <p className="subheading mt-1">
-            Manage trained models and start new training.
-            {!isConnected && (
-              <span className="text-orange ml-2">(WebSocket disconnected)</span>
-            )}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {/* 驗證結束月份選擇（模型命名月份）*/}
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-muted-foreground">Model:</label>
-            <select
-              className="px-3 py-2 rounded-lg border border-border bg-background text-sm"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              disabled={isTraining}
-            >
-              {monthOptions().map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          {/* 超參數選擇 */}
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-muted-foreground">Hyperparams:</label>
-            {hyperparamsList.length > 0 ? (
-              <select
-                className="px-3 py-2 rounded-lg border border-border bg-background text-sm"
-                value={selectedHpId ?? ''}
-                onChange={(e) => setSelectedHpId(e.target.value ? Number(e.target.value) : null)}
-                disabled={isTraining}
-              >
-                {hyperparamsList.map((hp) => (
-                  <option key={hp.id} value={hp.id}>
-                    {hp.name}{hp.is_current ? ' (Current)' : ''}
-                  </option>
+    <div className="flex gap-6 h-[calc(100vh-100px)]">
+      {/* 左側：Model List */}
+      <div className="w-72 shrink-0 flex flex-col">
+        <Card className="flex-1 flex flex-col overflow-hidden">
+          <CardHeader className="shrink-0 flex flex-row items-center justify-between py-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Layers className="h-4 w-4 text-blue" />
+              Models
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <span className="badge badge-gray text-xs">{models.length}</span>
+              <button onClick={fetchData} className="p-1 hover:bg-secondary rounded">
+                <RefreshCw className="h-3 w-3" />
+              </button>
+            </div>
+          </CardHeader>
+          <CardContent className="flex-1 p-0 overflow-y-auto">
+            {models.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                <BarChart3 className="h-8 w-8 mb-2 opacity-50" />
+                <p className="text-sm">No models yet</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {models.map((model) => (
+                  <div
+                    key={model.id}
+                    onClick={() => setSelectedId(model.id)}
+                    className={cn(
+                      "w-full text-left p-3 hover:bg-secondary/50 transition-colors cursor-pointer group",
+                      selectedId === model.id && "bg-blue-50 border-l-2 border-blue"
+                    )}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-semibold mono text-sm">{model.name || model.id}</span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setDeleteConfirm(model.id)
+                          }}
+                          className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red/10 transition-opacity"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-3 w-3 text-red" />
+                        </button>
+                        {model.status === 'completed' ? (
+                          <CheckCircle className="h-3 w-3 text-green" />
+                        ) : model.status === 'running' ? (
+                          <Loader2 className="h-3 w-3 animate-spin text-blue" />
+                        ) : model.status === 'failed' ? (
+                          <XCircle className="h-3 w-3 text-red" />
+                        ) : (
+                          <Clock className="h-3 w-3 text-gray-400" />
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-xs text-muted-foreground mb-1">
+                      {model.train_period && (
+                        <span>{model.train_period.start?.slice(5)} ~ {model.train_period.end?.slice(5)}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 text-xs">
+                      <span className={cn(
+                        "font-semibold",
+                        (model.metrics.ic || 0) >= 0.05 ? 'text-green' : ''
+                      )}>
+                        IC: {model.metrics.ic?.toFixed(4) || '---'}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {model.factor_count || 0} factors
+                      </span>
+                    </div>
+                  </div>
                 ))}
-              </select>
-            ) : (
-              <Link
-                to="/models/hyperparams"
-                className="text-sm text-blue hover:underline"
-              >
-                Cultivate First
-              </Link>
+              </div>
             )}
-          </div>
-          <button
-            className="btn btn-primary"
-            onClick={handleStartTraining}
-            disabled={actionLoading || isTraining || !selectedMonth || hyperparamsList.length === 0}
-          >
-            {isTraining ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Play className="h-4 w-4" />
-            )}
-            {isTraining ? 'Training...' : 'New Training'}
-          </button>
-        </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Training Progress */}
-      {isTraining && activeJob && (
-        <div className="p-4 rounded-lg bg-blue/10 border border-blue/20">
-          <div className="flex items-center gap-3 mb-2">
-            <Loader2 className="h-5 w-5 animate-spin text-blue" />
-            <div className="flex-1">
-              <p className="font-semibold text-blue">Training in Progress</p>
-              <p className="text-sm text-muted-foreground">
-                {activeJob.message || 'Processing...'}
-              </p>
+      {/* 右側：主內容區 */}
+      <div className="flex-1 flex flex-col gap-4 overflow-y-auto pr-1">
+        {/* Training Progress */}
+        {isTraining && activeJob && (
+          <div className="p-4 rounded-lg bg-blue/10 border border-blue/20 shrink-0">
+            <div className="flex items-center gap-3 mb-2">
+              <Loader2 className="h-5 w-5 animate-spin text-blue" />
+              <div className="flex-1">
+                <p className="font-semibold text-blue">Training in Progress</p>
+                <p className="text-sm text-muted-foreground">
+                  {activeJob.message || 'Processing...'}
+                </p>
+              </div>
+              <span className="font-mono text-lg text-blue">
+                {typeof activeJob.progress === 'number' ? activeJob.progress.toFixed(1) : activeJob.progress}%
+              </span>
+              <button
+                className="btn btn-sm btn-ghost text-red hover:bg-red/10"
+                onClick={handleCancelTraining}
+                disabled={actionLoading}
+                title="Cancel training"
+              >
+                <AlertTriangle className="h-4 w-4" />
+                Cancel
+              </button>
             </div>
-            <span className="font-mono text-lg text-blue">
-              {typeof activeJob.progress === 'number' ? activeJob.progress.toFixed(1) : activeJob.progress}%
-            </span>
-            <button
-              className="btn btn-sm btn-ghost text-red hover:bg-red/10"
-              onClick={handleCancelTraining}
-              disabled={actionLoading}
-              title="Cancel training"
-            >
-              <AlertTriangle className="h-4 w-4" />
-              Cancel
-            </button>
+            <div className="h-2 bg-secondary rounded-full overflow-hidden">
+              <div
+                className="h-full bg-blue transition-all duration-300"
+                style={{ width: `${activeJob.progress}%` }}
+              />
+            </div>
           </div>
-          <div className="h-2 bg-secondary rounded-full overflow-hidden">
-            <div
-              className="h-full bg-blue transition-all duration-300"
-              style={{ width: `${activeJob.progress}%` }}
-            />
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* Training Completed */}
-      {activeJob?.status === 'completed' && activeJob?.job_type === 'train' && (
-        <div className="p-4 rounded-lg bg-green/10 border border-green/20">
-          <div className="flex items-center gap-3">
-            <CheckCircle className="h-5 w-5 text-green" />
+        {/* Training Completed */}
+        {activeJob?.status === 'completed' && activeJob?.job_type === 'train' && (
+          <div className="p-4 rounded-lg bg-green/10 border border-green/20 shrink-0">
+            <div className="flex items-center gap-3">
+              <CheckCircle className="h-5 w-5 text-green" />
+              <div>
+                <p className="font-semibold text-green">Training Completed</p>
+                <p className="text-sm text-muted-foreground">
+                  Model trained successfully!
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Training Failed */}
+        {activeJob?.status === 'failed' && activeJob?.job_type === 'train' && (
+          <div className="p-4 rounded-lg bg-red/10 border border-red/20 shrink-0">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-red" />
+              <div>
+                <p className="font-semibold text-red">Training Failed</p>
+                <p className="text-sm text-muted-foreground">
+                  {activeJob.error || 'An error occurred during training.'}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Retrain Warning */}
+        {status?.needs_retrain && (
+          <div className="flex items-center gap-3 p-4 rounded-lg bg-orange/10 border border-orange/20 shrink-0">
+            <AlertTriangle className="h-5 w-5 text-orange" />
             <div>
-              <p className="font-semibold text-green">Training Completed</p>
+              <p className="font-semibold text-orange">Model Retrain Recommended</p>
               <p className="text-sm text-muted-foreground">
-                Model trained successfully!
+                Last trained {status.days_since_training} days ago. Consider retraining for better accuracy.
               </p>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Training Failed */}
-      {activeJob?.status === 'failed' && activeJob?.job_type === 'train' && (
-        <div className="p-4 rounded-lg bg-red/10 border border-red/20">
-          <div className="flex items-center gap-3">
-            <AlertTriangle className="h-5 w-5 text-red" />
-            <div>
-              <p className="font-semibold text-red">Training Failed</p>
-              <p className="text-sm text-muted-foreground">
-                {activeJob.error || 'An error occurred during training.'}
-              </p>
+        {/* Stats */}
+        <div className="grid grid-cols-4 gap-4 shrink-0">
+          <div className="stat-card">
+            <div className="flex items-center justify-between">
+              <span className="stat-label">Total Models</span>
+              <div className="icon-box icon-box-blue">
+                <Layers className="h-4 w-4" />
+              </div>
             </div>
+            <p className="stat-value">{completedModels.length}</p>
           </div>
-        </div>
-      )}
-
-      {/* Retrain Warning */}
-      {status?.needs_retrain && (
-        <div className="flex items-center gap-3 p-4 rounded-lg bg-orange/10 border border-orange/20">
-          <AlertTriangle className="h-5 w-5 text-orange" />
-          <div>
-            <p className="font-semibold text-orange">Model Retrain Recommended</p>
-            <p className="text-sm text-muted-foreground">
-              Last trained {status.days_since_training} days ago. Consider retraining for better accuracy.
+          <div className="stat-card">
+            <div className="flex items-center justify-between">
+              <span className="stat-label">Current IC</span>
+              <div className="icon-box icon-box-green">
+                <CheckCircle className="h-4 w-4" />
+              </div>
+            </div>
+            <p className={`stat-value ${currentModel?.metrics.ic ? 'text-green' : 'text-muted-foreground'}`}>
+              {currentModel?.metrics.ic?.toFixed(4) || '---'}
+            </p>
+          </div>
+          <div className="stat-card">
+            <div className="flex items-center justify-between">
+              <span className="stat-label">Best IC</span>
+              <div className="icon-box icon-box-purple">
+                <Activity className="h-4 w-4" />
+              </div>
+            </div>
+            <p className={`stat-value ${bestIc ? 'text-purple' : 'text-muted-foreground'}`}>
+              {bestIc?.toFixed(4) || '---'}
+            </p>
+          </div>
+          <div className="stat-card">
+            <div className="flex items-center justify-between">
+              <span className="stat-label">Days Since Training</span>
+              <div className="icon-box icon-box-orange">
+                <Clock className="h-4 w-4" />
+              </div>
+            </div>
+            <p className={`stat-value ${status?.needs_retrain ? 'text-orange' : ''}`}>
+              {status?.days_since_training ?? '---'}
             </p>
           </div>
         </div>
-      )}
 
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
-        <div className="stat-card">
-          <div className="flex items-center justify-between">
-            <span className="stat-label">Total Models</span>
-            <div className="icon-box icon-box-blue">
-              <Layers className="h-4 w-4" />
-            </div>
-          </div>
-          <p className="stat-value">{completedModels.length}</p>
-        </div>
-        <div className="stat-card">
-          <div className="flex items-center justify-between">
-            <span className="stat-label">Current IC</span>
-            <div className="icon-box icon-box-green">
-              <CheckCircle className="h-4 w-4" />
-            </div>
-          </div>
-          <p className={`stat-value ${currentModel?.metrics.ic ? 'text-green' : 'text-muted-foreground'}`}>
-            {currentModel?.metrics.ic?.toFixed(4) || '---'}
-          </p>
-        </div>
-        <div className="stat-card">
-          <div className="flex items-center justify-between">
-            <span className="stat-label">Best IC</span>
-            <div className="icon-box icon-box-purple">
-              <Activity className="h-4 w-4" />
-            </div>
-          </div>
-          <p className={`stat-value ${bestIc ? 'text-purple' : 'text-muted-foreground'}`}>
-            {bestIc?.toFixed(4) || '---'}
-          </p>
-        </div>
-        <div className="stat-card">
-          <div className="flex items-center justify-between">
-            <span className="stat-label">Days Since Training</span>
-            <div className="icon-box icon-box-orange">
-              <Clock className="h-4 w-4" />
-            </div>
-          </div>
-          <p className={`stat-value ${status?.needs_retrain ? 'text-orange' : ''}`}>
-            {status?.days_since_training ?? '---'}
-          </p>
-        </div>
-      </div>
-
-      {/* Model List */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            <Layers className="h-4 w-4 text-blue" />
-            Model List
-          </CardTitle>
-          <span className="badge badge-gray">{models.length} models</span>
-        </CardHeader>
-        <CardContent className="p-0">
-          {models.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <div className="icon-box icon-box-blue w-12 h-12 mb-4">
-                <BarChart3 className="h-6 w-6" />
-              </div>
-              <p className="font-semibold">No Models</p>
-              <p className="text-sm text-muted-foreground mt-1">Click "New Training" to create a model</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-border">
-              {models.map((model) => (
-                <div key={model.id} className="hover:bg-secondary/30">
-                  {/* Model Row */}
-                  <div
-                    className="flex items-center gap-4 px-5 py-4 cursor-pointer"
-                    onClick={() => handleExpand(model.id)}
+        {/* Row 2: Training Form + Model Detail */}
+        <div className="grid grid-cols-2 gap-4 shrink-0">
+          {/* Training Form */}
+          <Card>
+            <CardHeader className="py-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Play className="h-4 w-4 text-green" />
+                New Training
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 pt-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">Model Month</label>
+                  <select
+                    className="input w-full text-sm"
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    disabled={isTraining}
                   >
-                    {/* Expand Icon */}
-                    <div className="text-muted-foreground">
-                      {expandedId === model.id ? (
-                        <ChevronUp className="h-4 w-4" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4" />
-                      )}
-                    </div>
-
-                    {/* Name */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold mono">{model.name || model.id}</span>
-                        {model.is_current && (
-                          <span className="badge badge-green">Current</span>
-                        )}
-                        {model.status !== 'completed' && (
-                          <span className="badge badge-orange">{model.status}</span>
-                        )}
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-1">
-                        {model.train_period && (
-                          <span>Train: {model.train_period.start} ~ {model.train_period.end}</span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Metrics */}
-                    <div className="flex items-center gap-6">
-                      <div className="text-right">
-                        <p className="text-xs text-muted-foreground">IC</p>
-                        <p className={`font-semibold mono ${(model.metrics.ic || 0) >= 0.05 ? 'text-green' : ''}`}>
-                          {model.metrics.ic?.toFixed(4) || '---'}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs text-muted-foreground">ICIR</p>
-                        <p className="mono">{model.metrics.icir?.toFixed(2) || '---'}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs text-muted-foreground">Factors</p>
-                        <p>
-                          {model.factor_count || 0}
-                          {model.candidate_count && (
-                            <span className="text-muted-foreground">/{model.candidate_count}</span>
-                          )}
-                        </p>
-                      </div>
-                      <div className="text-right w-24">
-                        <p className="text-xs text-muted-foreground">Trained</p>
-                        <p className="text-sm">{formatRelativeTime(model.trained_at)}</p>
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                      {!model.is_current && model.status === 'completed' && (
-                        <button
-                          className="btn btn-sm btn-ghost"
-                          onClick={() => handleSetCurrent(model.id)}
-                          disabled={actionLoading}
-                          title="Set as current"
-                        >
-                          <Star className="h-4 w-4" />
-                        </button>
-                      )}
-                      {!model.is_current && (
-                        <button
-                          className={`btn btn-sm btn-ghost ${['running', 'queued'].includes(model.status) ? 'text-orange hover:bg-orange/10' : 'text-red hover:bg-red/10'}`}
-                          onClick={() => setDeleteConfirm(model.id)}
-                          disabled={actionLoading}
-                          title={['running', 'queued'].includes(model.status) ? 'Cancel training' : 'Delete'}
-                        >
-                          {['running', 'queued'].includes(model.status) ? (
-                            <XCircle className="h-4 w-4" />
-                          ) : (
-                            <Trash2 className="h-4 w-4" />
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Expanded Detail */}
-                  {expandedId === model.id && (
-                    <div className="px-5 pb-4 pt-0">
-                      {loadingDetail ? (
-                        <div className="flex items-center justify-center py-8">
-                          <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                        </div>
-                      ) : expandedModel ? (
-                        <div className="ml-8 space-y-4">
-                          {/* Periods */}
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="p-3 rounded-lg bg-secondary">
-                              <p className="text-xs text-muted-foreground mb-1">Training Period</p>
-                              <p className="font-semibold">
-                                {expandedModel.train_period
-                                  ? `${formatDate(expandedModel.train_period.start)} ~ ${formatDate(expandedModel.train_period.end)}`
-                                  : '---'}
-                              </p>
-                            </div>
-                            <div className="p-3 rounded-lg bg-secondary">
-                              <p className="text-xs text-muted-foreground mb-1">Validation Period</p>
-                              <p className="font-semibold">
-                                {expandedModel.valid_period
-                                  ? `${formatDate(expandedModel.valid_period.start)} ~ ${formatDate(expandedModel.valid_period.end)}`
-                                  : '---'}
-                              </p>
-                            </div>
-                          </div>
-
-                          {/* Selected Factors */}
-                          {expandedModel.selected_factors.length > 0 && (
-                            <div>
-                              <p className="text-xs text-muted-foreground mb-2">
-                                Selected Factors ({expandedModel.selected_factors.length})
-                              </p>
-                              <div className="flex flex-wrap gap-2">
-                                {expandedModel.selected_factors.map((f: FactorSummary) => (
-                                  <span
-                                    key={f.id}
-                                    className="badge badge-blue"
-                                    title={f.ic_value ? `IC: ${f.ic_value.toFixed(4)}` : undefined}
-                                  >
-                                    {f.display_name || f.name}
-                                    {f.ic_value && (
-                                      <span className="ml-1 opacity-70">
-                                        ({f.ic_value.toFixed(3)})
-                                      </span>
-                                    )}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Candidate Factors (if different from selected) */}
-                          {expandedModel.candidate_factors.length > expandedModel.selected_factors.length && (
-                            <div>
-                              <p className="text-xs text-muted-foreground mb-2">
-                                Candidate Factors ({expandedModel.candidate_factors.length})
-                              </p>
-                              <div className="flex flex-wrap gap-2">
-                                {expandedModel.candidate_factors.map((f: FactorSummary) => {
-                                  const isSelected = expandedModel.selected_factors.some(s => s.id === f.id)
-                                  return (
-                                    <span
-                                      key={f.id}
-                                      className={`badge ${isSelected ? 'badge-blue' : 'badge-gray'}`}
-                                    >
-                                      {f.display_name || f.name}
-                                    </span>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ) : null}
-                    </div>
+                    {monthOptions().map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">Hyperparams</label>
+                  {hyperparamsList.length > 0 ? (
+                    <select
+                      className="input w-full text-sm"
+                      value={selectedHpId ?? ''}
+                      onChange={(e) => setSelectedHpId(e.target.value ? Number(e.target.value) : null)}
+                      disabled={isTraining}
+                    >
+                      {hyperparamsList.map((hp) => (
+                        <option key={hp.id} value={hp.id}>
+                          {hp.name}{hp.is_current ? ' (Current)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Link
+                      to="/models/hyperparams"
+                      className="input w-full text-sm flex items-center justify-center text-blue hover:underline"
+                    >
+                      Cultivate First
+                    </Link>
                   )}
                 </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              </div>
+              <button
+                className="btn btn-primary w-full text-sm disabled:opacity-50"
+                onClick={handleStartTraining}
+                disabled={actionLoading || isTraining || !selectedMonth || hyperparamsList.length === 0}
+              >
+                {isTraining ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Play className="h-4 w-4" />
+                )}
+                {isTraining ? 'Training...' : 'Start Training'}
+              </button>
+            </CardContent>
+          </Card>
+
+          {/* Model Detail */}
+          <Card>
+            <CardHeader className="py-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <BarChart3 className="h-4 w-4 text-blue" />
+                {selectedModel ? selectedModel.name || selectedModel.id : 'Model Detail'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
+              {loadingDetail ? (
+                <div className="flex items-center justify-center h-24">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+              ) : selectedModel ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-2 rounded bg-secondary/50">
+                      <p className="text-[10px] text-muted-foreground">IC</p>
+                      <p className={`font-semibold text-sm ${(selectedModel.metrics.ic || 0) >= 0.05 ? 'text-green' : ''}`}>
+                        {selectedModel.metrics.ic?.toFixed(4) || '---'}
+                      </p>
+                    </div>
+                    <div className="p-2 rounded bg-secondary/50">
+                      <p className="text-[10px] text-muted-foreground">ICIR</p>
+                      <p className="font-semibold text-sm">
+                        {selectedModel.metrics.icir?.toFixed(2) || '---'}
+                      </p>
+                    </div>
+                    <div className="p-2 rounded bg-secondary/50">
+                      <p className="text-[10px] text-muted-foreground">Factors</p>
+                      <p className="font-semibold text-sm">
+                        {selectedModel.factor_count || 0}
+                        {selectedModel.candidate_count && (
+                          <span className="text-muted-foreground font-normal">/{selectedModel.candidate_count}</span>
+                        )}
+                      </p>
+                    </div>
+                    <div className="p-2 rounded bg-secondary/50">
+                      <p className="text-[10px] text-muted-foreground">Trained</p>
+                      <p className="font-semibold text-sm">
+                        {formatRelativeTime(selectedModel.trained_at)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    <p>Train: {selectedModel.train_period ? `${formatDate(selectedModel.train_period.start)} ~ ${formatDate(selectedModel.train_period.end)}` : '---'}</p>
+                    <p>Valid: {selectedModel.valid_period ? `${formatDate(selectedModel.valid_period.start)} ~ ${formatDate(selectedModel.valid_period.end)}` : '---'}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-24 text-muted-foreground text-sm">
+                  Select a model to view details
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Factor Pool & Selected Factors */}
+        {selectedModel && selectedModel.candidate_factors.length > 0 && (
+          <Card className="shrink-0">
+            <CardHeader className="py-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Layers className="h-4 w-4 text-orange" />
+                Factor Pool
+                <span className="text-muted-foreground font-normal text-sm">
+                  {selectedModel.selected_factors.length} / {selectedModel.candidate_factors.length} selected
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4 space-y-4">
+              {/* Candidate Factor Pool */}
+              <div>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Candidate Factors ({selectedModel.candidate_factors.length})
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {selectedModel.candidate_factors.map((f: FactorSummary) => {
+                    const isSelected = selectedModel.selected_factors.some(sf => sf.id === f.id)
+                    return (
+                      <span
+                        key={f.id}
+                        className={cn(
+                          "badge",
+                          isSelected ? "badge-blue" : "badge-gray"
+                        )}
+                        title={f.ic_value ? `IC: ${f.ic_value.toFixed(4)}` : undefined}
+                      >
+                        {f.display_name || f.name}
+                      </span>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Selected Factors with IC */}
+              {selectedModel.selected_factors.length > 0 && (
+                <div className="pt-3 border-t border-border">
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Selected Factors ({selectedModel.selected_factors.length}) - IC Incremental
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedModel.selected_factors.map((f: FactorSummary, idx: number) => (
+                      <span
+                        key={f.id}
+                        className="badge badge-purple"
+                        title={f.ic_value ? `IC: ${f.ic_value.toFixed(4)}` : undefined}
+                      >
+                        <span className="text-[10px] opacity-60 mr-1">#{idx + 1}</span>
+                        {f.display_name || f.name}
+                        {f.ic_value && (
+                          <span className="ml-1 opacity-70">
+                            ({f.ic_value.toFixed(3)})
+                          </span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       {/* Delete Confirmation Dialog */}
       {deleteConfirm && (

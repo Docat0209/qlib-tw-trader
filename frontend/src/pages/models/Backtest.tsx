@@ -321,7 +321,7 @@ export function Backtest() {
                 Run Backtest
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3 pt-0">
+            <CardContent className="space-y-3 pt-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2">
                   <label className="text-xs text-muted-foreground block mb-1">Model</label>
@@ -387,7 +387,7 @@ export function Backtest() {
                 {selectedBacktest ? `#${selectedBacktest.id} Metrics` : 'Metrics'}
               </CardTitle>
             </CardHeader>
-            <CardContent className="pt-0">
+            <CardContent className="pt-4">
               {selectedBacktest?.metrics ? (
                 <div className="grid grid-cols-4 gap-2">
                   <MetricCard label="Return" value={formatPercent(selectedBacktest.metrics.total_return_with_cost)} color={(selectedBacktest.metrics.total_return_with_cost || 0) >= 0} />
@@ -416,7 +416,7 @@ export function Backtest() {
               Equity Curve
             </CardTitle>
           </CardHeader>
-          <CardContent className="pt-0">
+          <CardContent className="pt-4">
             {selectedBacktest?.equity_curve && selectedBacktest.equity_curve.length > 0 ? (
               <EquityCurve
                 data={selectedBacktest.equity_curve}
@@ -460,7 +460,7 @@ export function Backtest() {
                 </select>
               </div>
             </CardHeader>
-            <CardContent className="flex-1 pt-0">
+            <CardContent className="flex-1 pt-4">
               {loadingKline ? (
                 <div className="flex items-center justify-center h-full">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -494,13 +494,13 @@ export function Backtest() {
                   )}
                 </CardTitle>
                 {allTrades && (
-                  <span className={`text-sm font-semibold ${allTrades.total_pnl >= 0 ? 'text-green' : 'text-red'}`}>
-                    {allTrades.total_pnl >= 0 ? '+' : ''}{allTrades.total_pnl.toLocaleString()}
+                  <span className={`text-sm font-semibold ${allTrades.total_equity_pnl >= 0 ? 'text-green' : 'text-red'}`}>
+                    {allTrades.total_equity_pnl >= 0 ? '+' : ''}{allTrades.total_equity_pnl.toLocaleString()}
                   </span>
                 )}
               </div>
             </CardHeader>
-            <CardContent className="flex-1 pt-0 px-2 overflow-hidden">
+            <CardContent className="flex-1 pt-4 px-2 overflow-hidden">
               {allTrades && allTrades.items.length > 0 ? (
                 <div className="h-full overflow-y-auto pr-1">
                   <TradeList trades={allTrades.items} showStock />

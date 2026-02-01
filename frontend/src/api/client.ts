@@ -660,7 +660,9 @@ export interface TradePoint {
 export interface AllTradesResponse {
   backtest_id: number
   items: TradePoint[]
-  total_pnl: number
+  total_pnl: number  // 已實現盈虧
+  unrealized_pnl: number  // 未實現盈虧（持倉）
+  total_equity_pnl: number  // 總計（已實現 + 未實現）
   total: number
 }
 

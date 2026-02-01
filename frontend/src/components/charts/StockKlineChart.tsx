@@ -103,6 +103,7 @@ export function StockKlineChart({ klines, trades, height = 400 }: StockKlineChar
         chartRef.current.applyOptions({
           width: chartContainerRef.current.clientWidth,
         })
+        chartRef.current.timeScale().fitContent()
       }
     }
 

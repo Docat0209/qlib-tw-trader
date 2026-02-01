@@ -681,16 +681,20 @@ async def get_all_trades(
         )
 
         if t.side == "buy":
+            # 記錄買入資訊，包含手續費
+            buy_commission = float(t.commission) if t.commission else 0
             stock_queues[stock_id].append({
                 "date": t.date,
                 "price": float(t.price),
                 "shares": t.shares,
+                "commission": buy_commission,  # 買入手續費
             })
         else:
             # 賣出：FIFO 配對
             buy_queue = stock_queues[stock_id]
             remaining_shares = t.shares
             total_cost = 0.0
+            total_buy_commission = 0.0
             earliest_buy_date = None
 
             while remaining_shares > 0 and buy_queue:
@@ -700,20 +704,25 @@ async def get_all_trades(
 
                 if buy["shares"] <= remaining_shares:
                     total_cost += buy["price"] * buy["shares"]
+                    total_buy_commission += buy.get("commission", 0)
                     remaining_shares -= buy["shares"]
                     buy_queue.pop(0)
                 else:
+                    # 部分賣出：按比例分攤買入手續費
+                    ratio = remaining_shares / buy["shares"]
                     total_cost += buy["price"] * remaining_shares
+                    total_buy_commission += buy.get("commission", 0) * ratio
                     buy["shares"] -= remaining_shares
+                    buy["commission"] = buy.get("commission", 0) * (1 - ratio)
                     remaining_shares = 0
 
-            # 計算盈虧
+            # 計算盈虧（含買入+賣出手續費）
             if t.shares > 0:
                 sell_amount = float(t.price) * t.shares
-                commission = float(t.commission) if t.commission else 0
-                pnl = sell_amount - total_cost - commission
-                avg_cost = total_cost / t.shares
-                pnl_pct = ((float(t.price) / avg_cost) - 1) * 100 if avg_cost > 0 else 0
+                sell_commission = float(t.commission) if t.commission else 0
+                pnl = sell_amount - total_cost - total_buy_commission - sell_commission
+                avg_cost = (total_cost + total_buy_commission) / t.shares
+                pnl_pct = ((float(t.price) / (total_cost / t.shares)) - 1) * 100 if total_cost > 0 else 0
 
                 trade_point.pnl = round(pnl, 2)
                 trade_point.pnl_pct = round(pnl_pct, 2)
@@ -727,9 +736,35 @@ async def get_all_trades(
     # 按日期重新排序
     trades.sort(key=lambda x: x.date)
 
+    # 計算未平倉部位的未實現盈虧
+    from src.repositories.models import StockDaily
+
+    unrealized_pnl = 0.0
+    for stock_id, buy_queue in stock_queues.items():
+        if buy_queue:  # 還有未賣出的買入記錄
+            # 取得回測結束日的收盤價
+            latest_price_row = (
+                session.query(StockDaily.close)
+                .filter(StockDaily.stock_id == stock_id)
+                .filter(StockDaily.date <= bt.end_date)
+                .order_by(StockDaily.date.desc())
+                .first()
+            )
+            if latest_price_row:
+                latest_price = float(latest_price_row[0])
+                for buy in buy_queue:
+                    # 未實現盈虧 = (當前價 - 買入價) × 股數 - 買入手續費
+                    market_value = latest_price * buy["shares"]
+                    cost = buy["price"] * buy["shares"] + buy.get("commission", 0)
+                    unrealized_pnl += market_value - cost
+
+    total_equity_pnl = total_pnl + unrealized_pnl
+
     return AllTradesResponse(
         backtest_id=backtest_id,
         items=trades,
         total_pnl=round(total_pnl, 2),
+        unrealized_pnl=round(unrealized_pnl, 2),
+        total_equity_pnl=round(total_equity_pnl, 2),
         total=len(trades),
     )
