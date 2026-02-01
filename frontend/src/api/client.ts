@@ -207,7 +207,6 @@ export interface Model {
   valid_period: Period | null
   metrics: ModelMetrics
   training_duration_seconds: number | null
-  is_current: boolean
   candidate_factors: FactorSummary[]
   selected_factors: FactorSummary[]
 }
@@ -222,7 +221,6 @@ export interface ModelSummary {
   metrics: ModelMetrics
   factor_count: number | null
   candidate_count: number | null
-  is_current: boolean
 }
 
 export interface ModelListResponse {
@@ -282,7 +280,6 @@ export interface DeleteResponse {
 export interface SetCurrentResponse {
   status: string
   id: string
-  is_current: boolean
 }
 
 export const modelApi = {
@@ -377,32 +374,23 @@ export interface PositionsResponse {
   positions: PositionItem[]
 }
 
+export interface PredictionRequest {
+  model_id: number
+  top_k: number
+  target_date?: string  // YYYY-MM-DD 格式，null = 最新
+}
+
 export interface PredictionSignal {
+  rank: number
   symbol: string
   name: string | null
   score: number
-  rank: number
-  signal: string
-  current_position: number | null
 }
 
-export interface PredictionsLatestResponse {
+export interface PredictionsResponse {
   date: string
-  model_id: string
+  model_name: string
   signals: PredictionSignal[]
-}
-
-export interface PredictionHistoryItem {
-  date: string
-  symbol: string
-  score: number
-  rank: number
-  signal: string
-}
-
-export interface PredictionsHistoryResponse {
-  items: PredictionHistoryItem[]
-  total: number
 }
 
 export interface TradeItem {
@@ -425,15 +413,8 @@ export interface TradesResponse {
 
 export const portfolioApi = {
   positions: () => api.get<PositionsResponse>('/positions'),
-  predictionsLatest: () => api.get<PredictionsLatestResponse>('/predictions/latest'),
-  predictionsHistory: (params?: { start_date?: string; end_date?: string; symbol?: string }) => {
-    const searchParams = new URLSearchParams()
-    if (params?.start_date) searchParams.set('start_date', params.start_date)
-    if (params?.end_date) searchParams.set('end_date', params.end_date)
-    if (params?.symbol) searchParams.set('symbol', params.symbol)
-    const query = searchParams.toString() ? `?${searchParams.toString()}` : ''
-    return api.get<PredictionsHistoryResponse>(`/predictions/history${query}`)
-  },
+  generatePredictions: (data: PredictionRequest) =>
+    api.post<PredictionsResponse>('/predictions/generate', data),
   trades: (params?: { start_date?: string; end_date?: string; symbol?: string }) => {
     const searchParams = new URLSearchParams()
     if (params?.start_date) searchParams.set('start_date', params.start_date)

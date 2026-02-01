@@ -5,8 +5,7 @@ import { Factors } from '@/pages/models/Factors'
 import { Hyperparams } from '@/pages/models/Hyperparams'
 import { Training } from '@/pages/models/Training'
 import { Backtest } from '@/pages/models/Backtest'
-import { Positions } from '@/pages/portfolio/Positions'
-import { Performance } from '@/pages/portfolio/Performance'
+import { Predictions } from '@/pages/portfolio/Predictions'
 import { Datasets } from '@/pages/system/Datasets'
 import { useDataSync } from '@/hooks/useDataSync'
 
@@ -24,8 +23,7 @@ function App() {
           <Route path="backtest" element={<Backtest />} />
         </Route>
         <Route path="portfolio">
-          <Route path="positions" element={<Positions />} />
-          <Route path="performance" element={<Performance />} />
+          <Route path="predictions" element={<Predictions />} />
         </Route>
         <Route path="system">
           <Route path="datasets" element={<Datasets />} />

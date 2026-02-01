@@ -191,11 +191,6 @@ export function Backtest() {
     return `${prefix}${value.toFixed(2)}%`
   }
 
-  const formatPnl = (pnl: number | null | undefined) => {
-    if (pnl === null || pnl === undefined) return null
-    const prefix = pnl >= 0 ? '+' : ''
-    return `${prefix}${pnl.toLocaleString()}`
-  }
 
   if (loading) {
     return (

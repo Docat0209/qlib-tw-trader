@@ -58,22 +58,6 @@ class TrainingRepository:
             run.status = "completed"
             self._session.commit()
 
-    def set_current(self, run_id: int) -> None:
-        """設定當前模型"""
-        # 先清除所有 is_current
-        self._session.execute(
-            select(TrainingRun).where(TrainingRun.is_current == True)
-        )
-        for run in self._session.execute(select(TrainingRun)).scalars().all():
-            run.is_current = False
-
-        # 設定新的 is_current
-        stmt = select(TrainingRun).where(TrainingRun.id == run_id)
-        run = self._session.execute(stmt).scalar()
-        if run:
-            run.is_current = True
-            self._session.commit()
-
     def add_factor_result(
         self,
         run_id: int,
@@ -99,12 +83,7 @@ class TrainingRepository:
         return self._session.execute(stmt).scalar()
 
     def get_current(self) -> TrainingRun | None:
-        """取得當前 active 模型"""
-        stmt = select(TrainingRun).where(TrainingRun.is_current == True)
-        run = self._session.execute(stmt).scalar()
-        if run:
-            return run
-        # 如果沒有設定 is_current，返回最新完成的
+        """取得當前模型（最新完成的）"""
         return self.get_latest_run()
 
     def get_latest_run(self) -> TrainingRun | None:

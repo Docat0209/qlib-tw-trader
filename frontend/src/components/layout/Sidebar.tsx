@@ -4,12 +4,11 @@ import {
   Brain,
   LineChart,
   BarChart3,
-  Briefcase,
-  TrendingUp,
   Settings,
   Zap,
   Layers,
   SlidersHorizontal,
+  Target,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -31,8 +30,7 @@ const navigation: NavigationType[] = [
   {
     name: 'Portfolio',
     items: [
-      { name: 'Positions', href: '/portfolio/positions', icon: Briefcase },
-      { name: 'Performance', href: '/portfolio/performance', icon: TrendingUp },
+      { name: 'Predictions', href: '/portfolio/predictions', icon: Target },
     ],
   },
   {

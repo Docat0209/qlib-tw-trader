@@ -35,7 +35,7 @@ export function Training() {
   const [selectedHpId, setSelectedHpId] = useState<number | null>(null)
 
   // WebSocket 訓練進度追蹤
-  const { activeJob, clearJob, cancelJob, isConnected } = useJobs()
+  const { activeJob, clearJob, cancelJob } = useJobs()
 
   // 訓練狀態
   const isTraining = activeJob?.job_type === 'train' &&
@@ -62,11 +62,10 @@ export function Training() {
           setSelectedMonth(defaultMonth)
         }
       }
-      // 載入超參數列表並預設選擇 current
+      // 載入超參數列表並預設選擇第一個
       setHyperparamsList(hpRes.items)
       if (selectedHpId === null && hpRes.items.length > 0) {
-        const current = hpRes.items.find(hp => hp.is_current)
-        setSelectedHpId(current?.id ?? hpRes.items[0].id)
+        setSelectedHpId(hpRes.items[0].id)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data')
@@ -231,7 +230,7 @@ export function Training() {
   }
 
   const completedModels = models.filter(m => m.status === 'completed')
-  const currentModel = completedModels.find(m => m.is_current)
+  const currentModel = completedModels[0]  // 按名稱降序，第一個是最新的
   const bestIc = completedModels.length > 0
     ? Math.max(...completedModels.map(h => h.metrics.ic || 0))
     : null
@@ -480,7 +479,7 @@ export function Training() {
                     >
                       {hyperparamsList.map((hp) => (
                         <option key={hp.id} value={hp.id}>
-                          {hp.name}{hp.is_current ? ' (Current)' : ''}
+                          {hp.name}
                         </option>
                       ))}
                     </select>
@@ -541,8 +540,8 @@ export function Training() {
                       <p className="text-[10px] text-muted-foreground">Factors</p>
                       <p className="font-semibold text-sm">
                         {selectedModel.factor_count || 0}
-                        {selectedModel.candidate_count && (
-                          <span className="text-muted-foreground font-normal">/{selectedModel.candidate_count}</span>
+                        {selectedModel.candidate_factors?.length > 0 && (
+                          <span className="text-muted-foreground font-normal">/{selectedModel.candidate_factors.length}</span>
                         )}
                       </p>
                     </div>

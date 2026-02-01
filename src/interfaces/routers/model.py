@@ -76,7 +76,6 @@ def _run_to_summary(run) -> ModelSummary:
         ),
         factor_count=run.factor_count or len(selected_ids),
         candidate_count=len(candidate_ids) if candidate_ids else None,
-        is_current=run.is_current,
     )
 
 
@@ -114,7 +113,6 @@ def _run_to_response(
             icir=float(run.icir) if run.icir else None,
         ),
         training_duration_seconds=duration,
-        is_current=run.is_current,
         candidate_factors=candidate_factors or [],
         selected_factors=selected_factors or [],
     )
@@ -571,9 +569,6 @@ async def delete_model(
     if not run:
         raise HTTPException(status_code=404, detail="Model not found")
 
-    if run.is_current:
-        raise HTTPException(status_code=400, detail="Cannot delete current model")
-
     # 如果是 running/queued，嘗試取消關聯的 job
     if run.status in ("running", "queued"):
         # 查找關聯的 job 並取消
@@ -600,24 +595,3 @@ async def delete_model(
     return {"status": "deleted", "id": model_id}
 
 
-@router.patch("/{model_id}/current")
-async def set_current_model(
-    model_id: str,
-    session: Session = Depends(get_db),
-):
-    """設為當前模型"""
-    run_id = _parse_model_id(model_id)
-    repo = TrainingRepository(session)
-
-    run = repo.get_by_id(run_id)
-    if not run:
-        raise HTTPException(status_code=404, detail="Model not found")
-
-    if run.status != "completed":
-        raise HTTPException(status_code=400, detail="Model is not completed")
-
-    repo.set_current(run_id)
-
-    await broadcast_data_updated("models", "update", model_id)
-
-    return {"status": "success", "id": model_id, "is_current": True}

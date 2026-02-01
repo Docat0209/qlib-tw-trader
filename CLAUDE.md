@@ -36,10 +36,10 @@ curl -X POST http://localhost:8000/api/v1/qlib/export/sync \
 - [x] **超參數管理 UI**（培養、選擇、刪除）
 - [x] **因子數量自適應縮放**（sqrt(ratio) 縮放公式）
 - [x] **回測系統**（backtrader 整合，Equity Curve，績效指標，K-line 圖表）
+- [x] **預測推薦**（選擇模型 + 日期，產生 Top K 股票推薦）
 
 ## 待完成
 
-- [ ] **預測評分**（每日訊號產生）
 - [ ] **排程系統**（每日自動同步+訓練）
 
 ## 關鍵規則

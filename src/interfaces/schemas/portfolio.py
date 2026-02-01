@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import date
 
 from pydantic import BaseModel
@@ -23,3 +25,31 @@ class TradesResponse(BaseModel):
 
     items: list[TradeItem]
     total: int
+
+
+# Prediction Types
+
+
+class PredictionRequest(BaseModel):
+    """預測請求"""
+
+    model_id: int
+    top_k: int = 10
+    target_date: date | None = None  # None = 使用最新資料日期
+
+
+class PredictionSignal(BaseModel):
+    """預測訊號"""
+
+    rank: int
+    symbol: str
+    name: str | None
+    score: float
+
+
+class PredictionsResponse(BaseModel):
+    """預測回應"""
+
+    date: str
+    model_name: str
+    signals: list[PredictionSignal]

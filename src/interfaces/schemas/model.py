@@ -41,7 +41,6 @@ class ModelResponse(BaseModel):
     valid_period: Period | None
     metrics: ModelMetrics
     training_duration_seconds: int | None
-    is_current: bool
     candidate_factors: list[FactorSummary] = []  # 候選因子
     selected_factors: list[FactorSummary] = []  # 選中因子
 
@@ -58,7 +57,6 @@ class ModelSummary(BaseModel):
     metrics: ModelMetrics
     factor_count: int | None  # 選中因子數
     candidate_count: int | None  # 候選因子數
-    is_current: bool
 
 
 class ModelListResponse(BaseModel):
