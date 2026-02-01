@@ -39,10 +39,9 @@ export function Hyperparams() {
     try {
       const res = await hyperparamsApi.list()
       setHyperparams(res.items)
-      // 預設選擇 current
+      // 預設選擇第一個
       if (!selectedId && res.items.length > 0) {
-        const current = res.items.find(hp => hp.is_current)
-        setSelectedId(current?.id || res.items[0].id)
+        setSelectedId(res.items[0].id)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data')

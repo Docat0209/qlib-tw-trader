@@ -32,7 +32,6 @@ class HyperparamsRepository:
             params_json=json.dumps(params),
             stability_json=json.dumps(stability),
             periods_json=json.dumps(periods),
-            is_current=False,
         )
         self._session.add(hp)
         self._session.commit()
@@ -52,24 +51,6 @@ class HyperparamsRepository:
         """依名稱取得"""
         stmt = select(Hyperparams).where(Hyperparams.name == name)
         return self._session.execute(stmt).scalar_one_or_none()
-
-    def get_current(self) -> Hyperparams | None:
-        """取得當前使用的超參數組"""
-        stmt = select(Hyperparams).where(Hyperparams.is_current == True)
-        return self._session.execute(stmt).scalar_one_or_none()
-
-    def set_current(self, hp_id: int) -> None:
-        """設為當前使用（清除其他 is_current）"""
-        # 清除所有 is_current
-        stmt = select(Hyperparams).where(Hyperparams.is_current == True)
-        for hp in self._session.execute(stmt).scalars().all():
-            hp.is_current = False
-
-        # 設定新的 current
-        hp = self.get_by_id(hp_id)
-        if hp:
-            hp.is_current = True
-            self._session.commit()
 
     def update_name(self, hp_id: int, name: str) -> Hyperparams | None:
         """更新名稱"""

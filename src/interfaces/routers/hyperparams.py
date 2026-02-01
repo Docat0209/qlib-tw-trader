@@ -31,7 +31,6 @@ def _to_summary(hp) -> HyperparamsSummary:
         name=hp.name,
         cultivated_at=hp.cultivated_at,
         n_periods=hp.n_periods,
-        is_current=hp.is_current,
         learning_rate=params.get("learning_rate"),
         num_leaves=params.get("num_leaves"),
     )
@@ -60,7 +59,6 @@ def _to_detail(hp) -> HyperparamsDetail:
         name=hp.name,
         cultivated_at=hp.cultivated_at,
         n_periods=hp.n_periods,
-        is_current=hp.is_current,
         params=params,
         stability=stability,
         periods=periods,
@@ -74,16 +72,6 @@ async def list_hyperparams(session: Session = Depends(get_db)):
     all_hp = repo.get_all()
     items = [_to_summary(hp) for hp in all_hp]
     return HyperparamsListResponse(items=items, total=len(items))
-
-
-@router.get("/current", response_model=HyperparamsDetail | None)
-async def get_current_hyperparams(session: Session = Depends(get_db)):
-    """取得當前超參數組"""
-    repo = HyperparamsRepository(session)
-    hp = repo.get_current()
-    if not hp:
-        return None
-    return _to_detail(hp)
 
 
 @router.get("/{hp_id}", response_model=HyperparamsDetail)
@@ -230,20 +218,6 @@ async def cultivate_hyperparams(
     )
 
 
-@router.patch("/{hp_id}/current")
-async def set_current_hyperparams(hp_id: int, session: Session = Depends(get_db)):
-    """設為當前使用"""
-    repo = HyperparamsRepository(session)
-    hp = repo.get_by_id(hp_id)
-    if not hp:
-        raise HTTPException(status_code=404, detail="Hyperparams not found")
-
-    repo.set_current(hp_id)
-    await broadcast_data_updated("hyperparams", "update", hp_id)
-
-    return {"status": "success", "id": hp_id, "is_current": True}
-
-
 @router.patch("/{hp_id}", response_model=HyperparamsDetail)
 async def update_hyperparams(
     hp_id: int,
@@ -274,9 +248,6 @@ async def delete_hyperparams(hp_id: int, session: Session = Depends(get_db)):
     hp = repo.get_by_id(hp_id)
     if not hp:
         raise HTTPException(status_code=404, detail="Hyperparams not found")
-
-    if hp.is_current:
-        raise HTTPException(status_code=400, detail="Cannot delete current hyperparams")
 
     repo.delete(hp_id)
     await broadcast_data_updated("hyperparams", "delete", hp_id)

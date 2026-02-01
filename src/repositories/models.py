@@ -384,5 +384,4 @@ class Hyperparams(Base):
     params_json: Mapped[str] = mapped_column(Text)  # LightGBM 超參數 JSON
     stability_json: Mapped[str] = mapped_column(Text)  # 穩定性指標 JSON
     periods_json: Mapped[str] = mapped_column(Text)  # 各窗口結果 JSON
-    is_current: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)

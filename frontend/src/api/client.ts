@@ -322,7 +322,6 @@ export interface HyperparamsSummary {
   name: string
   cultivated_at: string
   n_periods: number
-  is_current: boolean
   learning_rate: number | null
   num_leaves: number | null
 }
@@ -353,9 +352,7 @@ export interface CultivateResponse {
 export const hyperparamsApi = {
   list: () => api.get<HyperparamsListResponse>('/hyperparams'),
   get: (id: number) => api.get<HyperparamsDetail>(`/hyperparams/${id}`),
-  current: () => api.get<HyperparamsDetail | null>('/hyperparams/current'),
   cultivate: (data: CultivateRequest) => api.post<CultivateResponse>('/hyperparams', data),
-  setCurrent: (id: number) => api.patch<{ status: string; id: number; is_current: boolean }>(`/hyperparams/${id}/current`),
   update: (id: number, data: { name: string }) => api.patch<HyperparamsDetail>(`/hyperparams/${id}`, data),
   delete: (id: number) => api.delete(`/hyperparams/${id}`).then(res => res.json() as Promise<{ status: string; id: number }>),
 }

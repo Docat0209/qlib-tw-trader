@@ -23,7 +23,6 @@ class HyperparamsSummary(BaseModel):
     name: str
     cultivated_at: datetime
     n_periods: int
-    is_current: bool
     # 關鍵參數預覽
     learning_rate: float | None = None
     num_leaves: int | None = None
@@ -36,7 +35,6 @@ class HyperparamsDetail(BaseModel):
     name: str
     cultivated_at: datetime
     n_periods: int
-    is_current: bool
     params: dict
     stability: dict[str, float]
     periods: list[CultivationPeriod]
