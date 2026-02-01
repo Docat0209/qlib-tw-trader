@@ -905,15 +905,27 @@ class ModelTrainer:
         data_start: date,
         data_end: date,
         n_periods: int = 5,
+        train_days: int | None = None,
+        valid_days: int | None = None,
     ) -> list[tuple[date, date, date, date]]:
         """
         生成 Walk Forward 窗口
 
+        Args:
+            data_start: 資料起始日
+            data_end: 資料結束日
+            n_periods: 期望窗口數量
+            train_days: 訓練天數（預設使用 TRAIN_DAYS）
+            valid_days: 驗證天數（預設使用 VALID_DAYS）
+
         Returns:
             list of (train_start, train_end, valid_start, valid_end)
         """
+        train_days = train_days or TRAIN_DAYS
+        valid_days = valid_days or VALID_DAYS
+
         total_days = (data_end - data_start).days
-        period_length = TRAIN_DAYS + VALID_DAYS  # 訓練期 + 驗證期
+        period_length = train_days + valid_days  # 訓練期 + 驗證期
 
         # 確保有足夠的資料
         if total_days < period_length:
@@ -922,17 +934,17 @@ class ModelTrainer:
             )
 
         # 計算可用的窗口數量
-        available_periods = (total_days - TRAIN_DAYS) // VALID_DAYS
+        available_periods = (total_days - train_days) // valid_days
         actual_periods = min(n_periods, max(1, available_periods))
 
         periods = []
         # 從最新資料開始向前推算
         for i in range(actual_periods):
             # 驗證期結束：從 data_end 向前推 i 個驗證期
-            valid_end = data_end - timedelta(days=i * VALID_DAYS)
-            valid_start = valid_end - timedelta(days=VALID_DAYS - 1)
+            valid_end = data_end - timedelta(days=i * valid_days)
+            valid_start = valid_end - timedelta(days=valid_days - 1)
             train_end = valid_start - timedelta(days=1)
-            train_start = train_end - timedelta(days=TRAIN_DAYS - 1)
+            train_start = train_end - timedelta(days=train_days - 1)
 
             # 確保訓練起始日不早於資料起始日
             if train_start < data_start:
@@ -1047,9 +1059,15 @@ class ModelTrainer:
         if not data_start or not data_end:
             raise ValueError("No qlib data found")
 
-        # 生成 Walk Forward 窗口
+        # 生成 Walk Forward 窗口（使用較短的訓練/驗證期以支援更多窗口）
+        # 培養用：2 年訓練 + 3 個月驗證（vs 正式訓練的 3 年 + 6 個月）
+        CULTIVATION_TRAIN_DAYS = 504  # 2 年
+        CULTIVATION_VALID_DAYS = 63   # 3 個月
+
         periods = self._generate_walk_forward_periods(
-            data_start, data_end, n_periods
+            data_start, data_end, n_periods,
+            train_days=CULTIVATION_TRAIN_DAYS,
+            valid_days=CULTIVATION_VALID_DAYS,
         )
 
         if not periods:
@@ -1097,16 +1115,19 @@ class ModelTrainer:
                     on_progress(base_progress + 3, f"Skipped period {i+1} (insufficient data)")
                 continue
 
-            # Optuna 優化（減少試驗次數以加速）
+            # Optuna 優化
             def period_progress(p: float, msg: str) -> None:
                 if on_progress:
                     inner_progress = base_progress + (p - 2.0) * (80.0 / len(periods) / 8.0)
                     on_progress(inner_progress, f"[{i+1}/{len(periods)}] {msg}")
 
+            # timeout 根據 trials 數量調整（每 trial 約 15 秒）
+            timeout_seconds = max(300, n_trials_per_period * 15)
+
             best_params = self._optimize_hyperparameters(
                 X_train, y_train, X_valid, y_valid,
                 n_trials=n_trials_per_period,
-                timeout=120,  # 每窗口 2 分鐘
+                timeout=timeout_seconds,
                 on_progress=period_progress,
             )
 
