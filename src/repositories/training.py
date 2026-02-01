@@ -112,7 +112,7 @@ class TrainingRepository:
         stmt = (
             select(TrainingRun)
             .where(TrainingRun.status == "completed")
-            .order_by(TrainingRun.id.desc())
+            .order_by(TrainingRun.name.desc())
             .limit(1)
         )
         return self._session.execute(stmt).scalar()
@@ -122,7 +122,7 @@ class TrainingRepository:
         stmt = (
             select(TrainingRun)
             .where(TrainingRun.status == "completed")
-            .order_by(TrainingRun.id.desc())
+            .order_by(TrainingRun.name.desc())
             .limit(limit)
         )
         return list(self._session.execute(stmt).scalars().all())
@@ -164,8 +164,8 @@ class TrainingRepository:
         }
 
     def get_all(self) -> list[TrainingRun]:
-        """取得所有訓練記錄"""
-        stmt = select(TrainingRun).order_by(TrainingRun.id.desc())
+        """取得所有訓練記錄（按名稱降序，最新的在前）"""
+        stmt = select(TrainingRun).order_by(TrainingRun.name.desc())
         return list(self._session.execute(stmt).scalars().all())
 
     def get_all_factor_results(self, run_id: int) -> list[TrainingFactorResult]:
