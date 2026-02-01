@@ -333,7 +333,7 @@ export function Backtest() {
                     <option value="">Select model...</option>
                     {models.map((m) => (
                       <option key={m.id} value={m.id}>
-                        {m.id} - IC: {m.metrics.ic?.toFixed(4) || '---'}
+                        {m.name || m.id} - IC: {m.metrics.ic?.toFixed(4) || '---'}
                       </option>
                     ))}
                   </select>
