@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from src.interfaces.dependencies import get_db
 from src.interfaces.schemas.backtest import (
+    AllTradesResponse,
     BacktestDetailResponse,
     BacktestListResponse,
     BacktestMetrics,
@@ -212,6 +213,7 @@ async def run_backtest(
         end_date=end_date,
         initial_capital=request.initial_capital,
         max_positions=request.max_positions,
+        trade_price=request.trade_price,
     )
 
     return BacktestRunResponse(
@@ -231,6 +233,7 @@ async def run_backtest_task(
     end_date: date,
     initial_capital: float,
     max_positions: int,
+    trade_price: str = "close",
 ):
     """
     回測任務 - 使用 Backtester 服務
@@ -292,6 +295,7 @@ async def run_backtest_task(
                 initial_capital=initial_capital,
                 topk=max_positions,
                 n_drop=1,
+                trade_price=trade_price,
                 on_progress=sync_progress,  # 使用線程安全的回調
             )
 
@@ -401,13 +405,56 @@ async def get_backtest_stocks(
         for s in session.query(StockUniverse).all()
     }
 
+    # 計算每檔股票的總盈虧
+    def calculate_stock_pnl(stock_id: str) -> float | None:
+        """FIFO 計算股票總盈虧"""
+        stock_trades = (
+            session.query(Trade)
+            .filter(Trade.backtest_id == backtest_id, Trade.stock_id == stock_id)
+            .order_by(Trade.date)
+            .all()
+        )
+
+        if not stock_trades:
+            return None
+
+        buy_queue = []
+        total_pnl = 0.0
+
+        for t in stock_trades:
+            if t.side == "buy":
+                buy_queue.append({
+                    "price": float(t.price),
+                    "shares": t.shares,
+                })
+            else:
+                # 賣出：FIFO 配對
+                remaining = t.shares
+                cost = 0.0
+                while remaining > 0 and buy_queue:
+                    buy = buy_queue[0]
+                    if buy["shares"] <= remaining:
+                        cost += buy["price"] * buy["shares"]
+                        remaining -= buy["shares"]
+                        buy_queue.pop(0)
+                    else:
+                        cost += buy["price"] * remaining
+                        buy["shares"] -= remaining
+                        remaining = 0
+
+                sell_amount = float(t.price) * t.shares
+                commission = float(t.commission) if t.commission else 0
+                total_pnl += sell_amount - cost - commission
+
+        return round(total_pnl, 2) if total_pnl != 0 else None
+
     items = [
         StockTradeInfo(
             stock_id=t.stock_id,
             name=stock_names.get(t.stock_id, t.stock_id),
             buy_count=t.buy_count or 0,
             sell_count=t.sell_count or 0,
-            total_pnl=None,  # 需要更多計算
+            total_pnl=calculate_stock_pnl(t.stock_id),
         )
         for t in trades
     ]
@@ -475,19 +522,176 @@ async def get_stock_kline(
         .all()
     )
 
-    trades = [
-        TradePoint(
+    # FIFO 配對計算盈虧
+    trades = []
+    buy_queue = []  # 買入記錄佇列
+
+    for t in trades_raw:
+        trade_point = TradePoint(
             date=t.date.isoformat(),
             side=t.side,
             price=float(t.price),
             shares=t.shares,
+            amount=float(t.amount) if t.amount else float(t.price) * t.shares,
+            commission=float(t.commission) if t.commission else 0,
+            pnl=None,
+            pnl_pct=None,
+            holding_days=None,
         )
-        for t in trades_raw
-    ]
+
+        if t.side == "buy":
+            # 記錄買入
+            buy_queue.append({
+                "date": t.date,
+                "price": float(t.price),
+                "shares": t.shares,
+            })
+        else:
+            # 賣出：FIFO 配對計算盈虧
+            remaining_shares = t.shares
+            total_cost = 0.0
+            earliest_buy_date = None
+
+            while remaining_shares > 0 and buy_queue:
+                buy = buy_queue[0]
+                if earliest_buy_date is None:
+                    earliest_buy_date = buy["date"]
+
+                if buy["shares"] <= remaining_shares:
+                    total_cost += buy["price"] * buy["shares"]
+                    remaining_shares -= buy["shares"]
+                    buy_queue.pop(0)
+                else:
+                    total_cost += buy["price"] * remaining_shares
+                    buy["shares"] -= remaining_shares
+                    remaining_shares = 0
+
+            # 計算盈虧
+            if t.shares > 0:
+                sell_amount = float(t.price) * t.shares
+                commission = float(t.commission) if t.commission else 0
+                pnl = sell_amount - total_cost - commission
+                avg_cost = total_cost / t.shares
+                pnl_pct = ((float(t.price) / avg_cost) - 1) * 100 if avg_cost > 0 else 0
+
+                trade_point.pnl = round(pnl, 2)
+                trade_point.pnl_pct = round(pnl_pct, 2)
+
+                if earliest_buy_date:
+                    trade_point.holding_days = (t.date - earliest_buy_date).days
+
+        trades.append(trade_point)
 
     return StockKlineResponse(
         stock_id=stock_id,
         name=stock_name,
         klines=klines,
         trades=trades,
+    )
+
+
+@router.get("/{backtest_id}/trades", response_model=AllTradesResponse)
+async def get_all_trades(
+    backtest_id: int,
+    session: Session = Depends(get_db),
+):
+    """取得回測所有交易記錄（按日期排序，含 FIFO 盈虧計算）"""
+    from src.repositories.models import Trade, StockUniverse
+
+    # 驗證回測存在
+    repo = BacktestRepository(session)
+    bt = repo.get(backtest_id)
+    if not bt:
+        raise HTTPException(status_code=404, detail="Backtest not found")
+
+    # 取得所有交易記錄
+    trades_raw = (
+        session.query(Trade)
+        .filter(Trade.backtest_id == backtest_id)
+        .order_by(Trade.date, Trade.stock_id)
+        .all()
+    )
+
+    # 取得股票名稱
+    stock_names = {
+        s.stock_id: s.name
+        for s in session.query(StockUniverse).all()
+    }
+
+    # 按股票分組做 FIFO 配對
+    stock_queues: dict[str, list] = {}
+    trades = []
+    total_pnl = 0.0
+
+    for t in trades_raw:
+        stock_id = t.stock_id
+        if stock_id not in stock_queues:
+            stock_queues[stock_id] = []
+
+        trade_point = TradePoint(
+            date=t.date.isoformat(),
+            side=t.side,
+            price=float(t.price),
+            shares=t.shares,
+            amount=float(t.amount) if t.amount else float(t.price) * t.shares,
+            commission=float(t.commission) if t.commission else 0,
+            pnl=None,
+            pnl_pct=None,
+            holding_days=None,
+            stock_id=stock_id,
+            stock_name=stock_names.get(stock_id, stock_id),
+        )
+
+        if t.side == "buy":
+            stock_queues[stock_id].append({
+                "date": t.date,
+                "price": float(t.price),
+                "shares": t.shares,
+            })
+        else:
+            # 賣出：FIFO 配對
+            buy_queue = stock_queues[stock_id]
+            remaining_shares = t.shares
+            total_cost = 0.0
+            earliest_buy_date = None
+
+            while remaining_shares > 0 and buy_queue:
+                buy = buy_queue[0]
+                if earliest_buy_date is None:
+                    earliest_buy_date = buy["date"]
+
+                if buy["shares"] <= remaining_shares:
+                    total_cost += buy["price"] * buy["shares"]
+                    remaining_shares -= buy["shares"]
+                    buy_queue.pop(0)
+                else:
+                    total_cost += buy["price"] * remaining_shares
+                    buy["shares"] -= remaining_shares
+                    remaining_shares = 0
+
+            # 計算盈虧
+            if t.shares > 0:
+                sell_amount = float(t.price) * t.shares
+                commission = float(t.commission) if t.commission else 0
+                pnl = sell_amount - total_cost - commission
+                avg_cost = total_cost / t.shares
+                pnl_pct = ((float(t.price) / avg_cost) - 1) * 100 if avg_cost > 0 else 0
+
+                trade_point.pnl = round(pnl, 2)
+                trade_point.pnl_pct = round(pnl_pct, 2)
+                total_pnl += pnl
+
+                if earliest_buy_date:
+                    trade_point.holding_days = (t.date - earliest_buy_date).days
+
+        trades.append(trade_point)
+
+    # 按日期重新排序
+    trades.sort(key=lambda x: x.date)
+
+    return AllTradesResponse(
+        backtest_id=backtest_id,
+        items=trades,
+        total_pnl=round(total_pnl, 2),
+        total=len(trades),
     )

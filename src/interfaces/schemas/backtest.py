@@ -11,6 +11,7 @@ class BacktestRequest(BaseModel):
     model_id: int
     initial_capital: float = 1000000.0
     max_positions: int = 10
+    trade_price: str = "close"  # "close" | "open"
 
 
 class BacktestMetrics(BaseModel):
@@ -110,12 +111,28 @@ class KlinePoint(BaseModel):
 
 
 class TradePoint(BaseModel):
-    """交易點"""
+    """交易點（含盈虧資訊）"""
 
     date: str
     side: str  # buy / sell
     price: float
     shares: int
+    amount: float | None = None
+    commission: float | None = None
+    pnl: float | None = None  # 賣出時的盈虧金額
+    pnl_pct: float | None = None  # 賣出時的盈虧 %
+    holding_days: int | None = None  # 持有天數
+    stock_id: str | None = None  # 股票代碼（全局交易列表用）
+    stock_name: str | None = None  # 股票名稱
+
+
+class AllTradesResponse(BaseModel):
+    """所有交易記錄"""
+
+    backtest_id: int
+    items: list[TradePoint]
+    total_pnl: float
+    total: int
 
 
 class StockKlineResponse(BaseModel):

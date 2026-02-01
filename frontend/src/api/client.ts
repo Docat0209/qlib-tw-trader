@@ -610,6 +610,7 @@ export interface BacktestRequest {
   model_id: number
   initial_capital?: number
   max_positions?: number
+  trade_price?: 'close' | 'open'  // 交易價格：收盤價或開盤價
 }
 
 export interface BacktestRunResponse {
@@ -647,6 +648,20 @@ export interface TradePoint {
   side: 'buy' | 'sell'
   price: number
   shares: number
+  amount?: number
+  commission?: number
+  pnl?: number | null  // 賣出時的盈虧金額
+  pnl_pct?: number | null  // 賣出時的盈虧 %
+  holding_days?: number | null  // 持有天數
+  stock_id?: string  // 股票代碼（全局交易列表用）
+  stock_name?: string  // 股票名稱
+}
+
+export interface AllTradesResponse {
+  backtest_id: number
+  items: TradePoint[]
+  total_pnl: number
+  total: number
 }
 
 export interface StockKlineResponse {
@@ -669,6 +684,7 @@ export const backtestApi = {
   getStocks: (backtestId: number) => api.get<StockTradeListResponse>(`/backtest/${backtestId}/stocks`),
   getStockKline: (backtestId: number, stockId: string) =>
     api.get<StockKlineResponse>(`/backtest/${backtestId}/stocks/${stockId}`),
+  getAllTrades: (backtestId: number) => api.get<AllTradesResponse>(`/backtest/${backtestId}/trades`),
 }
 
 // Dataset Types

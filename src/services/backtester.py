@@ -74,65 +74,45 @@ class TopKStrategy(bt.Strategy):
     params = (
         ("topk", 10),
         ("scores", None),  # DataFrame: index=date, columns=stock_id
+        ("trade_price", "close"),  # "close" | "open"
     )
 
     def __init__(self):
         self.order_dict = {}
         self.trade_records = []  # 儲存交易記錄
 
-    def notify_trade(self, trade):
-        """交易完成時記錄（買+賣構成一筆 trade）"""
-        if not trade.isclosed:
+    def notify_order(self, order):
+        """訂單執行完成時記錄"""
+        if order.status != order.Completed:
             return
 
-        stock_id = trade.data._name
-        entry_price = float(trade.price)
+        stock_id = order.data._name
+        dt = bt.num2date(order.executed.dt).date()
+        price = float(order.executed.price)
+        size = int(abs(order.executed.size))
+        amount = float(price * size)
 
-        # 從 trade.history 取得實際交易股數
-        # history 格式: [(status, order, prev_size, prev_price), ...]
-        # 第一筆的 order.executed.size 就是買入股數
-        shares = 0
-        if trade.history:
-            first_order = trade.history[0][1]  # 第一筆 order
-            if first_order and hasattr(first_order, 'executed'):
-                shares = int(abs(first_order.executed.size))
-
-        # 如果 history 取不到，用 pnl 和 pnlcomm 反推
-        if shares == 0 and entry_price > 0:
-            # pnl = (exit - entry) * shares, pnlcomm includes commission
-            # 假設手續費約 0.5%，用 value 估算
-            if hasattr(trade, 'value') and trade.value != 0:
-                shares = int(abs(trade.value / entry_price))
-
-        # 計算出場價格
-        if shares > 0:
-            exit_price = float(trade.pnl / shares + entry_price)
+        # 計算手續費
+        if order.isbuy():
+            commission = amount * COST_BUY
+            side = "buy"
         else:
-            exit_price = entry_price
+            commission = amount * COST_SELL
+            side = "sell"
 
-        half_commission = float(trade.commission / 2) if trade.commission else 0
-
-        # 記錄買入
         self.trade_records.append({
-            "date": bt.num2date(trade.dtopen).date(),
+            "date": dt,
             "stock_id": stock_id,
-            "side": "buy",
-            "shares": shares,
-            "price": entry_price,
-            "amount": float(shares * entry_price),
-            "commission": half_commission,
+            "side": side,
+            "shares": size,
+            "price": price,
+            "amount": amount,
+            "commission": commission,
         })
 
-        # 記錄賣出
-        self.trade_records.append({
-            "date": bt.num2date(trade.dtclose).date(),
-            "stock_id": stock_id,
-            "side": "sell",
-            "shares": shares,
-            "price": exit_price,
-            "amount": float(shares * exit_price),
-            "commission": half_commission,
-        })
+    def notify_trade(self, trade):
+        """交易完成時的回調（現在由 notify_order 處理記錄）"""
+        pass
 
     def next(self):
         # 取得當日日期（轉換為 pandas Timestamp 以匹配 scores index）
@@ -172,7 +152,11 @@ class TopKStrategy(bt.Strategy):
                 if position.size == 0:
                     # 計算可買股數（不限整張，方便回測）
                     target_value = self.broker.getvalue() * weight
-                    price = data.close[0]
+                    # 根據 trade_price 參數選擇價格
+                    if self.params.trade_price == "open":
+                        price = data.open[0]
+                    else:
+                        price = data.close[0]
                     if price > 0:
                         size = int(target_value / price)
                         if size >= 1:
@@ -363,6 +347,7 @@ class Backtester:
         initial_capital: float = 1_000_000.0,
         topk: int = 10,
         n_drop: int = 1,
+        trade_price: str = "close",
         on_progress: Callable[[float, str], None] | None = None,
     ) -> BacktestResult:
         """
@@ -435,7 +420,7 @@ class Backtester:
             on_progress(88, f"Loaded {added_count} stocks, configuring strategy...")
 
         # 加入策略
-        cerebro.addstrategy(TopKStrategy, topk=topk, scores=scores_df)
+        cerebro.addstrategy(TopKStrategy, topk=topk, scores=scores_df, trade_price=trade_price)
 
         # 加入分析器
         cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name="sharpe", riskfreerate=0.02)
@@ -456,10 +441,12 @@ class Backtester:
         # 提取結果
         final_value = cerebro.broker.getvalue()
         total_return_with = (final_value - initial_capital) / initial_capital
-        total_cost = initial_capital * total_return_with * 0.01  # 估計
 
-        # 計算不含手續費的報酬（估計）
-        total_return_without = total_return_with + (total_cost / initial_capital)
+        # 從實際交易記錄計算總手續費
+        total_cost = sum(t['commission'] for t in strat.trade_records)
+
+        # 計算不含手續費的報酬（加回手續費）
+        total_return_without = (final_value + total_cost - initial_capital) / initial_capital
 
         # 從分析器提取指標
         sharpe_analysis = strat.analyzers.sharpe.get_analysis()
