@@ -342,24 +342,32 @@ async def trigger_training(
     session: Session = Depends(get_db),
 ):
     """觸發模型訓練（非同步）"""
-    from datetime import date as date_type
+    from pathlib import Path
+
+    from sqlalchemy import func
 
     from src.repositories.database import get_session
+    from src.repositories.models import StockDaily
     from src.services.job_manager import job_manager
     from src.services.model_trainer import ModelTrainer
+    from src.services.qlib_exporter import ExportConfig, QlibExporter
 
     factor_repo = FactorRepository(session)
 
-    # 取得 qlib 資料的實際日期範圍
-    trainer = ModelTrainer(qlib_data_dir="data/qlib")
-    data_start, data_end = trainer.get_data_date_range()
+    # 從資料庫取得日期範圍（不是 qlib 文件）
+    db_range = session.query(
+        func.min(StockDaily.date),
+        func.max(StockDaily.date),
+    ).first()
 
-    if not data_end:
-        raise HTTPException(status_code=400, detail="No qlib data found")
+    if not db_range or not db_range[0] or not db_range[1]:
+        raise HTTPException(status_code=400, detail="No stock data found in database")
+
+    db_start, db_end = db_range[0], db_range[1]
 
     # 計算訓練和驗證期間
-    # train_end 由使用者指定，或預設為 data_end - VALID_DAYS
-    train_end = data.train_end or (data_end - timedelta(days=VALID_DAYS))
+    # train_end 由使用者指定，或預設為 db_end - VALID_DAYS
+    train_end = data.train_end or (db_end - timedelta(days=VALID_DAYS))
     train_start = train_end - timedelta(days=TRAIN_DAYS)
 
     # 驗證期間：train_end 後 VALID_DAYS 天
@@ -367,10 +375,13 @@ async def trigger_training(
     valid_end = train_end + timedelta(days=VALID_DAYS)
 
     # 確保日期在資料範圍內
-    if data_start and train_start < data_start:
-        train_start = data_start
+    if train_start < db_start:
+        train_start = db_start
 
-    # 臨時名稱用於訊息顯示（訓練完成後會更新為 YYYYMM-因子數 格式）
+    if valid_end > db_end:
+        valid_end = db_end
+
+    # 臨時名稱用於訊息顯示（訓練完成後會更新為 YYYYMM-hash 格式）
     temp_name = f"{valid_end.strftime('%Y%m')}"
 
     # 確認有啟用的因子
@@ -393,12 +404,35 @@ async def trigger_training(
         loop = asyncio.get_event_loop()
 
         try:
+            # Step 1: 導出 qlib 資料（含因子計算緩衝）
+            await progress_callback(0, "Exporting qlib data...")
+
+            # 因子計算需要額外的歷史資料（約 60 個交易日）
+            lookback_days = 90
+            export_start = train_start - timedelta(days=lookback_days)
+            if export_start < db_start:
+                export_start = db_start
+
+            exporter = QlibExporter(task_session)
+            export_config = ExportConfig(
+                start_date=export_start,
+                end_date=valid_end,
+                output_dir=Path("data/qlib"),
+            )
+            export_result = exporter.export(export_config)
+            await progress_callback(5, f"Exported {export_result.stocks_exported} stocks")
+
+            # Step 2: 執行訓練
             trainer = ModelTrainer(qlib_data_dir="data/qlib")
 
             # 同步回調轉非同步（在主線程安全調用）
             def sync_progress(progress: int, message: str):
+                # 將訓練進度映射到 5-100%
+                adjusted_progress = 5 + int(progress * 0.95)
                 loop.call_soon_threadsafe(
-                    lambda: asyncio.create_task(progress_callback(progress, message))
+                    lambda p=adjusted_progress, m=message: asyncio.create_task(
+                        progress_callback(p, m)
+                    )
                 )
 
             # 使用 to_thread 運行同步訓練

@@ -202,20 +202,27 @@ class ModelTrainer:
         self._data_cache: dict[str, pd.DataFrame] = {}  # 資料快取
         self._optimized_params: dict | None = None  # Optuna 優化後的參數
 
-    def _init_qlib(self) -> None:
-        """初始化 qlib"""
-        if self._qlib_initialized:
+    def _init_qlib(self, force: bool = False) -> None:
+        """
+        初始化 qlib
+
+        Args:
+            force: 強制重新初始化（用於導出新資料後）
+        """
+        if self._qlib_initialized and not force:
             return
 
         try:
             import qlib
             from qlib.config import REG_CN
 
+            # 強制重新初始化：清除快取並重新載入
             qlib.init(
                 provider_uri=str(self.data_dir),
                 region=REG_CN,
             )
             self._qlib_initialized = True
+            self._data_cache.clear()  # 清除資料快取
         except ImportError:
             raise RuntimeError("qlib is not installed. Please run: pip install pyqlib")
         except Exception as e:
@@ -275,7 +282,8 @@ class ModelTrainer:
             DataFrame with columns: [factor1, factor2, ..., label]
             Index: MultiIndex (datetime, instrument)
         """
-        self._init_qlib()
+        # 強制重新初始化 qlib，確保使用最新導出的資料
+        self._init_qlib(force=True)
         from qlib.data import D
 
         instruments = self._get_instruments()
