@@ -116,6 +116,9 @@ tailwindcss   # 樣式
 - [x] 資料同步（9 種資料集）
 - [x] Qlib 導出器
 - [x] 因子管理 API
-- [x] 前端 UI
+- [x] 前端 UI（8 頁面）
 - [x] 模型訓練（LightGBM + IC 增量選擇）
 - [x] 即時更新（WebSocket + Zustand）
+- [x] 超參數培養（Walk Forward Optimization + Optuna）
+- [x] 超參數管理 UI（培養、選擇、刪除）
+- [x] 因子數量自適應縮放

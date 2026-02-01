@@ -303,6 +303,120 @@
 
 ---
 
+## 3.5 Hyperparams API ✅
+
+超參數培養與管理。
+
+### GET /api/v1/hyperparams ✅
+
+取得超參數組列表。
+
+**Response:**
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "name": "hp-2025-01",
+      "cultivated_at": "2025-01-20T10:00:00",
+      "n_periods": 5,
+      "is_current": true,
+      "learning_rate": 0.01,
+      "num_leaves": 31
+    }
+  ],
+  "total": 3
+}
+```
+
+### GET /api/v1/hyperparams/current ✅
+
+取得當前使用的超參數組。
+
+### GET /api/v1/hyperparams/{hp_id} ✅
+
+取得超參數組詳情（含穩定性指標、各窗口結果）。
+
+**Response:**
+```json
+{
+  "id": 1,
+  "name": "hp-2025-01",
+  "cultivated_at": "2025-01-20T10:00:00",
+  "n_periods": 5,
+  "is_current": true,
+  "params": {
+    "num_leaves": 31,
+    "max_depth": 5,
+    "learning_rate": 0.01,
+    "min_data_in_leaf": 44,
+    "lambda_l1": 0.52,
+    "lambda_l2": 4.16
+  },
+  "stability": {
+    "num_leaves": 0.15,
+    "learning_rate": 0.87,
+    "lambda_l1": 1.55
+  },
+  "periods": [
+    {
+      "train_start": "2022-01-01",
+      "train_end": "2024-01-01",
+      "valid_start": "2024-01-02",
+      "valid_end": "2024-03-31",
+      "best_ic": 0.052
+    }
+  ]
+}
+```
+
+**穩定性 (stability) 說明：**
+- CV < 0.3：穩定（綠）
+- CV 0.3-0.4：中等（橙）
+- CV > 0.4：不穩定（紅）
+
+### POST /api/v1/hyperparams ✅
+
+執行超參數培養（非同步，Walk Forward Optimization + Optuna）。
+
+**Request:**
+```json
+{
+  "name": "hp-2025-02",
+  "n_periods": 5,
+  "n_trials_per_period": 20
+}
+```
+
+**欄位說明：**
+- `n_periods`: Walk Forward 窗口數（3-10）
+- `n_trials_per_period`: 每窗口 Optuna trials（10-50）
+
+**Response:**
+```json
+{
+  "job_id": "cultivate_abc123",
+  "status": "queued",
+  "message": "超參數培養任務已排入佇列"
+}
+```
+
+*進度透過 WebSocket 推送*
+
+### PATCH /api/v1/hyperparams/{hp_id}/current ✅
+
+設為當前使用的超參數組（會清除其他 is_current）。
+
+### PATCH /api/v1/hyperparams/{hp_id} ✅
+
+更新超參數組名稱。
+
+### DELETE /api/v1/hyperparams/{hp_id} ✅
+
+刪除超參數組（不能刪除當前使用的）。
+
+---
+
 ## 4. Backtest API
 
 ### POST /api/v1/backtest/run

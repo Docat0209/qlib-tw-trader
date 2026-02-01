@@ -7,7 +7,8 @@
 - **資料同步**：自動抓取 TWSE、FinMind、yfinance 資料
 - **Qlib 導出**：將資料轉換為 qlib .bin 格式
 - **因子管理**：30 個預設因子，支援自訂與驗證
-- **模型訓練**：LightGBM + IC 增量選擇法，按單因子 IC 排序
+- **超參數培養**：Walk Forward Optimization + Optuna，自動調參
+- **模型訓練**：LightGBM + IC 增量選擇法 + 因子數量自適應縮放
 - **即時更新**：WebSocket + Zustand，CRUD 後自動刷新 UI
 - **回測系統**：績效分析（開發中）
 
@@ -17,7 +18,8 @@
 |------|------|
 | 後端 | FastAPI + SQLAlchemy |
 | 前端 | React 18 + Vite + Tailwind |
-| 預測 | qlib |
+| 預測 | qlib + LightGBM |
+| 調參 | Optuna + Walk Forward Optimization |
 | 資料庫 | SQLite |
 
 ## 安裝
