@@ -685,6 +685,7 @@ export const backtestApi = {
   getStockKline: (backtestId: number, stockId: string) =>
     api.get<StockKlineResponse>(`/backtest/${backtestId}/stocks/${stockId}`),
   getAllTrades: (backtestId: number) => api.get<AllTradesResponse>(`/backtest/${backtestId}/trades`),
+  delete: (backtestId: number) => api.delete(`/backtest/${backtestId}`),
 }
 
 // Dataset Types

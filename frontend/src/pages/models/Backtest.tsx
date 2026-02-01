@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { Play, Clock, BarChart3, Loader2, RefreshCw, AlertCircle, CheckCircle, TrendingUp, List } from 'lucide-react'
+import { Play, Clock, BarChart3, Loader2, RefreshCw, AlertCircle, CheckCircle, TrendingUp, List, Trash2 } from 'lucide-react'
 import {
   backtestApi,
   BacktestItem,
@@ -149,6 +149,25 @@ export function Backtest() {
     }
   }
 
+  const handleDeleteBacktest = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation()  // 防止觸發選擇
+    if (!confirm('確定要刪除此回測記錄？')) return
+
+    try {
+      await backtestApi.delete(id)
+      // 如果刪除的是當前選中的，清空選擇
+      if (selectedBacktest?.id === id) {
+        setSelectedBacktest(null)
+        setTradedStocks([])
+        setStockKline(null)
+        setAllTrades(null)
+      }
+      fetchData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete backtest')
+    }
+  }
+
   useEffect(() => {
     fetchData()
   }, [fetchData])
@@ -212,24 +231,33 @@ export function Backtest() {
             ) : (
               <div className="divide-y divide-border">
                 {backtests.map((bt) => (
-                  <button
+                  <div
                     key={bt.id}
                     onClick={() => handleSelectBacktest(bt.id)}
-                    className={`w-full text-left p-3 hover:bg-secondary/50 transition-colors ${
+                    className={`w-full text-left p-3 hover:bg-secondary/50 transition-colors cursor-pointer group ${
                       selectedBacktest?.id === bt.id ? 'bg-blue-50 border-l-2 border-blue' : ''
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-semibold">#{bt.id}</span>
-                      {bt.status === 'completed' ? (
-                        <CheckCircle className="h-3 w-3 text-green" />
-                      ) : bt.status === 'running' ? (
-                        <Loader2 className="h-3 w-3 animate-spin text-blue" />
-                      ) : bt.status === 'failed' ? (
-                        <AlertCircle className="h-3 w-3 text-red" />
-                      ) : (
-                        <Clock className="h-3 w-3 text-gray-400" />
-                      )}
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={(e) => handleDeleteBacktest(e, bt.id)}
+                          className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red/10 transition-opacity"
+                          title="刪除"
+                        >
+                          <Trash2 className="h-3 w-3 text-red" />
+                        </button>
+                        {bt.status === 'completed' ? (
+                          <CheckCircle className="h-3 w-3 text-green" />
+                        ) : bt.status === 'running' ? (
+                          <Loader2 className="h-3 w-3 animate-spin text-blue" />
+                        ) : bt.status === 'failed' ? (
+                          <AlertCircle className="h-3 w-3 text-red" />
+                        ) : (
+                          <Clock className="h-3 w-3 text-gray-400" />
+                        )}
+                      </div>
                     </div>
                     <div className="text-xs text-muted-foreground mb-1">
                       {bt.start_date} ~ {bt.end_date}
@@ -241,7 +269,7 @@ export function Backtest() {
                         {formatPercent(bt.metrics.total_return_with_cost)}
                       </div>
                     )}
-                  </button>
+                  </div>
                 ))}
               </div>
             )}

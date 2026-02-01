@@ -164,6 +164,30 @@ async def get_backtest(
     )
 
 
+@router.delete("/{backtest_id}")
+async def delete_backtest(
+    backtest_id: int,
+    session: Session = Depends(get_db),
+):
+    """刪除回測記錄（連同交易記錄）"""
+    from src.repositories.models import Trade
+
+    repo = BacktestRepository(session)
+    bt = repo.get(backtest_id)
+
+    if not bt:
+        raise HTTPException(status_code=404, detail="Backtest not found")
+
+    # 刪除相關的交易記錄
+    session.query(Trade).filter(Trade.backtest_id == backtest_id).delete()
+
+    # 刪除回測記錄
+    session.delete(bt)
+    session.commit()
+
+    return {"message": "Backtest deleted", "id": backtest_id}
+
+
 @router.post("/run", response_model=BacktestRunResponse)
 async def run_backtest(
     request: BacktestRequest,
@@ -176,12 +200,26 @@ async def run_backtest(
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")
 
-    # 從模型取得回測期間
-    # 回測期間 = valid_end + 1 天 ~ valid_end + 1 個月
-    if not model.valid_end:
-        raise HTTPException(status_code=400, detail="Model has no validation period defined")
+    if not model.name:
+        raise HTTPException(status_code=400, detail="Model has no name")
 
-    start_date = model.valid_end + timedelta(days=1)
+    # 從模型目錄的 config.json 讀取 valid_end
+    # 回測期間 = valid_end + 1 天 ~ valid_end + 1 個月
+    model_dir = Path("data/models") / model.name
+    config_path = model_dir / "config.json"
+
+    if not config_path.exists():
+        raise HTTPException(status_code=400, detail="Model config.json not found")
+
+    with open(config_path) as f:
+        config = json.load(f)
+
+    valid_end_str = config.get("valid_end")
+    if not valid_end_str:
+        raise HTTPException(status_code=400, detail="Model config has no valid_end")
+
+    valid_end = date.fromisoformat(valid_end_str)
+    start_date = valid_end + timedelta(days=1)
     end_date = start_date + relativedelta(months=1)
 
     # 若 end_date 超過今天，則用今天

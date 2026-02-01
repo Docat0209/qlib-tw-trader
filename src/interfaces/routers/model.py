@@ -353,13 +353,14 @@ async def trigger_training(
     if not data_end:
         raise HTTPException(status_code=400, detail="No qlib data found")
 
-    # 使用資料結束日期（而非今天）來計算期間
-    valid_end = data_end
-    train_end = data.train_end or (valid_end - timedelta(days=VALID_DAYS))
-
-    # 訓練期間
+    # 計算訓練和驗證期間
+    # train_end 由使用者指定，或預設為 data_end - VALID_DAYS
+    train_end = data.train_end or (data_end - timedelta(days=VALID_DAYS))
     train_start = train_end - timedelta(days=TRAIN_DAYS)
+
+    # 驗證期間：train_end 後 VALID_DAYS 天
     valid_start = train_end + timedelta(days=1)
+    valid_end = train_end + timedelta(days=VALID_DAYS)
 
     # 確保日期在資料範圍內
     if data_start and train_start < data_start:
