@@ -57,10 +57,9 @@ export function Training() {
       setStatus(statusRes)
       if (rangeRes) {
         setDataRange(rangeRes)
-        // 預設選擇最新的月份（資料結束日期的前 6 個月作為訓練結束）
+        // 預設選擇最新的驗證結束月份（資料結束日期的月份）
         if (!selectedMonth) {
           const endDate = new Date(rangeRes.end)
-          endDate.setMonth(endDate.getMonth() - 6)
           const defaultMonth = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}`
           setSelectedMonth(defaultMonth)
         }
@@ -149,28 +148,29 @@ export function Training() {
     }
   }
 
-  // 生成可用的月份選項（從資料開始到資料結束前 6 個月）
+  // 生成可用的驗證結束月份選項（valid_end，也是模型命名的月份）
+  // 從資料結束日期往前推算，以月為單位
   const monthOptions = useCallback(() => {
     if (!dataRange) return []
 
     const options: { value: string; label: string }[] = []
-    const startDate = new Date(dataRange.start)
     const endDate = new Date(dataRange.end)
+    const startDate = new Date(dataRange.start)
 
-    // 訓練結束日最早需要在資料開始後 2 年（TRAIN_DAYS）
-    startDate.setFullYear(startDate.getFullYear() + 2)
-    // 訓練結束日最晚需要在資料結束前 6 個月（VALID_DAYS）
-    endDate.setMonth(endDate.getMonth() - 6)
+    // 從資料結束月份開始，往前生成選項
+    const current = new Date(endDate.getFullYear(), endDate.getMonth(), 1)
 
-    const current = new Date(startDate)
-    while (current <= endDate) {
+    // 最多往前 24 個月，且不超過資料開始日期
+    for (let i = 0; i < 24; i++) {
+      if (current < startDate) break
+
       const value = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`
       const label = `${current.getFullYear()}/${String(current.getMonth() + 1).padStart(2, '0')}`
       options.push({ value, label })
-      current.setMonth(current.getMonth() + 1)
+      current.setMonth(current.getMonth() - 1)
     }
 
-    return options.reverse() // 最新的在前
+    return options // 最新的在前
   }, [dataRange])
 
   const handleStartTraining = async () => {
@@ -179,9 +179,12 @@ export function Training() {
     }
     setActionLoading(true)
     try {
-      // 計算選定月份的最後一天作為 train_end
+      // selectedMonth 是 valid_end 月份，計算 train_end = valid_end - 126 天
       const [year, month] = selectedMonth.split('-').map(Number)
-      const trainEndDate = new Date(year, month, 0) // 該月最後一天
+      const validEndDate = new Date(year, month, 0) // 該月最後一天
+      // train_end = valid_end - VALID_DAYS (126 天)
+      const trainEndDate = new Date(validEndDate)
+      trainEndDate.setDate(trainEndDate.getDate() - 126)
       const trainEnd = trainEndDate.toISOString().split('T')[0]
 
       await modelApi.train({
@@ -267,9 +270,9 @@ export function Training() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {/* 訓練結束月份選擇 */}
+          {/* 驗證結束月份選擇（模型命名月份）*/}
           <div className="flex items-center gap-2">
-            <label className="text-sm text-muted-foreground">Train End:</label>
+            <label className="text-sm text-muted-foreground">Model:</label>
             <select
               className="px-3 py-2 rounded-lg border border-border bg-background text-sm"
               value={selectedMonth}

@@ -2,6 +2,7 @@
 模型訓練服務 - LightGBM IC 增量選擇法
 """
 
+import hashlib
 import json
 import math
 import pickle
@@ -640,8 +641,8 @@ class ModelTrainer:
 
         candidate_ids = [f.id for f in enabled_factors]
 
-        # 生成模型名稱
-        model_name = f"{train_start.strftime('%Y-%m')}~{train_end.strftime('%Y-%m')}"
+        # 生成臨時模型名稱（訓練完成後會更新為 YYYYMM-hash 格式）
+        temp_name = f"{valid_end.strftime('%Y%m')}-pending"
 
         # 創建訓練記錄
         run = training_repo.create_run(
@@ -650,7 +651,7 @@ class ModelTrainer:
             valid_start=valid_start,
             valid_end=valid_end,
         )
-        run.name = model_name
+        run.name = temp_name
         run.candidate_factor_ids = json.dumps(candidate_ids)
         run.status = "running"
         session.commit()
@@ -763,7 +764,13 @@ class ModelTrainer:
                     selected=result.selected,
                 )
 
+            # 生成最終模型名稱：YYYYMM-hash（6位）
+            hash_input = f"{run.id}-{valid_end.isoformat()}-{len(selected_factors)}"
+            short_hash = hashlib.md5(hash_input.encode()).hexdigest()[:6]
+            model_name = f"{valid_end.strftime('%Y%m')}-{short_hash}"
+
             # 完成訓練
+            run.name = model_name
             run.selected_factor_ids = json.dumps([f.id for f in selected_factors])
             training_repo.complete_run(
                 run_id=run.id,
@@ -772,8 +779,7 @@ class ModelTrainer:
                 factor_count=len(selected_factors),
             )
 
-            # 保存模型檔案（必須使用原始 selected_factors 保持順序）
-            # 包含 Optuna 優化後的超參數
+            # 保存模型檔案
             config = {
                 "train_start": train_start.isoformat(),
                 "train_end": train_end.isoformat(),
@@ -783,7 +789,6 @@ class ModelTrainer:
                 "icir": icir,
             }
             if self._optimized_params:
-                # 只保存調參的部分（不含 objective, metric 等固定參數）
                 tuned_params = {k: v for k, v in self._optimized_params.items()
                                if k not in ("objective", "metric", "boosting_type", "verbosity", "seed")}
                 config["hyperparameters"] = tuned_params

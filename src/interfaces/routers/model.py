@@ -366,8 +366,8 @@ async def trigger_training(
     if data_start and train_start < data_start:
         train_start = data_start
 
-    # 生成模型名稱
-    name = f"{train_start.strftime('%Y-%m')}~{train_end.strftime('%Y-%m')}"
+    # 臨時名稱用於訊息顯示（訓練完成後會更新為 YYYYMM-因子數 格式）
+    temp_name = f"{valid_end.strftime('%Y%m')}"
 
     # 確認有啟用的因子
     enabled_factors = factor_repo.get_all(enabled=True)
@@ -423,13 +423,13 @@ async def trigger_training(
     job_id = await job_manager.create_job(
         job_type="train",
         task_fn=training_task,
-        message=f"Training model: {name}",
+        message=f"Training model: {temp_name}",
     )
 
     return TrainResponse(
         job_id=job_id,
         status="queued",
-        message=f"訓練任務已排入佇列 ({name})",
+        message=f"訓練任務已排入佇列 ({temp_name})",
     )
 
 
