@@ -38,7 +38,7 @@ export function Backtest() {
   const [modelId, setModelId] = useState<string>('')
   const [initialCapital, setInitialCapital] = useState('1000000')
   const [maxPositions, setMaxPositions] = useState('10')
-  const [tradePrice, setTradePrice] = useState<'close' | 'open'>('close')
+  const [tradePrice, setTradePrice] = useState<'close' | 'open'>('open')
 
   // 將 "m001" 格式轉為數字 ID
   const parseModelId = (id: string): number => {
@@ -358,8 +358,8 @@ export function Backtest() {
                     value={tradePrice}
                     onChange={(e) => setTradePrice(e.target.value as 'close' | 'open')}
                   >
-                    <option value="close">Close Price (Default)</option>
-                    <option value="open">Open Price (09:00)</option>
+                    <option value="open">Open Price (Recommended)</option>
+                    <option value="close">Close Price</option>
                   </select>
                 </div>
               </div>

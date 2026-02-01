@@ -35,7 +35,7 @@ class PredictionRequest(BaseModel):
 
     model_id: int
     top_k: int = 10
-    target_date: date | None = None  # None = 使用最新資料日期
+    trade_date: date | None = None  # 預計交易日期，None = 使用最新資料日期的下一天
 
 
 class PredictionSignal(BaseModel):
@@ -50,6 +50,7 @@ class PredictionSignal(BaseModel):
 class PredictionsResponse(BaseModel):
     """預測回應"""
 
-    date: str
+    trade_date: str  # 預計交易日期
+    feature_date: str  # 實際使用的特徵資料日期
     model_name: str
     signals: list[PredictionSignal]

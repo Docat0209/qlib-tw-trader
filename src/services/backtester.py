@@ -119,14 +119,19 @@ class TopKStrategy(bt.Strategy):
         current_dt = self.datas[0].datetime.datetime(0)
         current_date = pd.Timestamp(current_dt).normalize()
 
-        # 取得當日分數
+        # 取得前一日分數（避免 lookahead bias）
+        # 分數是基於 T 日特徵預測 T+1→T+2 收益率
+        # 所以在 T 日交易時，應使用 T-1 日的分數
         if self.params.scores is None:
             return
 
-        if current_date not in self.params.scores.index:
+        # 找前一個交易日的分數
+        available_dates = self.params.scores.index[self.params.scores.index < current_date]
+        if len(available_dates) == 0:
             return
 
-        scores = self.params.scores.loc[current_date].dropna()
+        prev_date = available_dates[-1]
+        scores = self.params.scores.loc[prev_date].dropna()
         if scores.empty:
             return
 

@@ -132,6 +132,35 @@ lambda_l1/l2: 縮小      # 低維需較少正則化
 
 **原因**：適當的模型複雜度讓系統能正確檢測因子貢獻，而非因過擬合提早停止選擇。
 
+## 預測與交易時序
+
+### Label 定義
+
+```python
+label_expr = "Ref($close, -2) / Ref($close, -1) - 1"
+```
+
+- T 日特徵 → 預測 T+1 收盤 ~ T+2 收盤的收益率
+- 若要捕捉此收益，應在 T+1 開盤買入
+
+### 避免 Lookahead Bias
+
+**Predictor:**
+- `trade_date` = 預計交易日期（買入日）
+- 系統自動使用 `trade_date - 1` 的特徵資料
+- 返回 `feature_date`（實際使用的資料日期）
+
+**Backtester:**
+- 在 T 日交易時，使用 T-1 日的分數
+- 預設使用 Open Price（更符合實際交易）
+
+### 正確流程示例
+
+要在 2/2 開盤買入：
+1. 使用 2/1 收盤後的資料計算特徵
+2. 模型預測 2/2→2/3 收益率
+3. 2/2 開盤執行買入
+
 ## Top-K 選股與 Tie-Breaking
 
 ### 已知問題：模型區分能力不足
@@ -147,11 +176,6 @@ lambda_l1/l2: 縮小      # 低維需較少正則化
 # 先按分數降序，再按股票代碼升序
 df.sort_values(by=["score", "symbol"], ascending=[False, True]).head(top_k)
 ```
-
-### 驗證一致性
-
-Predictor 和 Backtester 的 Top-K 選股結果應**完全一致**（包含順序）。
-可用 `sandbox/verify_backtest.py` 腳本驗證。
 
 ### 根本解決方案
 

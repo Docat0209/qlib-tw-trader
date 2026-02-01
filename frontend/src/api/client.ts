@@ -377,7 +377,7 @@ export interface PositionsResponse {
 export interface PredictionRequest {
   model_id: number
   top_k: number
-  target_date?: string  // YYYY-MM-DD 格式，null = 最新
+  trade_date?: string  // 預計交易日期，YYYY-MM-DD 格式，null = 最新資料日期的下一天
 }
 
 export interface PredictionSignal {
@@ -388,7 +388,8 @@ export interface PredictionSignal {
 }
 
 export interface PredictionsResponse {
-  date: string
+  trade_date: string  // 預計交易日期
+  feature_date: string  // 實際使用的特徵資料日期
   model_name: string
   signals: PredictionSignal[]
 }

@@ -7,7 +7,7 @@ export function Predictions() {
   const [models, setModels] = useState<ModelHistoryItem[]>([])
   const [selectedModelId, setSelectedModelId] = useState<string>('')
   const [topK, setTopK] = useState(10)
-  const [targetDate, setTargetDate] = useState<string>('')  // 空字串 = 使用最新資料
+  const [tradeDate, setTradeDate] = useState<string>('')  // 空字串 = 使用最新資料的下一天
   const [predictions, setPredictions] = useState<PredictionsResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
@@ -56,7 +56,7 @@ export function Predictions() {
       const result = await portfolioApi.generatePredictions({
         model_id: parseModelId(selectedModelId),
         top_k: topK,
-        target_date: targetDate || undefined,
+        trade_date: tradeDate || undefined,
       })
       setPredictions(result)
     } catch (err) {
@@ -127,14 +127,14 @@ export function Predictions() {
               <label className="text-xs text-muted-foreground block mb-1">
                 <span className="flex items-center gap-1">
                   <Calendar className="h-3 w-3" />
-                  Date (empty = latest)
+                  Trade Date (empty = next day)
                 </span>
               </label>
               <input
                 type="date"
                 className="input w-full text-sm"
-                value={targetDate}
-                onChange={(e) => setTargetDate(e.target.value)}
+                value={tradeDate}
+                onChange={(e) => setTradeDate(e.target.value)}
                 disabled={generating}
               />
             </div>
@@ -184,7 +184,10 @@ export function Predictions() {
                 Model: <span className="font-semibold text-foreground">{predictions.model_name}</span>
               </span>
               <span>
-                Date: <span className="font-semibold text-foreground">{predictions.date}</span>
+                Trade: <span className="font-semibold text-foreground">{predictions.trade_date}</span>
+              </span>
+              <span>
+                Data: <span className="font-semibold text-foreground">{predictions.feature_date}</span>
               </span>
             </div>
           )}

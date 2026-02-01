@@ -87,25 +87,27 @@ async def generate_predictions(
     if model.status != "completed":
         raise HTTPException(status_code=400, detail="Model is not completed")
 
-    # 決定預測日期
-    if request.target_date:
-        target_date = request.target_date
+    # 決定交易日期
+    if request.trade_date:
+        trade_date = request.trade_date
     else:
-        # 使用資料庫中最新資料日期
+        # 使用資料庫中最新資料日期的下一天作為交易日
         latest_date_row = session.query(func.max(StockDaily.date)).first()
         if not latest_date_row or not latest_date_row[0]:
             raise HTTPException(status_code=400, detail="No stock data available")
-        target_date = latest_date_row[0]
+        trade_date = latest_date_row[0] + timedelta(days=1)
 
     # 導出 qlib 資料（因子計算需要歷史資料）
+    # 導出到 trade_date 前一天（predictor 會使用這個日期的資料）
     lookback_days = 180
-    export_start = target_date - timedelta(days=lookback_days)
+    export_end = trade_date - timedelta(days=1)
+    export_start = export_end - timedelta(days=lookback_days)
 
     def do_export():
         exporter = QlibExporter(session)
         exporter.export(ExportConfig(
             start_date=export_start,
-            end_date=target_date,
+            end_date=export_end,
             output_dir=QLIB_DATA_DIR,
         ))
 
@@ -116,11 +118,11 @@ async def generate_predictions(
         predictor = Predictor(QLIB_DATA_DIR)
         return predictor.predict(
             model_name=model.name,
-            target_date=target_date,
+            trade_date=trade_date,
             top_k=request.top_k,
         )
 
-    actual_date, signals = await asyncio.to_thread(do_predict)
+    feature_date, signals = await asyncio.to_thread(do_predict)
 
     # 關聯股票名稱
     stock_names = {s.stock_id: s.name for s in session.query(StockUniverse).all()}
@@ -136,7 +138,8 @@ async def generate_predictions(
     ]
 
     return PredictionsResponse(
-        date=actual_date.isoformat(),
+        trade_date=trade_date.isoformat(),
+        feature_date=feature_date.isoformat(),
         model_name=model.name,
         signals=response_signals,
     )
