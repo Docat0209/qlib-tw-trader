@@ -521,32 +521,47 @@ function CultivateDialog({
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Periods (3-10)</label>
+            <label className="block text-sm font-medium mb-1">
+              Periods: <span className="text-primary">{nPeriods}</span>
+            </label>
             <input
-              type="number"
-              className="input w-full"
+              type="range"
+              className="w-full accent-primary"
               value={nPeriods}
               onChange={(e) => setNPeriods(Number(e.target.value))}
               min={3}
               max={10}
+              step={1}
             />
-            <p className="text-xs text-muted-foreground mt-1">
-              Number of walk-forward windows
-            </p>
+            <div className="flex justify-between text-xs text-muted-foreground mt-1">
+              <span>3 (fast)</span>
+              <span>10 (stable)</span>
+            </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Trials per Period (10-50)</label>
+            <label className="block text-sm font-medium mb-1">
+              Trials per Period: <span className="text-primary">{nTrials}</span>
+            </label>
             <input
-              type="number"
-              className="input w-full"
+              type="range"
+              className="w-full accent-primary"
               value={nTrials}
               onChange={(e) => setNTrials(Number(e.target.value))}
               min={10}
               max={50}
+              step={5}
             />
-            <p className="text-xs text-muted-foreground mt-1">
-              Optuna trials per window
+            <div className="flex justify-between text-xs text-muted-foreground mt-1">
+              <span>10 (fast)</span>
+              <span>50 (thorough)</span>
+            </div>
+          </div>
+
+          <div className="p-3 rounded-lg bg-secondary text-sm">
+            <p className="text-muted-foreground">
+              Estimated: <span className="font-semibold text-foreground">{nPeriods * nTrials}</span> total trials
+              {' '}(~{Math.ceil(nPeriods * nTrials * 0.25)} min)
             </p>
           </div>
 

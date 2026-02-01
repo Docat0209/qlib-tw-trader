@@ -1059,19 +1059,55 @@ class ModelTrainer:
         if not data_start or not data_end:
             raise ValueError("No qlib data found")
 
-        # 生成 Walk Forward 窗口（使用較短的訓練/驗證期以支援更多窗口）
-        # 培養用：2 年訓練 + 3 個月驗證（vs 正式訓練的 3 年 + 6 個月）
-        CULTIVATION_TRAIN_DAYS = 504  # 2 年
-        CULTIVATION_VALID_DAYS = 63   # 3 個月
+        # 動態計算 train_days 和 valid_days 以符合請求的 n_periods
+        # 目標：訓練期佔 80%，驗證期佔 20%
+        total_days = (data_end - data_start).days
+
+        # 每個 period 需要的總天數 = total_days / n_periods
+        # 但 periods 會重疊（訓練期重疊），所以計算方式是：
+        # total_days = train_days + valid_days * n_periods
+        # => valid_days = (total_days - train_days) / n_periods
+        # 設 train_days = 504 (2年)，計算 valid_days
+        MIN_TRAIN_DAYS = 378  # 最少 1.5 年
+        MAX_TRAIN_DAYS = 630  # 最多 2.5 年
+        MIN_VALID_DAYS = 42   # 最少 2 個月
+        MAX_VALID_DAYS = 126  # 最多 6 個月
+
+        # 嘗試計算可行的 train_days 和 valid_days
+        train_days = 504  # 預設 2 年
+        valid_days = (total_days - train_days) // n_periods
+
+        # 如果 valid_days 太小，減少 train_days
+        if valid_days < MIN_VALID_DAYS:
+            valid_days = MIN_VALID_DAYS
+            train_days = total_days - valid_days * n_periods
+            if train_days < MIN_TRAIN_DAYS:
+                raise ValueError(
+                    f"Insufficient data for {n_periods} periods. "
+                    f"Need at least {MIN_TRAIN_DAYS + MIN_VALID_DAYS * n_periods} days, have {total_days}."
+                )
+
+        # 如果 valid_days 太大，限制它
+        if valid_days > MAX_VALID_DAYS:
+            valid_days = MAX_VALID_DAYS
+
+        # 確保 train_days 在範圍內
+        train_days = max(MIN_TRAIN_DAYS, min(MAX_TRAIN_DAYS, train_days))
+
+        if on_progress:
+            on_progress(1.0, f"Using {train_days} train days, {valid_days} valid days per period")
 
         periods = self._generate_walk_forward_periods(
             data_start, data_end, n_periods,
-            train_days=CULTIVATION_TRAIN_DAYS,
-            valid_days=CULTIVATION_VALID_DAYS,
+            train_days=train_days,
+            valid_days=valid_days,
         )
 
-        if not periods:
-            raise ValueError("Cannot generate walk forward periods with available data")
+        if len(periods) < n_periods:
+            raise ValueError(
+                f"Could only generate {len(periods)} periods (requested {n_periods}). "
+                f"Need more data or reduce n_periods."
+            )
 
         if on_progress:
             on_progress(2.0, f"Generated {len(periods)} walk-forward periods")
@@ -1116,10 +1152,16 @@ class ModelTrainer:
                 continue
 
             # Optuna 優化
+            # 每個 period 佔用 85% / n_periods 的進度
+            period_progress_range = 85.0 / len(periods)
+
             def period_progress(p: float, msg: str) -> None:
                 if on_progress:
-                    inner_progress = base_progress + (p - 2.0) * (80.0 / len(periods) / 8.0)
-                    on_progress(inner_progress, f"[{i+1}/{len(periods)}] {msg}")
+                    # p 是 2~10 的進度（Optuna 部分）
+                    # 轉換為 0~1 範圍，再映射到這個 period 的進度區間
+                    optuna_progress = (p - 2.0) / 8.0  # 0~1
+                    inner_progress = base_progress + optuna_progress * period_progress_range
+                    on_progress(inner_progress, f"[Period {i+1}/{len(periods)}] {msg}")
 
             # timeout 根據 trials 數量調整（每 trial 約 15 秒）
             timeout_seconds = max(300, n_trials_per_period * 15)
