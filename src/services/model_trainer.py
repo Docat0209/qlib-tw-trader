@@ -652,14 +652,14 @@ class ModelTrainer:
         # 生成臨時模型名稱（訓練完成後會更新為 YYYYMM-hash 格式）
         temp_name = f"{valid_end.strftime('%Y%m')}-pending"
 
-        # 創建訓練記錄
+        # 創建訓練記錄（立即設定臨時名稱，避免前端看到 m00X）
         run = training_repo.create_run(
+            name=temp_name,
             train_start=train_start,
             train_end=train_end,
             valid_start=valid_start,
             valid_end=valid_end,
         )
-        run.name = temp_name
         run.candidate_factor_ids = json.dumps(candidate_ids)
         run.status = "running"
         session.commit()

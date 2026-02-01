@@ -413,13 +413,18 @@ async def trigger_training(
             if export_start < db_start:
                 export_start = db_start
 
-            exporter = QlibExporter(task_session)
-            export_config = ExportConfig(
-                start_date=export_start,
-                end_date=valid_end,
-                output_dir=Path("data/qlib"),
-            )
-            export_result = exporter.export(export_config)
+            # 定義同步導出函數（避免阻塞 event loop）
+            def do_export():
+                exporter = QlibExporter(task_session)
+                export_config = ExportConfig(
+                    start_date=export_start,
+                    end_date=valid_end,
+                    output_dir=Path("data/qlib"),
+                )
+                return exporter.export(export_config)
+
+            # 使用 to_thread 運行同步導出
+            export_result = await asyncio.to_thread(do_export)
             await progress_callback(5, f"Exported {export_result.stocks_exported} stocks")
 
             # Step 2: 執行訓練

@@ -23,9 +23,11 @@ class TrainingRepository:
         valid_start: date | None = None,
         valid_end: date | None = None,
         config: dict | None = None,
+        name: str | None = None,
     ) -> TrainingRun:
         """建立訓練執行記錄"""
         run = TrainingRun(
+            name=name,
             train_start=train_start,
             train_end=train_end,
             valid_start=valid_start,
