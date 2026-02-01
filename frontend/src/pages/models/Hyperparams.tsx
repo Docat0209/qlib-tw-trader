@@ -479,18 +479,24 @@ function CultivateDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!name.trim()) return
+    if (!name.trim()) {
+      setError('Please enter a name')
+      return
+    }
 
     setSubmitting(true)
     setError(null)
     try {
-      await hyperparamsApi.cultivate({
+      console.log('Starting cultivation:', { name: name.trim(), n_periods: nPeriods, n_trials_per_period: nTrials })
+      const result = await hyperparamsApi.cultivate({
         name: name.trim(),
         n_periods: nPeriods,
         n_trials_per_period: nTrials,
       })
+      console.log('Cultivation started:', result)
       onSubmit()
     } catch (err) {
+      console.error('Cultivation error:', err)
       setError(err instanceof Error ? err.message : 'Failed to start cultivation')
     } finally {
       setSubmitting(false)
@@ -512,12 +518,18 @@ function CultivateDialog({
             <label className="block text-sm font-medium mb-1">Name *</label>
             <input
               type="text"
-              className="input w-full"
+              className={cn(
+                "input w-full",
+                !name.trim() && "border-orange focus:border-orange"
+              )}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g., Default v1"
-              required
+              autoFocus
             />
+            {!name.trim() && (
+              <p className="text-xs text-orange mt-1">Required</p>
+            )}
           </div>
 
           <div>
