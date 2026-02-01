@@ -512,7 +512,7 @@ class ModelTrainer:
             valid_start: 驗證開始日期
             valid_end: 驗證結束日期
             on_progress: 進度回調 (progress: 0-100, message: str)
-            hyperparams_id: 指定使用的超參數組 ID
+            hyperparams_id: 指定使用的超參數組 ID（參數會儲存在 config 中）
 
         Returns:
             TrainingResult
@@ -539,7 +539,6 @@ class ModelTrainer:
         )
         run.name = model_name
         run.candidate_factor_ids = json.dumps(candidate_ids)
-        run.hyperparams_id = hyperparams_id
         run.status = "running"
         session.commit()
 

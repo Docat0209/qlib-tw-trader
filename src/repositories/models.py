@@ -251,10 +251,6 @@ class TrainingRun(Base):
     # 因子池記錄（JSON 格式的 ID 列表）
     candidate_factor_ids: Mapped[str | None] = mapped_column(Text, nullable=True)
     selected_factor_ids: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # 使用的超參數組
-    hyperparams_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("hyperparams.id"), nullable=True
-    )
 
     selected_factors: Mapped[list["TrainingFactorResult"]] = relationship(
         back_populates="training_run"
