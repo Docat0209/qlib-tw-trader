@@ -217,19 +217,23 @@ async def get_training_status(
 
 
 @router.get("/data-range")
-async def get_data_range():
-    """取得 qlib 資料的日期範圍"""
-    from src.services.model_trainer import ModelTrainer
+async def get_data_range(session: Session = Depends(get_db)):
+    """取得資料庫中可用的日期範圍（用於訓練/回測）"""
+    from sqlalchemy import func
+    from src.repositories.models import StockDaily
 
-    trainer = ModelTrainer(qlib_data_dir="data/qlib")
-    data_start, data_end = trainer.get_data_date_range()
+    # 查詢 stock_daily 表的日期範圍
+    result = session.query(
+        func.min(StockDaily.date),
+        func.max(StockDaily.date),
+    ).first()
 
-    if not data_start or not data_end:
-        raise HTTPException(status_code=404, detail="No qlib data found")
+    if not result or not result[0] or not result[1]:
+        raise HTTPException(status_code=404, detail="No stock data found in database")
 
     return {
-        "start": data_start.isoformat(),
-        "end": data_end.isoformat(),
+        "start": result[0].isoformat(),
+        "end": result[1].isoformat(),
     }
 
 
