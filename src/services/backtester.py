@@ -48,6 +48,7 @@ class EquityPoint:
 class BacktestMetrics:
     """回測績效指標"""
 
+    # 核心指標
     total_return_with_cost: float
     total_return_without_cost: float
     annual_return_with_cost: float
@@ -57,6 +58,22 @@ class BacktestMetrics:
     win_rate: float
     total_trades: int
     total_cost: float
+
+    # 市場基準
+    market_return: float | None = None
+    market_hit_rate: float | None = None
+    market_stocks_up: int | None = None
+    market_stocks_down: int | None = None
+
+    # 超額表現
+    excess_return: float | None = None
+    excess_hit_rate: float | None = None
+    alpha: float | None = None
+
+    # 風險調整指標
+    sortino_ratio: float | None = None
+    information_ratio: float | None = None
+    calmar_ratio: float | None = None
 
 
 @dataclass
@@ -268,6 +285,119 @@ class Backtester:
         return df.groupby(level="datetime", group_keys=False).apply(
             lambda x: (x - x.mean()) / (x.std() + 1e-8)
         )
+
+    def _calculate_market_benchmark(
+        self,
+        price_df: pd.DataFrame,
+        start_date: date,
+        end_date: date,
+    ) -> dict:
+        """
+        計算市場基準指標
+
+        使用所有股票的期間報酬計算：
+        - market_return: 所有股票報酬的平均值（等權重持有）
+        - market_hit_rate: 上漲股票比例（隨機選股的預期勝率）
+        - market_stocks_up / market_stocks_down: 上漲/下跌股票數
+        """
+        # 取得每檔股票的期間收盤價
+        close_df = price_df["close"].unstack(level="instrument")
+
+        # 取得期間首尾日的價格
+        available_dates = close_df.index.tolist()
+        if len(available_dates) < 2:
+            return {}
+
+        # 找到最接近 start_date 和 end_date 的實際交易日
+        start_prices = close_df.iloc[0]
+        end_prices = close_df.iloc[-1]
+
+        # 計算每檔股票的期間報酬
+        stock_returns = (end_prices - start_prices) / start_prices
+        stock_returns = stock_returns.dropna()
+
+        if stock_returns.empty:
+            return {}
+
+        # 市場平均報酬
+        market_return = stock_returns.mean() * 100
+
+        # 上漲/下跌統計
+        stocks_up = (stock_returns > 0).sum()
+        stocks_down = (stock_returns <= 0).sum()
+        total_stocks = stocks_up + stocks_down
+
+        # 市場基準勝率（隨機選股的預期勝率）
+        market_hit_rate = (stocks_up / total_stocks * 100) if total_stocks > 0 else 0
+
+        return {
+            "market_return": round(float(market_return), 2),
+            "market_hit_rate": round(float(market_hit_rate), 1),
+            "market_stocks_up": int(stocks_up),
+            "market_stocks_down": int(stocks_down),
+        }
+
+    def _calculate_excess_metrics(
+        self,
+        model_return: float,
+        model_win_rate: float,
+        market_return: float | None,
+        market_hit_rate: float | None,
+    ) -> dict:
+        """計算超額表現指標"""
+        if market_return is None or market_hit_rate is None:
+            return {}
+
+        excess_return = model_return - market_return
+        excess_hit_rate = model_win_rate - market_hit_rate
+
+        return {
+            "excess_return": round(excess_return, 2),
+            "excess_hit_rate": round(excess_hit_rate, 1),
+            "alpha": round(excess_return, 2),  # 單期 alpha 等同 excess_return
+        }
+
+    def _calculate_risk_adjusted_metrics(
+        self,
+        annual_return: float,
+        max_drawdown: float,
+        returns_analysis: dict,
+        market_returns: pd.Series | None = None,
+    ) -> dict:
+        """
+        計算風險調整指標
+
+        - Sortino Ratio: 只考慮下行風險
+        - Calmar Ratio: 報酬除以最大回撤
+        - Information Ratio: alpha / tracking_error（需要市場報酬序列）
+        """
+        result = {}
+
+        # 提取每日報酬序列
+        daily_returns = [r for r in returns_analysis.values() if r is not None]
+
+        if daily_returns:
+            returns_arr = np.array(daily_returns)
+
+            # Sortino Ratio: excess_return / downside_std
+            # 只計算負報酬的標準差
+            negative_returns = returns_arr[returns_arr < 0]
+            if len(negative_returns) > 1:
+                downside_std = np.std(negative_returns, ddof=1)
+                if downside_std > 1e-8:
+                    # 使用年化報酬
+                    sortino = annual_return / 100 / (downside_std * np.sqrt(252))
+                    result["sortino_ratio"] = round(float(sortino), 2)
+
+        # Calmar Ratio: annual_return / max_drawdown
+        if max_drawdown > 0:
+            calmar = annual_return / max_drawdown
+            result["calmar_ratio"] = round(float(calmar), 2)
+
+        # Information Ratio（如果有市場報酬序列）
+        # 目前暫不計算，需要逐日市場報酬
+
+        return result
 
     def generate_predictions(
         self,
@@ -483,17 +613,50 @@ class Backtester:
         # 計算年化報酬
         days = (end_date - start_date).days
         years = max(days / 365.0, 0.01)
+        annual_return_with_cost = round(((1 + total_return_with) ** (1 / years) - 1) * 100, 2)
+
+        # 計算市場基準指標
+        market_benchmark = self._calculate_market_benchmark(price_df, start_date, end_date)
+
+        # 計算超額表現指標
+        model_return = round(total_return_with * 100, 2)
+        excess_metrics = self._calculate_excess_metrics(
+            model_return=model_return,
+            model_win_rate=win_rate,
+            market_return=market_benchmark.get("market_return"),
+            market_hit_rate=market_benchmark.get("market_hit_rate"),
+        )
+
+        # 計算風險調整指標
+        risk_adjusted = self._calculate_risk_adjusted_metrics(
+            annual_return=annual_return_with_cost,
+            max_drawdown=max_dd,
+            returns_analysis=returns_analysis,
+        )
 
         metrics = BacktestMetrics(
-            total_return_with_cost=round(total_return_with * 100, 2),
+            total_return_with_cost=model_return,
             total_return_without_cost=round(total_return_without * 100, 2),
-            annual_return_with_cost=round(((1 + total_return_with) ** (1 / years) - 1) * 100, 2),
+            annual_return_with_cost=annual_return_with_cost,
             annual_return_without_cost=round(((1 + total_return_without) ** (1 / years) - 1) * 100, 2),
             sharpe_ratio=round(float(sharpe), 2),
             max_drawdown=round(float(max_dd), 2),
             win_rate=round(float(win_rate), 1),
             total_trades=int(total_trades),
             total_cost=round(total_cost, 2),
+            # 市場基準
+            market_return=market_benchmark.get("market_return"),
+            market_hit_rate=market_benchmark.get("market_hit_rate"),
+            market_stocks_up=market_benchmark.get("market_stocks_up"),
+            market_stocks_down=market_benchmark.get("market_stocks_down"),
+            # 超額表現
+            excess_return=excess_metrics.get("excess_return"),
+            excess_hit_rate=excess_metrics.get("excess_hit_rate"),
+            alpha=excess_metrics.get("alpha"),
+            # 風險調整指標
+            sortino_ratio=risk_adjusted.get("sortino_ratio"),
+            calmar_ratio=risk_adjusted.get("calmar_ratio"),
+            information_ratio=risk_adjusted.get("information_ratio"),
         )
 
         # 建立權益曲線

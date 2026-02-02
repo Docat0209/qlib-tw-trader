@@ -20,8 +20,10 @@ from src.interfaces.schemas.backtest import (
     BacktestRequest,
     BacktestResponse,
     BacktestRunResponse,
+    BacktestSummary,
     EquityCurvePoint,
     KlinePoint,
+    PeriodSummary,
     StockKlineResponse,
     StockTradeInfo,
     StockTradeListResponse,
@@ -45,7 +47,7 @@ def backtest_to_response(bt) -> BacktestResponse:
             result_data = json.loads(bt.result)
             if "error" not in result_data:
                 metrics = BacktestMetrics(
-                    # 新格式
+                    # 核心指標
                     total_return_with_cost=result_data.get("total_return_with_cost"),
                     total_return_without_cost=result_data.get("total_return_without_cost"),
                     annual_return_with_cost=result_data.get("annual_return_with_cost"),
@@ -55,6 +57,19 @@ def backtest_to_response(bt) -> BacktestResponse:
                     win_rate=result_data.get("win_rate"),
                     total_trades=result_data.get("total_trades"),
                     total_cost=result_data.get("total_cost"),
+                    # 市場基準
+                    market_return=result_data.get("market_return"),
+                    market_hit_rate=result_data.get("market_hit_rate"),
+                    market_stocks_up=result_data.get("market_stocks_up"),
+                    market_stocks_down=result_data.get("market_stocks_down"),
+                    # 超額表現
+                    excess_return=result_data.get("excess_return"),
+                    excess_hit_rate=result_data.get("excess_hit_rate"),
+                    alpha=result_data.get("alpha"),
+                    # 風險調整指標
+                    sortino_ratio=result_data.get("sortino_ratio"),
+                    information_ratio=result_data.get("information_ratio"),
+                    calmar_ratio=result_data.get("calmar_ratio"),
                     # 向後兼容舊格式
                     total_return=result_data.get("total_return") or result_data.get("total_return_with_cost"),
                     annual_return=result_data.get("annual_return") or result_data.get("annual_return_with_cost"),
@@ -96,6 +111,87 @@ async def list_backtests(
     )
 
 
+# === 多期統計 API（必須在 /{backtest_id} 之前定義）===
+
+
+@router.get("/summary", response_model=BacktestSummary)
+async def get_backtest_summary(
+    session: Session = Depends(get_db),
+    selection_method: str | None = None,
+):
+    """
+    取得多期累積統計
+
+    聚合所有已完成的回測，計算：
+    - 累積報酬
+    - 統計信賴度（t 檢定）
+    - 跑贏市場期數比例
+
+    Args:
+        selection_method: 只統計特定因子選擇方法的回測
+    """
+    from src.repositories.models import Backtest
+    from src.services.backtest_analyzer import BacktestAnalyzer
+
+    # 查詢已完成的回測
+    query = session.query(Backtest).filter(Backtest.status == "completed")
+
+    backtests = query.order_by(Backtest.end_date).all()
+
+    if not backtests:
+        raise HTTPException(status_code=404, detail="No completed backtests found")
+
+    # 轉換為 dict 格式
+    backtest_data = [
+        {
+            "model_id": bt.model_id,
+            "start_date": bt.start_date,
+            "end_date": bt.end_date,
+            "result": bt.result,
+        }
+        for bt in backtests
+    ]
+
+    # 計算統計
+    analyzer = BacktestAnalyzer()
+    summary = analyzer.calculate_summary(backtest_data, selection_method)
+
+    if not summary:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not calculate summary - backtests may be missing market benchmark data"
+        )
+
+    return BacktestSummary(
+        selection_method=summary.selection_method,
+        n_periods=summary.n_periods,
+        cumulative_return=summary.cumulative_return,
+        cumulative_excess_return=summary.cumulative_excess_return,
+        avg_period_return=summary.avg_period_return,
+        avg_excess_return=summary.avg_excess_return,
+        period_win_rate=summary.period_win_rate,
+        return_std=summary.return_std,
+        excess_return_std=summary.excess_return_std,
+        t_statistic=summary.t_statistic,
+        p_value=summary.p_value,
+        ci_lower=summary.ci_lower,
+        ci_upper=summary.ci_upper,
+        is_significant=summary.is_significant,
+        periods=[
+            PeriodSummary(
+                period=p.period,
+                model_return=p.model_return,
+                market_return=p.market_return,
+                excess_return=p.excess_return,
+                win_rate=p.win_rate,
+                market_hit_rate=p.market_hit_rate,
+                beat_market=p.beat_market,
+            )
+            for p in summary.periods
+        ],
+    )
+
+
 @router.get("/{backtest_id}", response_model=BacktestDetailResponse)
 async def get_backtest(
     backtest_id: int,
@@ -115,7 +211,7 @@ async def get_backtest(
             result_data = json.loads(bt.result)
             if "error" not in result_data:
                 metrics = BacktestMetrics(
-                    # 新格式
+                    # 核心指標
                     total_return_with_cost=result_data.get("total_return_with_cost"),
                     total_return_without_cost=result_data.get("total_return_without_cost"),
                     annual_return_with_cost=result_data.get("annual_return_with_cost"),
@@ -125,6 +221,19 @@ async def get_backtest(
                     win_rate=result_data.get("win_rate"),
                     total_trades=result_data.get("total_trades"),
                     total_cost=result_data.get("total_cost"),
+                    # 市場基準
+                    market_return=result_data.get("market_return"),
+                    market_hit_rate=result_data.get("market_hit_rate"),
+                    market_stocks_up=result_data.get("market_stocks_up"),
+                    market_stocks_down=result_data.get("market_stocks_down"),
+                    # 超額表現
+                    excess_return=result_data.get("excess_return"),
+                    excess_hit_rate=result_data.get("excess_hit_rate"),
+                    alpha=result_data.get("alpha"),
+                    # 風險調整指標
+                    sortino_ratio=result_data.get("sortino_ratio"),
+                    information_ratio=result_data.get("information_ratio"),
+                    calmar_ratio=result_data.get("calmar_ratio"),
                     # 向後兼容舊格式
                     total_return=result_data.get("total_return") or result_data.get("total_return_with_cost"),
                     annual_return=result_data.get("annual_return") or result_data.get("annual_return_with_cost"),
@@ -343,6 +452,7 @@ async def run_backtest_task(
 
         # 轉換結果格式
         metrics_dict = {
+            # 核心指標
             "total_return_with_cost": result.metrics.total_return_with_cost,
             "total_return_without_cost": result.metrics.total_return_without_cost,
             "annual_return_with_cost": result.metrics.annual_return_with_cost,
@@ -352,6 +462,19 @@ async def run_backtest_task(
             "win_rate": result.metrics.win_rate,
             "total_trades": result.metrics.total_trades,
             "total_cost": result.metrics.total_cost,
+            # 市場基準
+            "market_return": result.metrics.market_return,
+            "market_hit_rate": result.metrics.market_hit_rate,
+            "market_stocks_up": result.metrics.market_stocks_up,
+            "market_stocks_down": result.metrics.market_stocks_down,
+            # 超額表現
+            "excess_return": result.metrics.excess_return,
+            "excess_hit_rate": result.metrics.excess_hit_rate,
+            "alpha": result.metrics.alpha,
+            # 風險調整指標
+            "sortino_ratio": result.metrics.sortino_ratio,
+            "information_ratio": result.metrics.information_ratio,
+            "calmar_ratio": result.metrics.calmar_ratio,
         }
 
         equity_curve = [

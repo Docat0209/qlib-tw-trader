@@ -17,6 +17,7 @@ class BacktestRequest(BaseModel):
 class BacktestMetrics(BaseModel):
     """回測績效指標"""
 
+    # 核心指標
     total_return_with_cost: float | None = None
     total_return_without_cost: float | None = None
     annual_return_with_cost: float | None = None
@@ -26,6 +27,22 @@ class BacktestMetrics(BaseModel):
     win_rate: float | None = None
     total_trades: int | None = None
     total_cost: float | None = None
+
+    # 市場基準
+    market_return: float | None = None  # 所有股票的平均報酬
+    market_hit_rate: float | None = None  # 上漲股票比例（隨機選股的預期勝率）
+    market_stocks_up: int | None = None  # 上漲股票數
+    market_stocks_down: int | None = None  # 下跌股票數
+
+    # 超額表現
+    excess_return: float | None = None  # 模型報酬 - 市場報酬
+    excess_hit_rate: float | None = None  # 模型勝率 - 市場勝率
+    alpha: float | None = None  # 與 excess_return 相同（標準化命名）
+
+    # 風險調整指標
+    sortino_ratio: float | None = None  # excess_return / downside_std
+    information_ratio: float | None = None  # alpha / tracking_error
+    calmar_ratio: float | None = None  # annual_return / max_drawdown
 
     # 向後兼容舊欄位
     total_return: float | None = None
@@ -144,3 +161,38 @@ class StockKlineResponse(BaseModel):
     name: str
     klines: list[KlinePoint]
     trades: list[TradePoint]
+
+
+# === 多期統計 ===
+
+
+class PeriodSummary(BaseModel):
+    """單期摘要"""
+
+    period: str  # YYYYMM
+    model_return: float
+    market_return: float
+    excess_return: float
+    win_rate: float
+    market_hit_rate: float
+    beat_market: bool  # 是否跑贏市場
+
+
+class BacktestSummary(BaseModel):
+    """多期累積統計"""
+
+    selection_method: str | None = None  # 因子選擇方法（如 composite_threshold_v3）
+    n_periods: int  # 統計期數
+    cumulative_return: float  # 累積報酬
+    cumulative_excess_return: float  # 累積超額報酬
+    avg_period_return: float  # 平均單期報酬
+    avg_excess_return: float  # 平均超額報酬
+    period_win_rate: float  # 跑贏市場期數比例
+    return_std: float  # 報酬標準差
+    excess_return_std: float  # 超額報酬標準差
+    t_statistic: float | None = None  # t 統計量
+    p_value: float | None = None  # p 值
+    ci_lower: float | None = None  # 95% CI 下限
+    ci_upper: float | None = None  # 95% CI 上限
+    is_significant: bool  # p_value < 0.05
+    periods: list[PeriodSummary]  # 各期詳情

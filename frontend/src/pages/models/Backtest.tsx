@@ -384,15 +384,50 @@ export function Backtest() {
             </CardHeader>
             <CardContent className="pt-4">
               {selectedBacktest?.metrics ? (
-                <div className="grid grid-cols-4 gap-2">
-                  <MetricCard label="Return" value={formatPercent(selectedBacktest.metrics.total_return_with_cost)} color={(selectedBacktest.metrics.total_return_with_cost || 0) >= 0} />
-                  <MetricCard label="No Cost" value={formatPercent(selectedBacktest.metrics.total_return_without_cost)} color={(selectedBacktest.metrics.total_return_without_cost || 0) >= 0} />
-                  <MetricCard label="Sharpe" value={selectedBacktest.metrics.sharpe_ratio?.toFixed(2) || '---'} />
-                  <MetricCard label="Max DD" value={`-${selectedBacktest.metrics.max_drawdown?.toFixed(1) || '---'}%`} color={false} />
-                  <MetricCard label="Win Rate" value={`${selectedBacktest.metrics.win_rate?.toFixed(0) || '---'}%`} />
-                  <MetricCard label="Trades" value={String(selectedBacktest.metrics.total_trades || '---')} />
-                  <MetricCard label="Cost" value={`$${selectedBacktest.metrics.total_cost?.toFixed(0) || '---'}`} />
-                  <MetricCard label="Period" value={selectedBacktest.start_date?.slice(5) || '---'} small />
+                <div className="space-y-3">
+                  {/* 報酬比較 */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <MetricCard
+                      label="模型報酬"
+                      value={formatPercent(selectedBacktest.metrics.total_return_with_cost)}
+                      color={(selectedBacktest.metrics.total_return_with_cost || 0) >= 0}
+                    />
+                    <MetricCard
+                      label="市場平均"
+                      value={formatPercent(selectedBacktest.metrics.market_return)}
+                    />
+                    <MetricCard
+                      label="超額報酬"
+                      value={formatPercent(selectedBacktest.metrics.excess_return)}
+                      color={(selectedBacktest.metrics.excess_return || 0) >= 0}
+                      highlight
+                    />
+                  </div>
+                  {/* 勝率比較 */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <MetricCard
+                      label="模型勝率"
+                      value={`${selectedBacktest.metrics.win_rate?.toFixed(0) || '---'}%`}
+                    />
+                    <MetricCard
+                      label="市場勝率"
+                      value={`${selectedBacktest.metrics.market_hit_rate?.toFixed(0) || '---'}%`}
+                      small
+                    />
+                    <MetricCard
+                      label="超額勝率"
+                      value={`${selectedBacktest.metrics.excess_hit_rate !== null ? (selectedBacktest.metrics.excess_hit_rate >= 0 ? '+' : '') + selectedBacktest.metrics.excess_hit_rate?.toFixed(0) : '---'}%`}
+                      color={(selectedBacktest.metrics.excess_hit_rate || 0) >= 0}
+                      highlight
+                    />
+                  </div>
+                  {/* 風險指標 */}
+                  <div className="grid grid-cols-4 gap-2">
+                    <MetricCard label="Sharpe" value={selectedBacktest.metrics.sharpe_ratio?.toFixed(2) || '---'} />
+                    <MetricCard label="Sortino" value={selectedBacktest.metrics.sortino_ratio?.toFixed(2) || '---'} />
+                    <MetricCard label="Calmar" value={selectedBacktest.metrics.calmar_ratio?.toFixed(2) || '---'} />
+                    <MetricCard label="Max DD" value={`-${selectedBacktest.metrics.max_drawdown?.toFixed(1) || '---'}%`} color={false} />
+                  </div>
                 </div>
               ) : (
                 <div className="flex items-center justify-center h-24 text-muted-foreground text-sm">
@@ -515,9 +550,21 @@ export function Backtest() {
 }
 
 // 指標卡片組件
-function MetricCard({ label, value, color, small }: { label: string; value: string; color?: boolean; small?: boolean }) {
+function MetricCard({
+  label,
+  value,
+  color,
+  small,
+  highlight,
+}: {
+  label: string
+  value: string
+  color?: boolean
+  small?: boolean
+  highlight?: boolean
+}) {
   return (
-    <div className="p-2 rounded bg-secondary/50">
+    <div className={`p-2 rounded ${highlight ? 'bg-blue/10 border border-blue/20' : 'bg-secondary/50'}`}>
       <p className="text-[10px] text-muted-foreground">{label}</p>
       <p className={`font-semibold ${small ? 'text-xs' : 'text-sm'} ${
         color === true ? 'text-green' : color === false ? 'text-red' : ''

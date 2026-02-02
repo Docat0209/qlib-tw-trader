@@ -547,7 +547,7 @@ export const jobApi = {
 
 // Backtest Types
 export interface BacktestMetrics {
-  // 新格式
+  // 核心指標
   total_return_with_cost: number | null
   total_return_without_cost: number | null
   annual_return_with_cost: number | null
@@ -557,10 +557,52 @@ export interface BacktestMetrics {
   win_rate: number | null
   total_trades: number | null
   total_cost: number | null
+  // 市場基準
+  market_return: number | null
+  market_hit_rate: number | null
+  market_stocks_up: number | null
+  market_stocks_down: number | null
+  // 超額表現
+  excess_return: number | null
+  excess_hit_rate: number | null
+  alpha: number | null
+  // 風險調整指標
+  sortino_ratio: number | null
+  information_ratio: number | null
+  calmar_ratio: number | null
   // 向後兼容
   total_return: number | null
   annual_return: number | null
   profit_factor: number | null
+}
+
+// 多期統計
+export interface PeriodSummary {
+  period: string
+  model_return: number
+  market_return: number
+  excess_return: number
+  win_rate: number
+  market_hit_rate: number
+  beat_market: boolean
+}
+
+export interface BacktestSummary {
+  selection_method: string | null
+  n_periods: number
+  cumulative_return: number
+  cumulative_excess_return: number
+  avg_period_return: number
+  avg_excess_return: number
+  period_win_rate: number
+  return_std: number
+  excess_return_std: number
+  t_statistic: number | null
+  p_value: number | null
+  ci_lower: number | null
+  ci_upper: number | null
+  is_significant: boolean
+  periods: PeriodSummary[]
 }
 
 export interface EquityCurvePoint {
@@ -673,6 +715,12 @@ export const backtestApi = {
     api.get<StockKlineResponse>(`/backtest/${backtestId}/stocks/${stockId}`),
   getAllTrades: (backtestId: number) => api.get<AllTradesResponse>(`/backtest/${backtestId}/trades`),
   delete: (backtestId: number) => api.delete(`/backtest/${backtestId}`),
+  summary: (selectionMethod?: string) => {
+    const params = new URLSearchParams()
+    if (selectionMethod) params.set('selection_method', selectionMethod)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return api.get<BacktestSummary>(`/backtest/summary${query}`)
+  },
 }
 
 // Dataset Types
