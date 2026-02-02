@@ -662,17 +662,20 @@ class ModelTrainer:
         alpha: float = 0.10,
     ) -> tuple[bool, dict]:
         """
-        判斷是否應該選擇因子（非劣性檢驗 + 動態閾值）
+        判斷是否應該選擇因子（複合動態閾值 + 雙重條件）
 
-        核心洞察：
-        - 股市信噪比極低，IC 的日間波動 >> IC 的平均改進
-        - 不應該問「IC 改進是否統計顯著？」（幾乎不可能）
-        - 應該問「新因子是否不會讓 IC 顯著下降？」
+        基於 Harvey et al. (2016) 研究：296 個因子中 53% 是假發現，
+        需要更嚴格的門檻來過濾冗餘因子。
 
-        動態閾值（基於文獻研究）：
-        - 使用 -0.5σ 作為非劣性邊界（σ = 當前 IC 的日間標準差）
-        - 這是臨床試驗和量化金融中常見的設定
-        - 自適應不同市場環境的波動性
+        複合動態閾值設計：
+        1. 相對百分比：不能下降超過當前 IC 的 10%
+        2. σ 倍數：不能下降超過 0.2σ
+        3. 取兩者中更嚴格者
+        4. 安全範圍：-0.5% ~ -2%
+
+        雙重條件（關鍵改進）：
+        - 條件 1：CI 上界 > 閾值（非劣性檢驗）
+        - 條件 2：mean_diff > 閾值（正向貢獻要求）
 
         Args:
             ic_daily_new: 新模型的每日 IC
@@ -682,26 +685,41 @@ class ModelTrainer:
         Returns:
             (should_select, test_result)
         """
-        # 動態閾值：允許 0.5 個標準差的下降
-        # 基於文獻：IC 日間 σ ≈ 0.02-0.05，-0.5σ 是合理的非劣性邊界
+        # 計算複合動態閾值
+        current_ic = np.mean(ic_daily_current) if len(ic_daily_current) > 0 else 0.05
         ic_std = np.std(ic_daily_current) if len(ic_daily_current) > 1 else 0.02
-        decline_threshold = -0.5 * ic_std
 
-        # 安全下限：最多允許 2% IC 下降（防止極端情況）
-        decline_threshold = max(decline_threshold, -0.02)
+        # 閾值 1：不能下降超過當前 IC 的 10%
+        relative_threshold = -0.10 * abs(current_ic)
+
+        # 閾值 2：不能下降超過 0.2σ（比原本的 0.5σ 更嚴格）
+        std_threshold = -0.2 * ic_std
+
+        # 取更嚴格者（數值更大的負數，即更接近 0）
+        decline_threshold = max(relative_threshold, std_threshold)
+
+        # 安全範圍：-0.5% ~ -2%
+        decline_threshold = max(decline_threshold, -0.02)  # 下限：最多允許 2% 下降
+        decline_threshold = min(decline_threshold, -0.005)  # 上限：至少允許 0.5% 下降
 
         # 確保長度一致
         min_len = min(len(ic_daily_new), len(ic_daily_current))
         if min_len < 5:
-            # 資料太少，使用簡單比較
+            # 資料太少，使用簡單比較（雙重條件）
             mean_new = np.mean(ic_daily_new)
             mean_current = np.mean(ic_daily_current)
-            return mean_new > mean_current + decline_threshold, {
+            mean_diff = mean_new - mean_current
+            # 雙重條件：mean_diff > threshold（簡化版，無 CI）
+            should_select = mean_diff > decline_threshold
+            return should_select, {
                 'method': 'simple',
                 'n_days': min_len,
-                'mean_diff': float(mean_new - mean_current),
+                'mean_diff': float(mean_diff),
                 'threshold': float(decline_threshold),
+                'current_ic': float(current_ic),
                 'ic_std': float(ic_std),
+                'relative_threshold': float(relative_threshold),
+                'std_threshold': float(std_threshold),
             }
 
         diff = ic_daily_new[:min_len] - ic_daily_current[:min_len]
@@ -710,38 +728,46 @@ class ModelTrainer:
         se = np.std(diff, ddof=1) / np.sqrt(n)
 
         if se == 0:
-            return mean_diff > decline_threshold, {
+            # 雙重條件
+            should_select = mean_diff > decline_threshold
+            return should_select, {
                 'method': 'constant_diff',
                 'mean_diff': float(mean_diff),
                 'threshold': float(decline_threshold),
             }
 
-        # t-test（檢驗是否顯著下降）
+        # t-test
         t_stat = mean_diff / se
 
-        # 計算 CI 上界（用於判斷是否顯著下降）
+        # 計算 CI
         t_critical = stats.t.ppf(1 - alpha, n - 1)
         ci_upper = mean_diff + t_critical * se
         ci_lower = mean_diff - t_critical * se
 
-        # 非劣性檢驗：CI 上界 > 動態閾值
-        # 意思是：沒有充分證據證明 IC 會下降超過 0.5σ
-        should_select = ci_upper > decline_threshold
+        # 雙重條件（關鍵改進）：
+        # 1. CI 上界 > 閾值：非劣性檢驗
+        # 2. mean_diff > 閾值：正向貢獻要求（過濾冗餘因子）
+        should_select = (ci_upper > decline_threshold) and (mean_diff > decline_threshold)
 
-        # 計算單尾 p-value（IC 下降超過閾值的機率）
+        # 計算單尾 p-value
         t_stat_decline = (mean_diff - decline_threshold) / se
         p_value_decline = stats.t.cdf(t_stat_decline, n - 1)
 
         return should_select, {
-            'method': 't_test_non_inferiority',
+            'method': 't_test_composite',
             'mean_diff': float(mean_diff),
             'ci_lower': float(ci_lower),
             'ci_upper': float(ci_upper),
             't_stat': float(t_stat),
             'p_decline': float(p_value_decline),
             'threshold': float(decline_threshold),
+            'current_ic': float(current_ic),
             'ic_std': float(ic_std),
+            'relative_threshold': float(relative_threshold),
+            'std_threshold': float(std_threshold),
             'n_days': n,
+            'pass_ci': ci_upper > decline_threshold,
+            'pass_mean': mean_diff > decline_threshold,
         }
 
     def train(
