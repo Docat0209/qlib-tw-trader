@@ -662,28 +662,39 @@ class ModelTrainer:
         alpha: float = 0.10,
     ) -> tuple[bool, dict]:
         """
-        使用 paired t-test 判斷 IC 改進是否統計顯著
+        判斷是否應該選擇因子（考慮股市的高隨機性）
 
-        解決問題：
-        - 單期 IC 有隨機波動（±0.01）
-        - 即使有用的因子也可能因隨機波動而未能「嚴格大於」
-        - 使用統計檢驗判斷改進是否「真實」
+        核心洞察：
+        - 股市信噪比極低，IC 的日間波動 >> IC 的平均改進
+        - 不應該問「IC 改進是否統計顯著？」（幾乎不可能）
+        - 應該問「新因子是否不會讓 IC 顯著下降？」
+
+        判斷邏輯：
+        - 計算 IC 差異的 95% CI 上界
+        - 如果 CI 上界 < -threshold，表示有充分證據證明會顯著下降 → 拒絕
+        - 否則接受（給因子一個機會）
 
         Args:
             ic_daily_new: 新模型的每日 IC
             ic_daily_current: 當前模型的每日 IC
-            alpha: 顯著性水準（預設 0.10，寬鬆一點以增加選擇）
+            alpha: 顯著性水準
 
         Returns:
             (should_select, test_result)
         """
+        # 允許 IC 下降的閾值（考慮到噪音，允許小幅下降）
+        DECLINE_THRESHOLD = -0.003  # 允許 IC 下降 0.3%
+
         # 確保長度一致
         min_len = min(len(ic_daily_new), len(ic_daily_current))
         if min_len < 5:
-            # 資料太少，使用簡單比較
-            return np.mean(ic_daily_new) > np.mean(ic_daily_current), {
+            # 資料太少，使用簡單比較（允許小幅下降）
+            mean_new = np.mean(ic_daily_new)
+            mean_current = np.mean(ic_daily_current)
+            return mean_new > mean_current + DECLINE_THRESHOLD, {
                 'method': 'simple',
                 'n_days': min_len,
+                'mean_diff': float(mean_new - mean_current),
             }
 
         diff = ic_daily_new[:min_len] - ic_daily_current[:min_len]
@@ -692,28 +703,37 @@ class ModelTrainer:
         se = np.std(diff, ddof=1) / np.sqrt(n)
 
         if se == 0:
-            # 標準誤為 0，表示每天差異相同
-            return mean_diff > 0, {'method': 'constant_diff', 'mean_diff': mean_diff}
+            return mean_diff > DECLINE_THRESHOLD, {
+                'method': 'constant_diff',
+                'mean_diff': float(mean_diff),
+            }
 
-        # t-test
+        # t-test（檢驗是否顯著下降）
         t_stat = mean_diff / se
-        p_value = 1 - stats.t.cdf(t_stat, n - 1)  # 單尾檢驗（我們只關心是否改進）
 
-        # 置信區間下界
+        # 計算 CI 上界（用於判斷是否顯著下降）
         t_critical = stats.t.ppf(1 - alpha, n - 1)
+        ci_upper = mean_diff + t_critical * se
         ci_lower = mean_diff - t_critical * se
 
-        # 條件：CI 下界 > 0（即改進統計顯著）
-        # 或者：mean_diff > 0 且 p_value < alpha
-        should_select = ci_lower > 0
+        # 條件：CI 上界 > DECLINE_THRESHOLD
+        # 意思是：沒有充分證據證明 IC 會顯著下降
+        # 這比「CI 下界 > 0」寬鬆很多
+        should_select = ci_upper > DECLINE_THRESHOLD
+
+        # 計算單尾 p-value（IC 下降的機率）
+        t_stat_decline = (mean_diff - DECLINE_THRESHOLD) / se
+        p_value_decline = stats.t.cdf(t_stat_decline, n - 1)
 
         return should_select, {
-            'method': 't_test',
+            'method': 't_test_non_inferiority',
             'mean_diff': float(mean_diff),
-            'p_value': float(p_value),
             'ci_lower': float(ci_lower),
+            'ci_upper': float(ci_upper),
             't_stat': float(t_stat),
+            'p_decline': float(p_value_decline),  # IC 下降超過閾值的機率
             'n_days': n,
+            'threshold': DECLINE_THRESHOLD,
         }
 
     def train(
