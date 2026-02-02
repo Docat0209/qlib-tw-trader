@@ -779,7 +779,6 @@ class ModelTrainer:
         valid_start: date,
         valid_end: date,
         on_progress: Callable[[float, str], None] | None = None,
-        hyperparams_id: int | None = None,
     ) -> TrainingResult:
         """
         執行 LightGBM IC 增量選擇訓練
@@ -791,7 +790,6 @@ class ModelTrainer:
             valid_start: 驗證開始日期
             valid_end: 驗證結束日期
             on_progress: 進度回調 (progress: 0-100, message: str)
-            hyperparams_id: 指定使用的超參數組 ID（參數會儲存在 config 中）
 
         Returns:
             TrainingResult
@@ -838,22 +836,10 @@ class ModelTrainer:
             if all_data.empty:
                 raise ValueError("No data available for the specified date range")
 
-            # === 超參數載入 ===
-            cultivated_params = None
-
-            # 優先從 DB 載入（若指定了 hyperparams_id）
-            if hyperparams_id:
-                from src.repositories.hyperparams import HyperparamsRepository
-                hp_repo = HyperparamsRepository(session)
-                cultivated_params = hp_repo.get_params(hyperparams_id)
-                if cultivated_params and on_progress:
-                    on_progress(10.0, f"Using hyperparams (id={hyperparams_id})")
-
-            # Fallback: 嘗試從檔案載入（向後兼容）
-            if not cultivated_params:
-                cultivated_params = self.load_cultivated_hyperparameters()
-                if cultivated_params and on_progress:
-                    on_progress(10.0, "Using pre-cultivated hyperparameters (file)")
+            # === 超參數載入（從培養文件）===
+            cultivated_params = self.load_cultivated_hyperparameters()
+            if cultivated_params and on_progress:
+                on_progress(10.0, "Using pre-cultivated hyperparameters")
 
             if cultivated_params:
                 self._optimized_params = cultivated_params

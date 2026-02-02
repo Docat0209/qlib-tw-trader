@@ -204,7 +204,6 @@ export interface SelectionInfo {
 export interface Model {
   id: string
   name: string | null
-  description: string | null
   status: string
   trained_at: string
   factor_count: number | null
@@ -266,7 +265,6 @@ export interface ModelStatus {
 
 export interface TrainRequest {
   train_end?: string
-  hyperparams_id?: number
 }
 
 export interface TrainResponse {

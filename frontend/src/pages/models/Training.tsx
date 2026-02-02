@@ -168,7 +168,6 @@ export function Training() {
 
       await modelApi.train({
         train_end: trainEnd,
-        hyperparams_id: selectedHpId ?? undefined,
       })
       // 訓練已啟動，立即刷新列表
       await fetchData()

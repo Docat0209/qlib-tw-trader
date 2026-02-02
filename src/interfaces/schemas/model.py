@@ -39,8 +39,7 @@ class ModelResponse(BaseModel):
     """模型詳情回應"""
 
     id: str
-    name: str | None  # 訓練區間格式：2022-01~2025-01
-    description: str | None = None
+    name: str | None
     status: str  # queued / running / completed / failed
     trained_at: datetime
     factor_count: int | None
@@ -117,7 +116,6 @@ class TrainRequest(BaseModel):
     """訓練請求"""
 
     train_end: date | None = None  # 預設：今日 - 驗證期長度
-    hyperparams_id: int | None = None  # 使用的超參數組 ID
 
 
 class TrainResponse(BaseModel):
