@@ -168,7 +168,8 @@ class TopKStrategy(bt.Strategy):
                         price = data.open[0]
                     else:
                         price = data.close[0]
-                    if price > 0:
+                    # 檢查價格有效性（避免 NaN 導致錯誤）
+                    if price > 0 and not pd.isna(price):
                         size = int(target_value / price)
                         if size >= 1:
                             self.buy(data, size=size)
@@ -412,6 +413,11 @@ class Backtester:
                 stock_data["datetime"] = pd.to_datetime(stock_data["datetime"])
                 stock_data = stock_data.set_index("datetime")
                 stock_data["openinterest"] = 0
+
+                # 移除含有 NaN 的列（避免 backtrader 處理 NaN 時出錯）
+                stock_data = stock_data.dropna(subset=["open", "high", "low", "close"])
+                if stock_data.empty:
+                    continue
 
                 data = bt.feeds.PandasData(
                     dataname=stock_data,
