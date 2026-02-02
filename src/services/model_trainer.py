@@ -705,12 +705,12 @@ class ModelTrainer:
         # 確保長度一致
         min_len = min(len(ic_daily_new), len(ic_daily_current))
         if min_len < 5:
-            # 資料太少，使用簡單比較（雙重條件）
+            # 資料太少，使用簡單比較
             mean_new = np.mean(ic_daily_new)
             mean_current = np.mean(ic_daily_current)
             mean_diff = mean_new - mean_current
-            # 雙重條件：mean_diff > threshold（簡化版，無 CI）
-            should_select = mean_diff > decline_threshold
+            # 正向貢獻要求：mean_diff >= 0
+            should_select = mean_diff >= 0
             return should_select, {
                 'method': 'simple',
                 'n_days': min_len,
@@ -728,8 +728,8 @@ class ModelTrainer:
         se = np.std(diff, ddof=1) / np.sqrt(n)
 
         if se == 0:
-            # 雙重條件
-            should_select = mean_diff > decline_threshold
+            # 雙重條件：需要 mean_diff >= 0
+            should_select = mean_diff >= 0
             return should_select, {
                 'method': 'constant_diff',
                 'mean_diff': float(mean_diff),
@@ -745,9 +745,10 @@ class ModelTrainer:
         ci_lower = mean_diff - t_critical * se
 
         # 雙重條件（關鍵改進）：
-        # 1. CI 上界 > 閾值：非劣性檢驗
-        # 2. mean_diff > 閾值：正向貢獻要求（過濾冗餘因子）
-        should_select = (ci_upper > decline_threshold) and (mean_diff > decline_threshold)
+        # 1. CI 上界 > 閾值：非劣性檢驗（統計上不顯著下降）
+        # 2. mean_diff >= 0：正向貢獻要求（實際上沒有下降）
+        # 注意：之前錯誤地用 mean_diff > threshold（負數），導致負貢獻的因子也被選中
+        should_select = (ci_upper > decline_threshold) and (mean_diff >= 0)
 
         # 計算單尾 p-value
         t_stat_decline = (mean_diff - decline_threshold) / se
@@ -767,7 +768,7 @@ class ModelTrainer:
             'std_threshold': float(std_threshold),
             'n_days': n,
             'pass_ci': ci_upper > decline_threshold,
-            'pass_mean': mean_diff > decline_threshold,
+            'pass_mean': mean_diff >= 0,
         }
 
     def train(
@@ -943,9 +944,9 @@ class ModelTrainer:
                 "std_multiplier": 0.2,
                 "threshold_min": -0.02,
                 "threshold_max": -0.005,
-                "dual_condition": True,
+                "require_positive_contribution": True,  # mean_diff >= 0
             }
-            run.selection_method = "composite_threshold_v1"
+            run.selection_method = "composite_threshold_v2"
             run.selection_config = json.dumps(selection_config)
             run.selection_stats = json.dumps(selection_stats)
 
