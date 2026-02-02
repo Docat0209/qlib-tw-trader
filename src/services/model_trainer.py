@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 from sqlalchemy.orm import Session
 
 from src.repositories.factor import FactorRepository
@@ -334,6 +335,10 @@ class ModelTrainer:
         X = df[feature_cols]
         y = df["label"]
 
+        # 標籤截面標準化（仿 qlib CSZScoreNorm for label）
+        # 讓模型學習相對排序而非絕對值
+        y = self._zscore_by_date(y.to_frame()).squeeze()
+
         # 按日期分割
         train_mask = (df.index.get_level_values("datetime").date >= train_start) & \
                      (df.index.get_level_values("datetime").date <= train_end)
@@ -454,7 +459,7 @@ class ModelTrainer:
                 num_boost_round=300,
                 valid_sets=[valid_data],
                 callbacks=[
-                    lgb.early_stopping(stopping_rounds=30, verbose=False),
+                    lgb.early_stopping(stopping_rounds=50, verbose=False),
                 ],
             )
 
@@ -613,6 +618,103 @@ class ModelTrainer:
 
         mean_ic = daily_ic.mean()
         return float(mean_ic) if not np.isnan(mean_ic) else 0.0
+
+    def _calculate_daily_ic(
+        self,
+        model: Any,
+        X_valid: pd.DataFrame,
+        y_valid: pd.Series,
+    ) -> np.ndarray:
+        """
+        計算模型預測的每日 IC（用於統計檢驗）
+
+        Returns:
+            每日 IC 的 numpy 陣列
+        """
+        # 處理無窮大 + 標準化 + 填補 NaN
+        X_valid_processed = self._process_inf(X_valid)
+        X_valid_norm = self._zscore_by_date(X_valid_processed)
+        X_valid_norm = X_valid_norm.fillna(0)
+
+        # 預測
+        predictions = model.predict(X_valid_norm.values)
+
+        # 構建 DataFrame
+        pred_df = pd.DataFrame({
+            "pred": predictions,
+            "label": y_valid.values,
+        }, index=y_valid.index)
+
+        # 計算每日截面 IC
+        def calc_corr(group: pd.DataFrame) -> float:
+            if len(group) < 2:
+                return np.nan
+            return group["pred"].corr(group["label"])
+
+        daily_ic = pred_df.groupby(level="datetime").apply(calc_corr)
+
+        return daily_ic.dropna().values
+
+    def _should_select_factor_with_test(
+        self,
+        ic_daily_new: np.ndarray,
+        ic_daily_current: np.ndarray,
+        alpha: float = 0.10,
+    ) -> tuple[bool, dict]:
+        """
+        使用 paired t-test 判斷 IC 改進是否統計顯著
+
+        解決問題：
+        - 單期 IC 有隨機波動（±0.01）
+        - 即使有用的因子也可能因隨機波動而未能「嚴格大於」
+        - 使用統計檢驗判斷改進是否「真實」
+
+        Args:
+            ic_daily_new: 新模型的每日 IC
+            ic_daily_current: 當前模型的每日 IC
+            alpha: 顯著性水準（預設 0.10，寬鬆一點以增加選擇）
+
+        Returns:
+            (should_select, test_result)
+        """
+        # 確保長度一致
+        min_len = min(len(ic_daily_new), len(ic_daily_current))
+        if min_len < 5:
+            # 資料太少，使用簡單比較
+            return np.mean(ic_daily_new) > np.mean(ic_daily_current), {
+                'method': 'simple',
+                'n_days': min_len,
+            }
+
+        diff = ic_daily_new[:min_len] - ic_daily_current[:min_len]
+        n = len(diff)
+        mean_diff = np.mean(diff)
+        se = np.std(diff, ddof=1) / np.sqrt(n)
+
+        if se == 0:
+            # 標準誤為 0，表示每天差異相同
+            return mean_diff > 0, {'method': 'constant_diff', 'mean_diff': mean_diff}
+
+        # t-test
+        t_stat = mean_diff / se
+        p_value = 1 - stats.t.cdf(t_stat, n - 1)  # 單尾檢驗（我們只關心是否改進）
+
+        # 置信區間下界
+        t_critical = stats.t.ppf(1 - alpha, n - 1)
+        ci_lower = mean_diff - t_critical * se
+
+        # 條件：CI 下界 > 0（即改進統計顯著）
+        # 或者：mean_diff > 0 且 p_value < alpha
+        should_select = ci_lower > 0
+
+        return should_select, {
+            'method': 't_test',
+            'mean_diff': float(mean_diff),
+            'p_value': float(p_value),
+            'ci_lower': float(ci_lower),
+            't_stat': float(t_stat),
+            'n_days': n,
+        }
 
     def train(
         self,
@@ -954,6 +1056,7 @@ class ModelTrainer:
             try:
                 model = self._train_lgbm(X_train, y_train, X_valid, y_valid, params=adapted_params)
                 new_ic = self._calculate_prediction_ic(model, X_valid, y_valid)
+                new_daily_ic = self._calculate_daily_ic(model, X_valid, y_valid)
             except Exception as e:
                 # 訓練失敗，跳過此因子
                 all_results.append(
@@ -966,8 +1069,32 @@ class ModelTrainer:
                 )
                 continue
 
-            # 嚴格大於才入選
-            if new_ic > current_ic:
+            # 使用統計檢驗判斷是否選擇（解決假性低 IC 問題）
+            if best_model is None:
+                # 第一個因子：只要 IC > 0 就入選
+                should_select = new_ic > 0
+                test_result = {'method': 'first_factor'}
+            else:
+                # 計算當前最佳模型的每日 IC
+                # 注意：需要使用相同的驗證資料（已選因子）
+                prev_factor_names = [f.name for f in selected_factors]
+                X_valid_prev = all_data[prev_factor_names]
+                valid_mask = (all_data.index.get_level_values("datetime").date >= valid_start) & \
+                             (all_data.index.get_level_values("datetime").date <= valid_end)
+                X_valid_prev = X_valid_prev[valid_mask].dropna()
+                y_valid_prev = all_data["label"][valid_mask].dropna()
+                common_idx_prev = X_valid_prev.index.intersection(y_valid_prev.index)
+                X_valid_prev = X_valid_prev.loc[common_idx_prev]
+                y_valid_prev = y_valid_prev.loc[common_idx_prev]
+
+                prev_daily_ic = self._calculate_daily_ic(best_model, X_valid_prev, y_valid_prev)
+
+                # 統計檢驗
+                should_select, test_result = self._should_select_factor_with_test(
+                    new_daily_ic, prev_daily_ic, alpha=0.10
+                )
+
+            if should_select:
                 selected_factors.append(factor)
                 current_ic = new_ic
                 best_model = model
@@ -989,7 +1116,8 @@ class ModelTrainer:
             if on_progress:
                 progress = round(13.0 + ((i + 1) / total) * 82.0, 1)
                 status = "selected" if selected else "skipped"
-                on_progress(progress, f"Factor {factor.name}: {status} (IC: {new_ic:.4f})")
+                p_info = f", p={test_result.get('p_value', 'N/A'):.3f}" if 'p_value' in test_result else ""
+                on_progress(progress, f"Factor {factor.name}: {status} (IC: {new_ic:.4f}{p_info})")
 
         # 返回 selected_factors 列表（保持順序），不是 set
         # 順序對 LightGBM 預測至關重要，因為模型用 .values 訓練，只認位置不認名稱
@@ -1327,7 +1455,7 @@ class ModelTrainer:
                 best_params, train_data,
                 num_boost_round=300,
                 valid_sets=[valid_data],
-                callbacks=[lgb.early_stopping(30, verbose=False)],
+                callbacks=[lgb.early_stopping(50, verbose=False)],
             )
             predictions = model.predict(X_valid_norm.values)
             pred_df = pd.DataFrame({
