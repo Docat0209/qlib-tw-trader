@@ -27,6 +27,14 @@ class FactorSummary(BaseModel):
     ic_value: float | None = None  # 該因子在此模型中的 IC 值
 
 
+class SelectionInfo(BaseModel):
+    """因子選擇資訊"""
+
+    method: str | None = None  # 選擇方法（如 composite_threshold_v1）
+    config: dict | None = None  # 選擇配置
+    stats: dict | None = None  # 選擇統計
+
+
 class ModelResponse(BaseModel):
     """模型詳情回應"""
 
@@ -43,6 +51,7 @@ class ModelResponse(BaseModel):
     training_duration_seconds: int | None
     candidate_factors: list[FactorSummary] = []  # 候選因子
     selected_factors: list[FactorSummary] = []  # 選中因子
+    selection: SelectionInfo | None = None  # 因子選擇資訊
 
 
 class ModelSummary(BaseModel):
@@ -57,6 +66,7 @@ class ModelSummary(BaseModel):
     metrics: ModelMetrics
     factor_count: int | None  # 選中因子數
     candidate_count: int | None  # 候選因子數
+    selection_method: str | None = None  # 因子選擇方法
 
 
 class ModelListResponse(BaseModel):

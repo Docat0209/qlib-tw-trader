@@ -885,7 +885,7 @@ class ModelTrainer:
                         on_progress(10.0, "Skipped Optuna (insufficient data)")
 
             # 執行 IC 增量選擇（使用優化後的參數，並根據因子數動態調整）
-            selected_factors, all_results, best_model = self._incremental_ic_selection(
+            selected_factors, all_results, best_model, selection_stats = self._incremental_ic_selection(
                 factors=enabled_factors,
                 all_data=all_data,
                 train_start=train_start,
@@ -936,6 +936,19 @@ class ModelTrainer:
             # 完成訓練
             run.name = model_name
             run.selected_factor_ids = json.dumps([f.id for f in selected_factors])
+
+            # 記錄因子選擇策略（用於追踪改動效果）
+            selection_config = {
+                "relative_pct": 0.10,
+                "std_multiplier": 0.2,
+                "threshold_min": -0.02,
+                "threshold_max": -0.005,
+                "dual_condition": True,
+            }
+            run.selection_method = "composite_threshold_v1"
+            run.selection_config = json.dumps(selection_config)
+            run.selection_stats = json.dumps(selection_stats)
+
             training_repo.complete_run(
                 run_id=run.id,
                 model_ic=model_ic,
@@ -1026,7 +1039,7 @@ class ModelTrainer:
         valid_end: date,
         on_progress: Callable[[float, str], None] | None = None,
         base_factor_count: int | None = None,
-    ) -> tuple[list[Factor], list[FactorEvalResult], Any]:
+    ) -> tuple[list[Factor], list[FactorEvalResult], Any, dict]:
         """
         LightGBM IC 增量選擇法（含因子數量自適應參數）
 
@@ -1039,7 +1052,7 @@ class ModelTrainer:
             base_factor_count: 培養超參數時使用的因子數（用於縮放）
 
         Returns:
-            (selected_factors, all_results, best_model)
+            (selected_factors, all_results, best_model, selection_stats)
             注意：selected_factors 保持選擇順序，這對模型預測至關重要
         """
         # 確定基準因子數（培養時的因子數）
@@ -1064,6 +1077,10 @@ class ModelTrainer:
         all_results: list[FactorEvalResult] = []
         current_ic = 0.0
         best_model = None
+
+        # 收集選擇統計
+        thresholds_used: list[float] = []
+        mean_diffs: list[float] = []
 
         total = len(sorted_factors)
         for i, (factor, single_ic) in enumerate(sorted_factors):
@@ -1148,6 +1165,12 @@ class ModelTrainer:
                     new_daily_ic, prev_daily_ic, alpha=0.10
                 )
 
+                # 收集統計
+                if 'threshold' in test_result:
+                    thresholds_used.append(test_result['threshold'])
+                if 'mean_diff' in test_result:
+                    mean_diffs.append(test_result['mean_diff'])
+
             if should_select:
                 selected_factors.append(factor)
                 current_ic = new_ic
@@ -1173,9 +1196,21 @@ class ModelTrainer:
                 p_info = f", p={test_result.get('p_value', 'N/A'):.3f}" if 'p_value' in test_result else ""
                 on_progress(progress, f"Factor {factor.name}: {status} (IC: {new_ic:.4f}{p_info})")
 
+        # 計算選擇統計
+        n_selected = len(selected_factors)
+        n_rejected = total - n_selected
+        selection_stats = {
+            "candidates_evaluated": total,
+            "factors_selected": n_selected,
+            "factors_rejected": n_rejected,
+            "selection_rate": round(n_selected / total, 4) if total > 0 else 0,
+            "avg_threshold": round(np.mean(thresholds_used), 6) if thresholds_used else None,
+            "avg_mean_diff": round(np.mean(mean_diffs), 6) if mean_diffs else None,
+        }
+
         # 返回 selected_factors 列表（保持順序），不是 set
         # 順序對 LightGBM 預測至關重要，因為模型用 .values 訓練，只認位置不認名稱
-        return selected_factors, all_results, best_model
+        return selected_factors, all_results, best_model, selection_stats
 
     def _calculate_icir(self, ic: float, factor_count: int) -> float | None:
         """計算 IC Information Ratio (ICIR = IC / std(IC))"""

@@ -195,6 +195,12 @@ export interface FactorSummary {
   ic_value: number | null
 }
 
+export interface SelectionInfo {
+  method: string | null
+  config: Record<string, unknown> | null
+  stats: Record<string, unknown> | null
+}
+
 export interface Model {
   id: string
   name: string | null
@@ -209,6 +215,7 @@ export interface Model {
   training_duration_seconds: number | null
   candidate_factors: FactorSummary[]
   selected_factors: FactorSummary[]
+  selection: SelectionInfo | null
 }
 
 export interface ModelSummary {
@@ -221,6 +228,7 @@ export interface ModelSummary {
   metrics: ModelMetrics
   factor_count: number | null
   candidate_count: number | null
+  selection_method: string | null
 }
 
 export interface ModelListResponse {

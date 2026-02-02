@@ -245,12 +245,15 @@ class TrainingRun(Base):
     model_ic: Mapped[float | None] = mapped_column(Numeric(10, 6), nullable=True)
     icir: Mapped[float | None] = mapped_column(Numeric(10, 6), nullable=True)
     factor_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    is_current: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(20), default="completed")
     config: Mapped[str | None] = mapped_column(Text, nullable=True)
     # 因子池記錄（JSON 格式的 ID 列表）
     candidate_factor_ids: Mapped[str | None] = mapped_column(Text, nullable=True)
     selected_factor_ids: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 因子選擇策略追踪
+    selection_method: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    selection_config: Mapped[str | None] = mapped_column(Text, nullable=True)
+    selection_stats: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     selected_factors: Mapped[list["TrainingFactorResult"]] = relationship(
         back_populates="training_run"

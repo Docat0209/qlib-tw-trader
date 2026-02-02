@@ -26,6 +26,7 @@ from src.interfaces.schemas.model import (
     ModelStatus,
     ModelSummary,
     Period,
+    SelectionInfo,
     TrainRequest,
     TrainResponse,
 )
@@ -76,6 +77,7 @@ def _run_to_summary(run) -> ModelSummary:
         ),
         factor_count=run.factor_count or len(selected_ids),
         candidate_count=len(candidate_ids) if candidate_ids else None,
+        selection_method=run.selection_method,
     )
 
 
@@ -98,6 +100,15 @@ def _run_to_response(
     if run.started_at and run.completed_at:
         duration = int((run.completed_at - run.started_at).total_seconds())
 
+    # 解析 selection 資訊
+    selection = None
+    if run.selection_method:
+        selection = SelectionInfo(
+            method=run.selection_method,
+            config=json.loads(run.selection_config) if run.selection_config else None,
+            stats=json.loads(run.selection_stats) if run.selection_stats else None,
+        )
+
     return ModelResponse(
         id=f"m{run.id:03d}",
         name=run.name,
@@ -115,6 +126,7 @@ def _run_to_response(
         training_duration_seconds=duration,
         candidate_factors=candidate_factors or [],
         selected_factors=selected_factors or [],
+        selection=selection,
     )
 
 
