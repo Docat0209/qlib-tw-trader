@@ -308,8 +308,15 @@ class QlibExporter:
         end_date: date,
     ) -> dict:
         """載入股票的所有資料"""
+        # 載入 OHLCV 並過濾停市/異常資料（OHLC 任一為 0）
+        ohlcv_raw = self._repos["ohlcv"].get(stock_id, start_date, end_date)
+        ohlcv = [
+            rec for rec in ohlcv_raw
+            if rec.open > 0 and rec.high > 0 and rec.low > 0 and rec.close > 0
+        ]
+
         return {
-            "ohlcv": self._repos["ohlcv"].get(stock_id, start_date, end_date),
+            "ohlcv": ohlcv,
             "adj": self._repos["adj"].get(stock_id, start_date, end_date),
             "per": self._repos["per"].get(stock_id, start_date, end_date),
             "institutional": self._repos["institutional"].get(
