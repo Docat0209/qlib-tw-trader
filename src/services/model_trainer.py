@@ -931,8 +931,9 @@ class ModelTrainer:
                 "threshold_min": -0.02,
                 "threshold_max": -0.005,
                 "require_positive_contribution": True,  # mean_diff >= 0
+                "require_positive_single_ic": True,  # single_ic > 0
             }
-            run.selection_method = "composite_threshold_v2"
+            run.selection_method = "composite_threshold_v3"
             run.selection_config = json.dumps(selection_config)
             run.selection_stats = json.dumps(selection_stats)
 
@@ -1157,6 +1158,11 @@ class ModelTrainer:
                     thresholds_used.append(test_result['threshold'])
                 if 'mean_diff' in test_result:
                     mean_diffs.append(test_result['mean_diff'])
+
+            # 額外條件：單因子 IC 必須為正
+            # 文獻建議：確保每個因子本身有預測能力，避免噪音因子
+            if should_select and single_ic <= 0:
+                should_select = False
 
             if should_select:
                 selected_factors.append(factor)
