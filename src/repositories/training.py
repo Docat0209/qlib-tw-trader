@@ -1,4 +1,3 @@
-import json
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -22,7 +21,6 @@ class TrainingRepository:
         train_end: date | None = None,
         valid_start: date | None = None,
         valid_end: date | None = None,
-        config: dict | None = None,
         name: str | None = None,
     ) -> TrainingRun:
         """建立訓練執行記錄"""
@@ -33,7 +31,6 @@ class TrainingRepository:
             valid_start=valid_start,
             valid_end=valid_end,
             status="queued",
-            config=json.dumps(config) if config else None,
         )
         self._session.add(run)
         self._session.commit()
