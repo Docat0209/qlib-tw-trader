@@ -48,6 +48,7 @@ curl -X POST http://localhost:8000/api/v1/qlib/export/sync \
 - 股票池：市值前 100 大（排除 ETF、KY）
 - 因子挑選：IC 增量選擇法
 - **禁止自行啟動伺服器**
+- **資料庫路徑**：`data/data.db`（不是 `data/trader.db`）
 
 ## Qlib 資料架構
 
