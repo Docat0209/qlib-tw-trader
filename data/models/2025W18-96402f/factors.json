@@ -1,0 +1,67 @@
+[
+  {
+    "id": 147,
+    "name": "foreign_net_vol_5d",
+    "expression": "Sum($foreign_buy - $foreign_sell, 5) / (Sum($volume, 5) + 1e-8)"
+  },
+  {
+    "id": 180,
+    "name": "foreign_ratio_chg_1d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 1)"
+  },
+  {
+    "id": 182,
+    "name": "foreign_ratio_chg_20d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 20)"
+  },
+  {
+    "id": 187,
+    "name": "foreign_chg_rank",
+    "expression": "Rank($foreign_ratio - Ref($foreign_ratio, 5), 20)"
+  },
+  {
+    "id": 123,
+    "name": "foreign_net_mom",
+    "expression": "Sum($foreign_buy - $foreign_sell, 5) / (Abs(Sum($foreign_buy - $foreign_sell, 20)) + 1e-8)"
+  },
+  {
+    "id": 82,
+    "name": "sump_20",
+    "expression": "Sum(Greater($close - Ref($close, 1), 0), 20) / (Sum(Abs($close - Ref($close, 1)), 20) + 1e-8)"
+  },
+  {
+    "id": 223,
+    "name": "vol_up_down_ratio",
+    "expression": "Sum($volume * Greater($close - Ref($close, 1), 0), 20) / (Sum($volume * Greater(Ref($close, 1) - $close, 0), 20) + 1e-8)"
+  },
+  {
+    "id": 166,
+    "name": "short_net_20d",
+    "expression": "Sum($short_sell - $short_buy, 20)"
+  },
+  {
+    "id": 213,
+    "name": "revenue_vol",
+    "expression": "Std($revenue, 126) / (Mean($revenue, 126) + 1e-8)"
+  },
+  {
+    "id": 95,
+    "name": "vma_5",
+    "expression": "Mean($volume, 5) / ($volume + 1e-8)"
+  },
+  {
+    "id": 136,
+    "name": "foreign_trust_sync_5d",
+    "expression": "Sum(Sign($foreign_buy - $foreign_sell) * Sign($trust_buy - $trust_sell), 5)"
+  },
+  {
+    "id": 196,
+    "name": "lending_chg",
+    "expression": "$lending_volume - Ref($lending_volume, 1)"
+  },
+  {
+    "id": 263,
+    "name": "pb_rank_60d",
+    "expression": "Rank($pb_ratio, 60)"
+  }
+]

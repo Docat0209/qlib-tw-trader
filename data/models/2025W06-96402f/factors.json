@@ -1,0 +1,62 @@
+[
+  {
+    "id": 22,
+    "name": "std_20",
+    "expression": "Std($close, 20) / $close"
+  },
+  {
+    "id": 184,
+    "name": "foreign_ratio_mom",
+    "expression": "Mean($foreign_ratio, 5) / (Mean($foreign_ratio, 20) + 1e-8)"
+  },
+  {
+    "id": 21,
+    "name": "std_10",
+    "expression": "Std($close, 10) / $close"
+  },
+  {
+    "id": 209,
+    "name": "revenue_momentum_3m",
+    "expression": "Mean($revenue, 63) / (Mean($revenue, 252) + 1e-8)"
+  },
+  {
+    "id": 182,
+    "name": "foreign_ratio_chg_20d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 20)"
+  },
+  {
+    "id": 23,
+    "name": "std_30",
+    "expression": "Std($close, 30) / $close"
+  },
+  {
+    "id": 258,
+    "name": "pe_chg_5d",
+    "expression": "$pe_ratio - Ref($pe_ratio, 5)"
+  },
+  {
+    "id": 203,
+    "name": "lending_intensity_chg",
+    "expression": "$lending_volume / ($volume + 1e-8) - Ref($lending_volume, 5) / (Ref($volume, 5) + 1e-8)"
+  },
+  {
+    "id": 194,
+    "name": "foreign_ratio_cv",
+    "expression": "Std($foreign_ratio, 20) / (Mean($foreign_ratio, 20) + 1e-8)"
+  },
+  {
+    "id": 133,
+    "name": "inst_agreement",
+    "expression": "Sign($foreign_buy - $foreign_sell) + Sign($trust_buy - $trust_sell) + Sign($dealer_buy - $dealer_sell)"
+  },
+  {
+    "id": 257,
+    "name": "pb_ret_corr",
+    "expression": "Corr($pb_ratio, $close / Ref($close, 1) - 1, 60)"
+  },
+  {
+    "id": 154,
+    "name": "margin_chg_pct",
+    "expression": "$margin_balance / (Ref($margin_balance, 5) + 1e-8) - 1"
+  }
+]

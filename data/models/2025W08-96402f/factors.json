@@ -1,0 +1,82 @@
+[
+  {
+    "id": 22,
+    "name": "std_20",
+    "expression": "Std($close, 20) / $close"
+  },
+  {
+    "id": 23,
+    "name": "std_30",
+    "expression": "Std($close, 30) / $close"
+  },
+  {
+    "id": 96,
+    "name": "vma_10",
+    "expression": "Mean($volume, 10) / ($volume + 1e-8)"
+  },
+  {
+    "id": 20,
+    "name": "std_5",
+    "expression": "Std($close, 5) / $close"
+  },
+  {
+    "id": 83,
+    "name": "sump_30",
+    "expression": "Sum(Greater($close - Ref($close, 1), 0), 30) / (Sum(Abs($close - Ref($close, 1)), 30) + 1e-8)"
+  },
+  {
+    "id": 100,
+    "name": "vstd_5",
+    "expression": "Std($volume, 5) / (Mean($volume, 5) + 1e-8)"
+  },
+  {
+    "id": 67,
+    "name": "rsv_20",
+    "expression": "($close - Min($low, 20)) / (Max($high, 20) - Min($low, 20) + 1e-8)"
+  },
+  {
+    "id": 2,
+    "name": "kbar_klen",
+    "expression": "($high - $low) / $open"
+  },
+  {
+    "id": 134,
+    "name": "inst_agreement_5d",
+    "expression": "Sum(Sign($foreign_buy - $foreign_sell) + Sign($trust_buy - $trust_sell) + Sign($dealer_buy - $dealer_sell), 5)"
+  },
+  {
+    "id": 228,
+    "name": "amount_5",
+    "expression": "Mean($close * $volume, 5)"
+  },
+  {
+    "id": 26,
+    "name": "beta_10",
+    "expression": "Slope($close, 10) / $close"
+  },
+  {
+    "id": 254,
+    "name": "pb_momentum_ext",
+    "expression": "$pb_ratio / (Mean($pb_ratio, 60) + 1e-8) - 1"
+  },
+  {
+    "id": 239,
+    "name": "foreign_vol_corr",
+    "expression": "Corr($foreign_buy - $foreign_sell, $volume, 20)"
+  },
+  {
+    "id": 238,
+    "name": "trust_ret_corr",
+    "expression": "Corr($trust_buy - $trust_sell, $close / Ref($close, 1) - 1, 20)"
+  },
+  {
+    "id": 231,
+    "name": "low_vol_corr",
+    "expression": "Corr($low, $volume, 20)"
+  },
+  {
+    "id": 129,
+    "name": "trust_sell_intensity",
+    "expression": "$trust_sell / (Mean($trust_sell, 20) + 1e-8)"
+  }
+]

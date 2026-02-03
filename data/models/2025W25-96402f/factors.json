@@ -1,0 +1,62 @@
+[
+  {
+    "id": 180,
+    "name": "foreign_ratio_chg_1d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 1)"
+  },
+  {
+    "id": 181,
+    "name": "foreign_ratio_chg_10d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 10)"
+  },
+  {
+    "id": 182,
+    "name": "foreign_ratio_chg_20d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 20)"
+  },
+  {
+    "id": 184,
+    "name": "foreign_ratio_mom",
+    "expression": "Mean($foreign_ratio, 5) / (Mean($foreign_ratio, 20) + 1e-8)"
+  },
+  {
+    "id": 187,
+    "name": "foreign_chg_rank",
+    "expression": "Rank($foreign_ratio - Ref($foreign_ratio, 5), 20)"
+  },
+  {
+    "id": 82,
+    "name": "sump_20",
+    "expression": "Sum(Greater($close - Ref($close, 1), 0), 20) / (Sum(Abs($close - Ref($close, 1)), 20) + 1e-8)"
+  },
+  {
+    "id": 92,
+    "name": "sumd_20",
+    "expression": "Sum(Greater($close - Ref($close, 1), 0), 20) / (Sum(Abs($close - Ref($close, 1)), 20) + 1e-8) - Sum(Greater(Ref($close, 1) - $close, 0), 20) / (Sum(Abs($close - Ref($close, 1)), 20) + 1e-8)"
+  },
+  {
+    "id": 81,
+    "name": "sump_10",
+    "expression": "Sum(Greater($close - Ref($close, 1), 0), 10) / (Sum(Abs($close - Ref($close, 1)), 10) + 1e-8)"
+  },
+  {
+    "id": 211,
+    "name": "revenue_trend",
+    "expression": "Slope($revenue, 63)"
+  },
+  {
+    "id": 136,
+    "name": "foreign_trust_sync_5d",
+    "expression": "Sum(Sign($foreign_buy - $foreign_sell) * Sign($trust_buy - $trust_sell), 5)"
+  },
+  {
+    "id": 244,
+    "name": "short_ret_corr",
+    "expression": "Corr($short_balance - Ref($short_balance, 1), $close / Ref($close, 1) - 1, 20)"
+  },
+  {
+    "id": 206,
+    "name": "lending_std",
+    "expression": "Std($lending_volume, 20) / (Mean($lending_volume, 20) + 1e-8)"
+  }
+]

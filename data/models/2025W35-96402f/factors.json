@@ -1,0 +1,82 @@
+[
+  {
+    "id": 180,
+    "name": "foreign_ratio_chg_1d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 1)"
+  },
+  {
+    "id": 182,
+    "name": "foreign_ratio_chg_20d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 20)"
+  },
+  {
+    "id": 173,
+    "name": "margin_vol_ratio",
+    "expression": "($margin_buy + $margin_sell) / ($volume + 1e-8)"
+  },
+  {
+    "id": 71,
+    "name": "cntp_10",
+    "expression": "Mean(Greater($close - Ref($close, 1), 0), 10)"
+  },
+  {
+    "id": 232,
+    "name": "range_vol_ratio",
+    "expression": "(($high - $low) / $close) / ($volume / (Mean($volume, 20) + 1e-8) + 1e-8)"
+  },
+  {
+    "id": 20,
+    "name": "std_5",
+    "expression": "Std($close, 5) / $close"
+  },
+  {
+    "id": 35,
+    "name": "resi_5",
+    "expression": "Resi($close, 5) / $close"
+  },
+  {
+    "id": 211,
+    "name": "revenue_trend",
+    "expression": "Slope($revenue, 63)"
+  },
+  {
+    "id": 189,
+    "name": "foreign_space_used",
+    "expression": "$foreign_ratio / ($foreign_upper_limit_ratio + 1e-8)"
+  },
+  {
+    "id": 44,
+    "name": "max_60",
+    "expression": "Max($high, 60) / $close"
+  },
+  {
+    "id": 203,
+    "name": "lending_intensity_chg",
+    "expression": "$lending_volume / ($volume + 1e-8) - Ref($lending_volume, 5) / (Ref($volume, 5) + 1e-8)"
+  },
+  {
+    "id": 238,
+    "name": "trust_ret_corr",
+    "expression": "Corr($trust_buy - $trust_sell, $close / Ref($close, 1) - 1, 20)"
+  },
+  {
+    "id": 246,
+    "name": "fh_ratio_ret_corr",
+    "expression": "Corr($foreign_ratio - Ref($foreign_ratio, 1), $close / Ref($close, 1) - 1, 20)"
+  },
+  {
+    "id": 65,
+    "name": "rsv_5",
+    "expression": "($close - Min($low, 5)) / (Max($high, 5) - Min($low, 5) + 1e-8)"
+  },
+  {
+    "id": 108,
+    "name": "wvma_30",
+    "expression": "Corr($close, Log($volume + 1), 30)"
+  },
+  {
+    "id": 152,
+    "name": "margin_chg_10d",
+    "expression": "$margin_balance - Ref($margin_balance, 10)"
+  }
+]

@@ -1,0 +1,82 @@
+[
+  {
+    "id": 180,
+    "name": "foreign_ratio_chg_1d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 1)"
+  },
+  {
+    "id": 182,
+    "name": "foreign_ratio_chg_20d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 20)"
+  },
+  {
+    "id": 184,
+    "name": "foreign_ratio_mom",
+    "expression": "Mean($foreign_ratio, 5) / (Mean($foreign_ratio, 20) + 1e-8)"
+  },
+  {
+    "id": 185,
+    "name": "foreign_ratio_trend",
+    "expression": "Slope($foreign_ratio, 20)"
+  },
+  {
+    "id": 186,
+    "name": "foreign_ratio_rank",
+    "expression": "Rank($foreign_ratio, 60)"
+  },
+  {
+    "id": 148,
+    "name": "foreign_net_vol_20d",
+    "expression": "Sum($foreign_buy - $foreign_sell, 20) / (Sum($volume, 20) + 1e-8)"
+  },
+  {
+    "id": 173,
+    "name": "margin_vol_ratio",
+    "expression": "($margin_buy + $margin_sell) / ($volume + 1e-8)"
+  },
+  {
+    "id": 209,
+    "name": "revenue_momentum_3m",
+    "expression": "Mean($revenue, 63) / (Mean($revenue, 252) + 1e-8)"
+  },
+  {
+    "id": 71,
+    "name": "cntp_10",
+    "expression": "Mean(Greater($close - Ref($close, 1), 0), 10)"
+  },
+  {
+    "id": 72,
+    "name": "cntp_20",
+    "expression": "Mean(Greater($close - Ref($close, 1), 0), 20)"
+  },
+  {
+    "id": 223,
+    "name": "vol_up_down_ratio",
+    "expression": "Sum($volume * Greater($close - Ref($close, 1), 0), 20) / (Sum($volume * Greater(Ref($close, 1) - $close, 0), 20) + 1e-8)"
+  },
+  {
+    "id": 239,
+    "name": "foreign_vol_corr",
+    "expression": "Corr($foreign_buy - $foreign_sell, $volume, 20)"
+  },
+  {
+    "id": 241,
+    "name": "margin_price_corr",
+    "expression": "Corr($margin_balance, $close, 20)"
+  },
+  {
+    "id": 256,
+    "name": "pe_ret_corr",
+    "expression": "Corr($pe_ratio, $close / Ref($close, 1) - 1, 60)"
+  },
+  {
+    "id": 261,
+    "name": "pb_chg_20d",
+    "expression": "$pb_ratio - Ref($pb_ratio, 20)"
+  },
+  {
+    "id": 192,
+    "name": "foreign_consistency_5d",
+    "expression": "Sum(Sign($foreign_ratio - Ref($foreign_ratio, 1)) * Sign($foreign_buy - $foreign_sell), 5)"
+  }
+]

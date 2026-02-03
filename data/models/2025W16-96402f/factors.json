@@ -1,0 +1,22 @@
+[
+  {
+    "id": 182,
+    "name": "foreign_ratio_chg_20d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 20)"
+  },
+  {
+    "id": 81,
+    "name": "sump_10",
+    "expression": "Sum(Greater($close - Ref($close, 1), 0), 10) / (Sum(Abs($close - Ref($close, 1)), 10) + 1e-8)"
+  },
+  {
+    "id": 129,
+    "name": "trust_sell_intensity",
+    "expression": "$trust_sell / (Mean($trust_sell, 20) + 1e-8)"
+  },
+  {
+    "id": 130,
+    "name": "foreign_buy_streak",
+    "expression": "Sum(Greater($foreign_buy - $foreign_sell, 0), 10)"
+  }
+]

@@ -1,0 +1,57 @@
+[
+  {
+    "id": 147,
+    "name": "foreign_net_vol_5d",
+    "expression": "Sum($foreign_buy - $foreign_sell, 5) / (Sum($volume, 5) + 1e-8)"
+  },
+  {
+    "id": 181,
+    "name": "foreign_ratio_chg_10d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 10)"
+  },
+  {
+    "id": 187,
+    "name": "foreign_chg_rank",
+    "expression": "Rank($foreign_ratio - Ref($foreign_ratio, 5), 20)"
+  },
+  {
+    "id": 168,
+    "name": "short_mom_5_20",
+    "expression": "Mean($short_balance, 5) / (Mean($short_balance, 20) + 1e-8)"
+  },
+  {
+    "id": 184,
+    "name": "foreign_ratio_mom",
+    "expression": "Mean($foreign_ratio, 5) / (Mean($foreign_ratio, 20) + 1e-8)"
+  },
+  {
+    "id": 101,
+    "name": "vstd_10",
+    "expression": "Std($volume, 10) / (Mean($volume, 10) + 1e-8)"
+  },
+  {
+    "id": 173,
+    "name": "margin_vol_ratio",
+    "expression": "($margin_buy + $margin_sell) / ($volume + 1e-8)"
+  },
+  {
+    "id": 189,
+    "name": "foreign_space_used",
+    "expression": "$foreign_ratio / ($foreign_upper_limit_ratio + 1e-8)"
+  },
+  {
+    "id": 138,
+    "name": "trust_bs_ratio",
+    "expression": "$trust_buy / ($trust_sell + 1)"
+  },
+  {
+    "id": 20,
+    "name": "std_5",
+    "expression": "Std($close, 5) / $close"
+  },
+  {
+    "id": 240,
+    "name": "trust_vol_corr",
+    "expression": "Corr($trust_buy - $trust_sell, $volume, 20)"
+  }
+]

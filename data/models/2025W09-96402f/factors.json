@@ -1,0 +1,57 @@
+[
+  {
+    "id": 181,
+    "name": "foreign_ratio_chg_10d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 10)"
+  },
+  {
+    "id": 186,
+    "name": "foreign_ratio_rank",
+    "expression": "Rank($foreign_ratio, 60)"
+  },
+  {
+    "id": 101,
+    "name": "vstd_10",
+    "expression": "Std($volume, 10) / (Mean($volume, 10) + 1e-8)"
+  },
+  {
+    "id": 173,
+    "name": "margin_vol_ratio",
+    "expression": "($margin_buy + $margin_sell) / ($volume + 1e-8)"
+  },
+  {
+    "id": 213,
+    "name": "revenue_vol",
+    "expression": "Std($revenue, 126) / (Mean($revenue, 126) + 1e-8)"
+  },
+  {
+    "id": 99,
+    "name": "vma_60",
+    "expression": "Mean($volume, 60) / ($volume + 1e-8)"
+  },
+  {
+    "id": 224,
+    "name": "vol_weighted_ret",
+    "expression": "Sum(($close / Ref($close, 1) - 1) * $volume, 20) / (Sum($volume, 20) + 1e-8)"
+  },
+  {
+    "id": 63,
+    "name": "tsrank_30",
+    "expression": "Rank($close, 30)"
+  },
+  {
+    "id": 123,
+    "name": "foreign_net_mom",
+    "expression": "Sum($foreign_buy - $foreign_sell, 5) / (Abs(Sum($foreign_buy - $foreign_sell, 20)) + 1e-8)"
+  },
+  {
+    "id": 68,
+    "name": "rsv_30",
+    "expression": "($close - Min($low, 30)) / (Max($high, 30) - Min($low, 30) + 1e-8)"
+  },
+  {
+    "id": 261,
+    "name": "pb_chg_20d",
+    "expression": "$pb_ratio - Ref($pb_ratio, 20)"
+  }
+]

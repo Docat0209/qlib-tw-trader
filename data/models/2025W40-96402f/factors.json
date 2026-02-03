@@ -1,0 +1,72 @@
+[
+  {
+    "id": 182,
+    "name": "foreign_ratio_chg_20d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 20)"
+  },
+  {
+    "id": 184,
+    "name": "foreign_ratio_mom",
+    "expression": "Mean($foreign_ratio, 5) / (Mean($foreign_ratio, 20) + 1e-8)"
+  },
+  {
+    "id": 173,
+    "name": "margin_vol_ratio",
+    "expression": "($margin_buy + $margin_sell) / ($volume + 1e-8)"
+  },
+  {
+    "id": 23,
+    "name": "std_30",
+    "expression": "Std($close, 30) / $close"
+  },
+  {
+    "id": 144,
+    "name": "foreign_net_vol",
+    "expression": "($foreign_buy - $foreign_sell) / ($volume + 1e-8)"
+  },
+  {
+    "id": 209,
+    "name": "revenue_momentum_3m",
+    "expression": "Mean($revenue, 63) / (Mean($revenue, 252) + 1e-8)"
+  },
+  {
+    "id": 148,
+    "name": "foreign_net_vol_20d",
+    "expression": "Sum($foreign_buy - $foreign_sell, 20) / (Sum($volume, 20) + 1e-8)"
+  },
+  {
+    "id": 71,
+    "name": "cntp_10",
+    "expression": "Mean(Greater($close - Ref($close, 1), 0), 10)"
+  },
+  {
+    "id": 232,
+    "name": "range_vol_ratio",
+    "expression": "(($high - $low) / $close) / ($volume / (Mean($volume, 20) + 1e-8) + 1e-8)"
+  },
+  {
+    "id": 78,
+    "name": "cntn_30",
+    "expression": "Mean(Greater(Ref($close, 1) - $close, 0), 30)"
+  },
+  {
+    "id": 28,
+    "name": "beta_30",
+    "expression": "Slope($close, 30) / $close"
+  },
+  {
+    "id": 20,
+    "name": "std_5",
+    "expression": "Std($close, 5) / $close"
+  },
+  {
+    "id": 81,
+    "name": "sump_10",
+    "expression": "Sum(Greater($close - Ref($close, 1), 0), 10) / (Sum(Abs($close - Ref($close, 1)), 10) + 1e-8)"
+  },
+  {
+    "id": 146,
+    "name": "inst_net_vol",
+    "expression": "(($foreign_buy - $foreign_sell) + ($trust_buy - $trust_sell) + ($dealer_buy - $dealer_sell)) / ($volume + 1e-8)"
+  }
+]

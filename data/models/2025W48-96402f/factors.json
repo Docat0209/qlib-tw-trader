@@ -1,0 +1,92 @@
+[
+  {
+    "id": 173,
+    "name": "margin_vol_ratio",
+    "expression": "($margin_buy + $margin_sell) / ($volume + 1e-8)"
+  },
+  {
+    "id": 182,
+    "name": "foreign_ratio_chg_20d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 20)"
+  },
+  {
+    "id": 23,
+    "name": "std_30",
+    "expression": "Std($close, 30) / $close"
+  },
+  {
+    "id": 210,
+    "name": "revenue_momentum_6m",
+    "expression": "Mean($revenue, 126) / (Mean($revenue, 252) + 1e-8)"
+  },
+  {
+    "id": 22,
+    "name": "std_20",
+    "expression": "Std($close, 20) / $close"
+  },
+  {
+    "id": 2,
+    "name": "kbar_klen",
+    "expression": "($high - $low) / $open"
+  },
+  {
+    "id": 148,
+    "name": "foreign_net_vol_20d",
+    "expression": "Sum($foreign_buy - $foreign_sell, 20) / (Sum($volume, 20) + 1e-8)"
+  },
+  {
+    "id": 222,
+    "name": "ret_vol_corr_20",
+    "expression": "Corr($close / Ref($close, 1) - 1, $volume / (Ref($volume, 1) + 1e-8) - 1, 20)"
+  },
+  {
+    "id": 156,
+    "name": "short_chg_10d",
+    "expression": "$short_balance - Ref($short_balance, 10)"
+  },
+  {
+    "id": 168,
+    "name": "short_mom_5_20",
+    "expression": "Mean($short_balance, 5) / (Mean($short_balance, 20) + 1e-8)"
+  },
+  {
+    "id": 110,
+    "name": "foreign_net_10d",
+    "expression": "Sum($foreign_buy - $foreign_sell, 10)"
+  },
+  {
+    "id": 215,
+    "name": "revenue_surprise",
+    "expression": "($revenue - Mean($revenue, 63)) / (Std($revenue, 63) + 1e-8)"
+  },
+  {
+    "id": 263,
+    "name": "pb_rank_60d",
+    "expression": "Rank($pb_ratio, 60)"
+  },
+  {
+    "id": 231,
+    "name": "low_vol_corr",
+    "expression": "Corr($low, $volume, 20)"
+  },
+  {
+    "id": 126,
+    "name": "foreign_buy_intensity",
+    "expression": "$foreign_buy / (Mean($foreign_buy, 20) + 1e-8)"
+  },
+  {
+    "id": 165,
+    "name": "short_net_5d",
+    "expression": "Sum($short_sell - $short_buy, 5)"
+  },
+  {
+    "id": 170,
+    "name": "short_intensity",
+    "expression": "$short_sell / (Mean($short_sell, 20) + 1e-8)"
+  },
+  {
+    "id": 229,
+    "name": "amount_ratio",
+    "expression": "Mean($close * $volume, 5) / (Mean($close * $volume, 20) + 1e-8)"
+  }
+]

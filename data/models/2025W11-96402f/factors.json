@@ -1,0 +1,27 @@
+[
+  {
+    "id": 22,
+    "name": "std_20",
+    "expression": "Std($close, 20) / $close"
+  },
+  {
+    "id": 21,
+    "name": "std_10",
+    "expression": "Std($close, 10) / $close"
+  },
+  {
+    "id": 157,
+    "name": "short_chg_20d",
+    "expression": "$short_balance - Ref($short_balance, 20)"
+  },
+  {
+    "id": 96,
+    "name": "vma_10",
+    "expression": "Mean($volume, 10) / ($volume + 1e-8)"
+  },
+  {
+    "id": 110,
+    "name": "foreign_net_10d",
+    "expression": "Sum($foreign_buy - $foreign_sell, 10)"
+  }
+]

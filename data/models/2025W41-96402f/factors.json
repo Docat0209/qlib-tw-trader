@@ -1,0 +1,102 @@
+[
+  {
+    "id": 180,
+    "name": "foreign_ratio_chg_1d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 1)"
+  },
+  {
+    "id": 182,
+    "name": "foreign_ratio_chg_20d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 20)"
+  },
+  {
+    "id": 173,
+    "name": "margin_vol_ratio",
+    "expression": "($margin_buy + $margin_sell) / ($volume + 1e-8)"
+  },
+  {
+    "id": 23,
+    "name": "std_30",
+    "expression": "Std($close, 30) / $close"
+  },
+  {
+    "id": 147,
+    "name": "foreign_net_vol_5d",
+    "expression": "Sum($foreign_buy - $foreign_sell, 5) / (Sum($volume, 5) + 1e-8)"
+  },
+  {
+    "id": 148,
+    "name": "foreign_net_vol_20d",
+    "expression": "Sum($foreign_buy - $foreign_sell, 20) / (Sum($volume, 20) + 1e-8)"
+  },
+  {
+    "id": 111,
+    "name": "foreign_net_20d",
+    "expression": "Sum($foreign_buy - $foreign_sell, 20)"
+  },
+  {
+    "id": 74,
+    "name": "cntp_60",
+    "expression": "Mean(Greater($close - Ref($close, 1), 0), 60)"
+  },
+  {
+    "id": 264,
+    "name": "value_momentum_combo",
+    "expression": "Rank(1 / ($pe_ratio + 1e-8), 60) * ($close / Ref($close, 20) - 1)"
+  },
+  {
+    "id": 78,
+    "name": "cntn_30",
+    "expression": "Mean(Greater(Ref($close, 1) - $close, 0), 30)"
+  },
+  {
+    "id": 110,
+    "name": "foreign_net_10d",
+    "expression": "Sum($foreign_buy - $foreign_sell, 10)"
+  },
+  {
+    "id": 63,
+    "name": "tsrank_30",
+    "expression": "Rank($close, 30)"
+  },
+  {
+    "id": 21,
+    "name": "std_10",
+    "expression": "Std($close, 10) / $close"
+  },
+  {
+    "id": 163,
+    "name": "margin_net_20d",
+    "expression": "Sum($margin_buy - $margin_sell, 20)"
+  },
+  {
+    "id": 195,
+    "name": "foreign_accel",
+    "expression": "($foreign_ratio - Ref($foreign_ratio, 5)) - (Ref($foreign_ratio, 5) - Ref($foreign_ratio, 10))"
+  },
+  {
+    "id": 40,
+    "name": "max_5",
+    "expression": "Max($high, 5) / $close"
+  },
+  {
+    "id": 126,
+    "name": "foreign_buy_intensity",
+    "expression": "$foreign_buy / (Mean($foreign_buy, 20) + 1e-8)"
+  },
+  {
+    "id": 119,
+    "name": "inst_net",
+    "expression": "($foreign_buy - $foreign_sell) + ($trust_buy - $trust_sell) + ($dealer_buy - $dealer_sell)"
+  },
+  {
+    "id": 211,
+    "name": "revenue_trend",
+    "expression": "Slope($revenue, 63)"
+  },
+  {
+    "id": 66,
+    "name": "rsv_10",
+    "expression": "($close - Min($low, 10)) / (Max($high, 10) - Min($low, 10) + 1e-8)"
+  }
+]

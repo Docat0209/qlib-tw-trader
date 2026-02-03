@@ -1,0 +1,57 @@
+[
+  {
+    "id": 173,
+    "name": "margin_vol_ratio",
+    "expression": "($margin_buy + $margin_sell) / ($volume + 1e-8)"
+  },
+  {
+    "id": 184,
+    "name": "foreign_ratio_mom",
+    "expression": "Mean($foreign_ratio, 5) / (Mean($foreign_ratio, 20) + 1e-8)"
+  },
+  {
+    "id": 27,
+    "name": "beta_20",
+    "expression": "Slope($close, 20) / $close"
+  },
+  {
+    "id": 186,
+    "name": "foreign_ratio_rank",
+    "expression": "Rank($foreign_ratio, 60)"
+  },
+  {
+    "id": 181,
+    "name": "foreign_ratio_chg_10d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 10)"
+  },
+  {
+    "id": 226,
+    "name": "obv_20",
+    "expression": "Sum($volume * Sign($close - Ref($close, 1)), 20)"
+  },
+  {
+    "id": 63,
+    "name": "tsrank_30",
+    "expression": "Rank($close, 30)"
+  },
+  {
+    "id": 69,
+    "name": "rsv_60",
+    "expression": "($close - Min($low, 60)) / (Max($high, 60) - Min($low, 60) + 1e-8)"
+  },
+  {
+    "id": 84,
+    "name": "sump_60",
+    "expression": "Sum(Greater($close - Ref($close, 1), 0), 60) / (Sum(Abs($close - Ref($close, 1)), 60) + 1e-8)"
+  },
+  {
+    "id": 134,
+    "name": "inst_agreement_5d",
+    "expression": "Sum(Sign($foreign_buy - $foreign_sell) + Sign($trust_buy - $trust_sell) + Sign($dealer_buy - $dealer_sell), 5)"
+  },
+  {
+    "id": 135,
+    "name": "foreign_trust_sync",
+    "expression": "Sign($foreign_buy - $foreign_sell) * Sign($trust_buy - $trust_sell)"
+  }
+]

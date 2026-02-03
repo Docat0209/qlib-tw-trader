@@ -1,0 +1,37 @@
+[
+  {
+    "id": 27,
+    "name": "beta_20",
+    "expression": "Slope($close, 20) / $close"
+  },
+  {
+    "id": 173,
+    "name": "margin_vol_ratio",
+    "expression": "($margin_buy + $margin_sell) / ($volume + 1e-8)"
+  },
+  {
+    "id": 2,
+    "name": "kbar_klen",
+    "expression": "($high - $low) / $open"
+  },
+  {
+    "id": 67,
+    "name": "rsv_20",
+    "expression": "($close - Min($low, 20)) / (Max($high, 20) - Min($low, 20) + 1e-8)"
+  },
+  {
+    "id": 81,
+    "name": "sump_10",
+    "expression": "Sum(Greater($close - Ref($close, 1), 0), 10) / (Sum(Abs($close - Ref($close, 1)), 10) + 1e-8)"
+  },
+  {
+    "id": 206,
+    "name": "lending_std",
+    "expression": "Std($lending_volume, 20) / (Mean($lending_volume, 20) + 1e-8)"
+  },
+  {
+    "id": 247,
+    "name": "foreign_volatility_corr",
+    "expression": "Corr(Abs($foreign_buy - $foreign_sell), Std($close / Ref($close, 1) - 1, 5), 20)"
+  }
+]

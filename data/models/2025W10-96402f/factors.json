@@ -1,0 +1,57 @@
+[
+  {
+    "id": 181,
+    "name": "foreign_ratio_chg_10d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 10)"
+  },
+  {
+    "id": 182,
+    "name": "foreign_ratio_chg_20d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 20)"
+  },
+  {
+    "id": 156,
+    "name": "short_chg_10d",
+    "expression": "$short_balance - Ref($short_balance, 10)"
+  },
+  {
+    "id": 24,
+    "name": "std_60",
+    "expression": "Std($close, 60) / $close"
+  },
+  {
+    "id": 174,
+    "name": "short_vol_ratio",
+    "expression": "($short_buy + $short_sell) / ($volume + 1e-8)"
+  },
+  {
+    "id": 266,
+    "name": "pe_foreign_sync",
+    "expression": "Corr($pe_ratio, $foreign_ratio, 60)"
+  },
+  {
+    "id": 60,
+    "name": "tsrank_5",
+    "expression": "Rank($close, 5)"
+  },
+  {
+    "id": 134,
+    "name": "inst_agreement_5d",
+    "expression": "Sum(Sign($foreign_buy - $foreign_sell) + Sign($trust_buy - $trust_sell) + Sign($dealer_buy - $dealer_sell), 5)"
+  },
+  {
+    "id": 242,
+    "name": "margin_ret_corr",
+    "expression": "Corr($margin_balance - Ref($margin_balance, 1), $close / Ref($close, 1) - 1, 20)"
+  },
+  {
+    "id": 231,
+    "name": "low_vol_corr",
+    "expression": "Corr($low, $volume, 20)"
+  },
+  {
+    "id": 44,
+    "name": "max_60",
+    "expression": "Max($high, 60) / $close"
+  }
+]

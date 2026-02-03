@@ -1,0 +1,42 @@
+[
+  {
+    "id": 182,
+    "name": "foreign_ratio_chg_20d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 20)"
+  },
+  {
+    "id": 173,
+    "name": "margin_vol_ratio",
+    "expression": "($margin_buy + $margin_sell) / ($volume + 1e-8)"
+  },
+  {
+    "id": 224,
+    "name": "vol_weighted_ret",
+    "expression": "Sum(($close / Ref($close, 1) - 1) * $volume, 20) / (Sum($volume, 20) + 1e-8)"
+  },
+  {
+    "id": 24,
+    "name": "std_60",
+    "expression": "Std($close, 60) / $close"
+  },
+  {
+    "id": 28,
+    "name": "beta_30",
+    "expression": "Slope($close, 30) / $close"
+  },
+  {
+    "id": 207,
+    "name": "revenue_mom_qoq",
+    "expression": "$revenue / (Ref($revenue, 63) + 1e-8) - 1"
+  },
+  {
+    "id": 228,
+    "name": "amount_5",
+    "expression": "Mean($close * $volume, 5)"
+  },
+  {
+    "id": 109,
+    "name": "wvma_60",
+    "expression": "Corr($close, Log($volume + 1), 60)"
+  }
+]

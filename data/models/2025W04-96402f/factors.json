@@ -1,0 +1,87 @@
+[
+  {
+    "id": 209,
+    "name": "revenue_momentum_3m",
+    "expression": "Mean($revenue, 63) / (Mean($revenue, 252) + 1e-8)"
+  },
+  {
+    "id": 147,
+    "name": "foreign_net_vol_5d",
+    "expression": "Sum($foreign_buy - $foreign_sell, 5) / (Sum($volume, 5) + 1e-8)"
+  },
+  {
+    "id": 28,
+    "name": "beta_30",
+    "expression": "Slope($close, 30) / $close"
+  },
+  {
+    "id": 27,
+    "name": "beta_20",
+    "expression": "Slope($close, 20) / $close"
+  },
+  {
+    "id": 223,
+    "name": "vol_up_down_ratio",
+    "expression": "Sum($volume * Greater($close - Ref($close, 1), 0), 20) / (Sum($volume * Greater(Ref($close, 1) - $close, 0), 20) + 1e-8)"
+  },
+  {
+    "id": 173,
+    "name": "margin_vol_ratio",
+    "expression": "($margin_buy + $margin_sell) / ($volume + 1e-8)"
+  },
+  {
+    "id": 96,
+    "name": "vma_10",
+    "expression": "Mean($volume, 10) / ($volume + 1e-8)"
+  },
+  {
+    "id": 81,
+    "name": "sump_10",
+    "expression": "Sum(Greater($close - Ref($close, 1), 0), 10) / (Sum(Abs($close - Ref($close, 1)), 10) + 1e-8)"
+  },
+  {
+    "id": 166,
+    "name": "short_net_20d",
+    "expression": "Sum($short_sell - $short_buy, 20)"
+  },
+  {
+    "id": 40,
+    "name": "max_5",
+    "expression": "Max($high, 5) / $close"
+  },
+  {
+    "id": 69,
+    "name": "rsv_60",
+    "expression": "($close - Min($low, 60)) / (Max($high, 60) - Min($low, 60) + 1e-8)"
+  },
+  {
+    "id": 2,
+    "name": "kbar_klen",
+    "expression": "($high - $low) / $open"
+  },
+  {
+    "id": 187,
+    "name": "foreign_chg_rank",
+    "expression": "Rank($foreign_ratio - Ref($foreign_ratio, 5), 20)"
+  },
+  {
+    "id": 121,
+    "name": "inst_net_10d",
+    "expression": "Sum(($foreign_buy - $foreign_sell) + ($trust_buy - $trust_sell) + ($dealer_buy - $dealer_sell), 10)"
+  },
+  {
+    "id": 123,
+    "name": "foreign_net_mom",
+    "expression": "Sum($foreign_buy - $foreign_sell, 5) / (Abs(Sum($foreign_buy - $foreign_sell, 20)) + 1e-8)"
+  },
+  {
+    "id": 256,
+    "name": "pe_ret_corr",
+    "expression": "Corr($pe_ratio, $close / Ref($close, 1) - 1, 60)"
+  },
+  {
+    "id": 238,
+    "name": "trust_ret_corr",
+    "expression": "Corr($trust_buy - $trust_sell, $close / Ref($close, 1) - 1, 20)"
+  }
+]

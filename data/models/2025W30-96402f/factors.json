@@ -1,0 +1,82 @@
+[
+  {
+    "id": 180,
+    "name": "foreign_ratio_chg_1d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 1)"
+  },
+  {
+    "id": 147,
+    "name": "foreign_net_vol_5d",
+    "expression": "Sum($foreign_buy - $foreign_sell, 5) / (Sum($volume, 5) + 1e-8)"
+  },
+  {
+    "id": 184,
+    "name": "foreign_ratio_mom",
+    "expression": "Mean($foreign_ratio, 5) / (Mean($foreign_ratio, 20) + 1e-8)"
+  },
+  {
+    "id": 137,
+    "name": "foreign_bs_ratio",
+    "expression": "$foreign_buy / ($foreign_sell + 1)"
+  },
+  {
+    "id": 195,
+    "name": "foreign_accel",
+    "expression": "($foreign_ratio - Ref($foreign_ratio, 5)) - (Ref($foreign_ratio, 5) - Ref($foreign_ratio, 10))"
+  },
+  {
+    "id": 22,
+    "name": "std_20",
+    "expression": "Std($close, 20) / $close"
+  },
+  {
+    "id": 111,
+    "name": "foreign_net_20d",
+    "expression": "Sum($foreign_buy - $foreign_sell, 20)"
+  },
+  {
+    "id": 146,
+    "name": "inst_net_vol",
+    "expression": "(($foreign_buy - $foreign_sell) + ($trust_buy - $trust_sell) + ($dealer_buy - $dealer_sell)) / ($volume + 1e-8)"
+  },
+  {
+    "id": 32,
+    "name": "rsqr_20",
+    "expression": "Rsquare($close, 20)"
+  },
+  {
+    "id": 121,
+    "name": "inst_net_10d",
+    "expression": "Sum(($foreign_buy - $foreign_sell) + ($trust_buy - $trust_sell) + ($dealer_buy - $dealer_sell), 10)"
+  },
+  {
+    "id": 100,
+    "name": "vstd_5",
+    "expression": "Std($volume, 5) / (Mean($volume, 5) + 1e-8)"
+  },
+  {
+    "id": 161,
+    "name": "margin_net",
+    "expression": "$margin_buy - $margin_sell"
+  },
+  {
+    "id": 232,
+    "name": "range_vol_ratio",
+    "expression": "(($high - $low) / $close) / ($volume / (Mean($volume, 20) + 1e-8) + 1e-8)"
+  },
+  {
+    "id": 9,
+    "name": "kbar_ksft2",
+    "expression": "(2 * $close - $high - $low) / ($high - $low + 1e-8)"
+  },
+  {
+    "id": 266,
+    "name": "pe_foreign_sync",
+    "expression": "Corr($pe_ratio, $foreign_ratio, 60)"
+  },
+  {
+    "id": 35,
+    "name": "resi_5",
+    "expression": "Resi($close, 5) / $close"
+  }
+]

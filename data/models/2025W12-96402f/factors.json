@@ -1,0 +1,47 @@
+[
+  {
+    "id": 147,
+    "name": "foreign_net_vol_5d",
+    "expression": "Sum($foreign_buy - $foreign_sell, 5) / (Sum($volume, 5) + 1e-8)"
+  },
+  {
+    "id": 181,
+    "name": "foreign_ratio_chg_10d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 10)"
+  },
+  {
+    "id": 22,
+    "name": "std_20",
+    "expression": "Std($close, 20) / $close"
+  },
+  {
+    "id": 184,
+    "name": "foreign_ratio_mom",
+    "expression": "Mean($foreign_ratio, 5) / (Mean($foreign_ratio, 20) + 1e-8)"
+  },
+  {
+    "id": 182,
+    "name": "foreign_ratio_chg_20d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 20)"
+  },
+  {
+    "id": 96,
+    "name": "vma_10",
+    "expression": "Mean($volume, 10) / ($volume + 1e-8)"
+  },
+  {
+    "id": 209,
+    "name": "revenue_momentum_3m",
+    "expression": "Mean($revenue, 63) / (Mean($revenue, 252) + 1e-8)"
+  },
+  {
+    "id": 65,
+    "name": "rsv_5",
+    "expression": "($close - Min($low, 5)) / (Max($high, 5) - Min($low, 5) + 1e-8)"
+  },
+  {
+    "id": 207,
+    "name": "revenue_mom_qoq",
+    "expression": "$revenue / (Ref($revenue, 63) + 1e-8) - 1"
+  }
+]

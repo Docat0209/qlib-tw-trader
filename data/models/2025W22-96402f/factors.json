@@ -1,0 +1,52 @@
+[
+  {
+    "id": 180,
+    "name": "foreign_ratio_chg_1d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 1)"
+  },
+  {
+    "id": 147,
+    "name": "foreign_net_vol_5d",
+    "expression": "Sum($foreign_buy - $foreign_sell, 5) / (Sum($volume, 5) + 1e-8)"
+  },
+  {
+    "id": 22,
+    "name": "std_20",
+    "expression": "Std($close, 20) / $close"
+  },
+  {
+    "id": 134,
+    "name": "inst_agreement_5d",
+    "expression": "Sum(Sign($foreign_buy - $foreign_sell) + Sign($trust_buy - $trust_sell) + Sign($dealer_buy - $dealer_sell), 5)"
+  },
+  {
+    "id": 71,
+    "name": "cntp_10",
+    "expression": "Mean(Greater($close - Ref($close, 1), 0), 10)"
+  },
+  {
+    "id": 126,
+    "name": "foreign_buy_intensity",
+    "expression": "$foreign_buy / (Mean($foreign_buy, 20) + 1e-8)"
+  },
+  {
+    "id": 266,
+    "name": "pe_foreign_sync",
+    "expression": "Corr($pe_ratio, $foreign_ratio, 60)"
+  },
+  {
+    "id": 20,
+    "name": "std_5",
+    "expression": "Std($close, 5) / $close"
+  },
+  {
+    "id": 78,
+    "name": "cntn_30",
+    "expression": "Mean(Greater(Ref($close, 1) - $close, 0), 30)"
+  },
+  {
+    "id": 6,
+    "name": "kbar_klow",
+    "expression": "(Less($open, $close) - $low) / $open"
+  }
+]

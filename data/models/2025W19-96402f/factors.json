@@ -1,0 +1,82 @@
+[
+  {
+    "id": 180,
+    "name": "foreign_ratio_chg_1d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 1)"
+  },
+  {
+    "id": 184,
+    "name": "foreign_ratio_mom",
+    "expression": "Mean($foreign_ratio, 5) / (Mean($foreign_ratio, 20) + 1e-8)"
+  },
+  {
+    "id": 182,
+    "name": "foreign_ratio_chg_20d",
+    "expression": "$foreign_ratio - Ref($foreign_ratio, 20)"
+  },
+  {
+    "id": 144,
+    "name": "foreign_net_vol",
+    "expression": "($foreign_buy - $foreign_sell) / ($volume + 1e-8)"
+  },
+  {
+    "id": 186,
+    "name": "foreign_ratio_rank",
+    "expression": "Rank($foreign_ratio, 60)"
+  },
+  {
+    "id": 8,
+    "name": "kbar_ksft",
+    "expression": "(2 * $close - $high - $low) / $open"
+  },
+  {
+    "id": 23,
+    "name": "std_30",
+    "expression": "Std($close, 30) / $close"
+  },
+  {
+    "id": 129,
+    "name": "trust_sell_intensity",
+    "expression": "$trust_sell / (Mean($trust_sell, 20) + 1e-8)"
+  },
+  {
+    "id": 68,
+    "name": "rsv_30",
+    "expression": "($close - Min($low, 30)) / (Max($high, 30) - Min($low, 30) + 1e-8)"
+  },
+  {
+    "id": 72,
+    "name": "cntp_20",
+    "expression": "Mean(Greater($close - Ref($close, 1), 0), 20)"
+  },
+  {
+    "id": 125,
+    "name": "dealer_net_mom",
+    "expression": "Sum($dealer_buy - $dealer_sell, 5) / (Abs(Sum($dealer_buy - $dealer_sell, 20)) + 1e-8)"
+  },
+  {
+    "id": 170,
+    "name": "short_intensity",
+    "expression": "$short_sell / (Mean($short_sell, 20) + 1e-8)"
+  },
+  {
+    "id": 78,
+    "name": "cntn_30",
+    "expression": "Mean(Greater(Ref($close, 1) - $close, 0), 30)"
+  },
+  {
+    "id": 236,
+    "name": "foreign_lead_ret",
+    "expression": "Corr(Ref($foreign_buy - $foreign_sell, 1), $close / Ref($close, 1) - 1, 20)"
+  },
+  {
+    "id": 119,
+    "name": "inst_net",
+    "expression": "($foreign_buy - $foreign_sell) + ($trust_buy - $trust_sell) + ($dealer_buy - $dealer_sell)"
+  },
+  {
+    "id": 30,
+    "name": "rsqr_5",
+    "expression": "Rsquare($close, 5)"
+  }
+]
