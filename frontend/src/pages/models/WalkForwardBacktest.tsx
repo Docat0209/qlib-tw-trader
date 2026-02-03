@@ -482,6 +482,7 @@ export function WalkForwardBacktest() {
                       <th className="py-2 px-2 font-medium text-right">Valid IC</th>
                       <th className="py-2 px-2 font-medium text-right">Live IC</th>
                       <th className="py-2 px-2 font-medium text-right">Decay</th>
+                      <th className="py-2 px-2 font-medium text-right">Incr</th>
                       <th className="py-2 px-2 font-medium text-right">Return</th>
                       <th className="py-2 px-2 font-medium text-right">Market</th>
                     </tr>
@@ -511,6 +512,9 @@ export function WalkForwardBacktest() {
                           (week.ic_decay || 0) > 50 ? 'text-red' : (week.ic_decay || 0) > 30 ? 'text-yellow-600' : 'text-green'
                         }`}>
                           {week.ic_decay !== null ? `${week.ic_decay.toFixed(0)}%` : '---'}
+                        </td>
+                        <td className="py-2 px-2 text-right font-mono text-muted-foreground">
+                          {week.incremental_days !== null ? `${week.incremental_days}d` : '---'}
                         </td>
                         <td className={`py-2 px-2 text-right font-mono ${
                           (week.week_return || 0) >= 0 ? 'text-green' : 'text-red'

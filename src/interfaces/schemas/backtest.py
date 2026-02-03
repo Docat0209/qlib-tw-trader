@@ -276,6 +276,7 @@ class WeeklyDetail(BaseModel):
     week_return: float | None = None  # 週收益 %
     market_return: float | None = None  # 市場收益 %
     is_fallback: bool = False  # 是否使用 fallback 模型
+    incremental_days: int | None = None  # 增量學習使用的天數
 
 
 class WalkForwardConfig(BaseModel):

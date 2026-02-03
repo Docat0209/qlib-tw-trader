@@ -1207,6 +1207,7 @@ export interface WeeklyDetail {
   week_return: number | null
   market_return: number | null
   is_fallback: boolean
+  incremental_days: number | null
 }
 
 export interface WalkForwardItem {

@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from src.repositories.models import TrainingRun
 from src.repositories.training import TrainingRepository
+from src.services.incremental_learner import IncrementalLearner
 from src.shared.week_utils import (
     compare_week_ids,
     get_current_week_id,
@@ -58,6 +59,7 @@ class WeekResult:
     week_return: float | None
     market_return: float | None
     is_fallback: bool
+    incremental_days: int | None = None  # 增量學習使用的天數
 
 
 @dataclass
@@ -544,6 +546,11 @@ class WalkForwardBacktester:
         weekly_results: list[WeekResult] = []
         all_predictions: dict[str, pd.DataFrame] = {}  # week_id -> predictions
 
+        # 建立增量學習器（如果啟用）
+        incremental_learner = None
+        if enable_incremental:
+            incremental_learner = IncrementalLearner(self._session)
+
         total_weeks = len(model_infos)
         for i, info in enumerate(model_infos):
             progress = 15 + (i / total_weeks) * 70  # 15% ~ 85%
@@ -556,6 +563,27 @@ class WalkForwardBacktester:
 
                 # 取得預測週的日期範圍
                 predict_start, predict_end = self._get_week_date_range(info.predict_week)
+
+                # 增量學習（如果啟用）
+                incremental_days = None
+                if enable_incremental and incremental_learner is not None:
+                    # 取得模型訓練結束日期
+                    train_end_str = config.get("train_end")
+                    if train_end_str:
+                        model_train_end = date.fromisoformat(train_end_str)
+
+                        # 將模型更新到預測日前一天
+                        target_date = predict_start - timedelta(days=1)
+
+                        result = incremental_learner.update_to_date(
+                            base_model=model,
+                            factors=factors,
+                            model_train_end=model_train_end,
+                            target_date=target_date,
+                        )
+
+                        if result is not None:
+                            model, incremental_days = result
 
                 # 預測
                 predictions = self._predict_week(model, factors, predict_start, predict_end)
@@ -571,6 +599,7 @@ class WalkForwardBacktester:
                         week_return=None,
                         market_return=None,
                         is_fallback=info.is_fallback,
+                        incremental_days=incremental_days,
                     ))
                     continue
 
@@ -599,6 +628,7 @@ class WalkForwardBacktester:
                     week_return=week_return,
                     market_return=market_return,
                     is_fallback=info.is_fallback,
+                    incremental_days=incremental_days,
                 ))
 
             except Exception as e:
@@ -613,6 +643,7 @@ class WalkForwardBacktester:
                     week_return=None,
                     market_return=None,
                     is_fallback=info.is_fallback,
+                    incremental_days=None,
                 ))
 
         if on_progress:

@@ -8,7 +8,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from dateutil.relativedelta import relativedelta
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from src.interfaces.dependencies import get_db
@@ -944,7 +944,7 @@ async def get_available_weeks(
 @router.get("/walk-forward", response_model=WalkForwardListResponse)
 async def list_walk_forward_backtests(
     session: Session = Depends(get_db),
-    limit: int = 20,
+    limit: int = Query(20, ge=1, le=100),
 ):
     """取得 Walk-Forward 回測列表"""
     from src.repositories.walk_forward import WalkForwardBacktestRepository
@@ -1034,6 +1034,7 @@ async def get_walk_forward_backtest(
                     week_return=d.get("week_return"),
                     market_return=d.get("market_return"),
                     is_fallback=d.get("is_fallback", False),
+                    incremental_days=d.get("incremental_days"),
                 )
                 for d in details_data
             ]
@@ -1229,6 +1230,7 @@ async def run_walk_forward_task(
                 "week_return": w.week_return,
                 "market_return": w.market_return,
                 "is_fallback": w.is_fallback,
+                "incremental_days": w.incremental_days,
             }
             for w in result.weekly_details
         ]
