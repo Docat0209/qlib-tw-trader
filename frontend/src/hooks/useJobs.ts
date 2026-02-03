@@ -92,9 +92,8 @@ export function useJobs() {
             result: event.result,
           })
         }
-        if (activeJobId === jobId) {
-          setActiveJobId(null)
-        }
+        // 不立即清除 activeJobId，讓組件有機會處理完成狀態
+        // 組件應調用 clearJob 來清除
       } else if (event.type === 'job_failed') {
         const existing = next.get(jobId)
         if (existing) {
@@ -104,9 +103,8 @@ export function useJobs() {
             error: event.error,
           })
         }
-        if (activeJobId === jobId) {
-          setActiveJobId(null)
-        }
+        // 不立即清除 activeJobId，讓組件有機會處理失敗狀態
+        // 組件應調用 clearJob 來清除
       } else if (event.type === 'job_cancelled') {
         // 取消的任務直接從列表移除
         next.delete(jobId)
