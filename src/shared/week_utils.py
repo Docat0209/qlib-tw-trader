@@ -294,3 +294,67 @@ def get_trainable_weeks(
 def get_current_week_id() -> str:
     """取得當前週 ID"""
     return compute_week_id(date.today())
+
+
+def get_next_week_id(week_id: str) -> str:
+    """
+    取得下一週的週 ID
+
+    "2024W52" -> "2025W01"（跨年處理）
+    """
+    year, week = parse_week_id(week_id)
+    friday = date.fromisocalendar(year, week, 5)  # 該週週五
+    next_monday = friday + timedelta(days=3)  # 下週週一
+    return compute_week_id(next_monday)
+
+
+def get_previous_week_id(week_id: str) -> str:
+    """
+    取得上一週的週 ID
+
+    "2025W01" -> "2024W52"（跨年處理）
+    """
+    year, week = parse_week_id(week_id)
+    monday = date.fromisocalendar(year, week, 1)  # 該週週一
+    prev_friday = monday - timedelta(days=3)  # 上週週五
+    return compute_week_id(prev_friday)
+
+
+def compare_week_ids(week_id1: str, week_id2: str) -> int:
+    """
+    比較兩個週 ID
+
+    Returns:
+        -1 if week_id1 < week_id2
+         0 if week_id1 == week_id2
+         1 if week_id1 > week_id2
+    """
+    y1, w1 = parse_week_id(week_id1)
+    y2, w2 = parse_week_id(week_id2)
+
+    if y1 != y2:
+        return -1 if y1 < y2 else 1
+    if w1 != w2:
+        return -1 if w1 < w2 else 1
+    return 0
+
+
+def get_weeks_in_range(start_week_id: str, end_week_id: str) -> list[str]:
+    """
+    取得兩個週 ID 之間的所有週（包含起始和結束）
+
+    Args:
+        start_week_id: 起始週（如 "2024W01"）
+        end_week_id: 結束週（如 "2025W20"）
+
+    Returns:
+        週 ID 列表（按時間順序）
+    """
+    weeks = []
+    current = start_week_id
+
+    while compare_week_ids(current, end_week_id) <= 0:
+        weeks.append(current)
+        current = get_next_week_id(current)
+
+    return weeks

@@ -1135,3 +1135,109 @@ export const syncApi = {
     return api.post<SyncAllResponse>(`/sync/monthly-revenue/all${query}`, {})
   },
 }
+
+// =============================================================================
+// Walk-Forward Backtest Types
+// =============================================================================
+
+export interface WeekStatus {
+  week_id: string
+  status: 'available' | 'missing' | 'not_allowed'
+  model_name?: string
+  valid_ic?: number
+  fallback_week?: string
+  fallback_model?: string
+  reason?: string
+}
+
+export interface AvailableWeeksResponse {
+  weeks: WeekStatus[]
+  current_week_id: string
+}
+
+export interface WalkForwardRequest {
+  start_week_id: string
+  end_week_id: string
+  initial_capital?: number
+  max_positions?: number
+  trade_price?: string
+  enable_incremental?: boolean
+  strategy?: string
+}
+
+export interface WalkForwardRunResponse {
+  backtest_id: number
+  job_id: string
+  status: string
+  message: string
+}
+
+export interface WalkForwardConfig {
+  initial_capital: number
+  max_positions: number
+  trade_price: string
+  enable_incremental: boolean
+  strategy: string
+}
+
+export interface IcAnalysis {
+  avg_valid_ic: number
+  avg_live_ic: number
+  ic_decay: number
+  ic_correlation: number | null
+}
+
+export interface WalkForwardReturnMetrics {
+  cumulative_return: number
+  market_return: number
+  excess_return: number
+  sharpe_ratio: number | null
+  max_drawdown: number | null
+  win_rate: number | null
+  total_trades: number | null
+}
+
+export interface WeeklyDetail {
+  predict_week: string
+  model_week: string
+  model_name: string
+  valid_ic: number | null
+  live_ic: number | null
+  ic_decay: number | null
+  week_return: number | null
+  market_return: number | null
+  is_fallback: boolean
+}
+
+export interface WalkForwardItem {
+  id: number
+  start_week_id: string
+  end_week_id: string
+  status: string
+  config: WalkForwardConfig
+  created_at: string
+  completed_at: string | null
+}
+
+export interface WalkForwardDetail extends WalkForwardItem {
+  ic_analysis: IcAnalysis | null
+  return_metrics: WalkForwardReturnMetrics | null
+  weekly_details: WeeklyDetail[] | null
+  equity_curve: EquityCurvePoint[] | null
+}
+
+export interface WalkForwardListResponse {
+  items: WalkForwardItem[]
+  total: number
+}
+
+export const walkForwardApi = {
+  availableWeeks: () => api.get<AvailableWeeksResponse>('/backtest/walk-forward/available-weeks'),
+  list: (limit?: number) => {
+    const query = limit ? `?limit=${limit}` : ''
+    return api.get<WalkForwardListResponse>(`/backtest/walk-forward${query}`)
+  },
+  get: (backtestId: number) => api.get<WalkForwardDetail>(`/backtest/walk-forward/${backtestId}`),
+  run: (data: WalkForwardRequest) => api.post<WalkForwardRunResponse>('/backtest/walk-forward', data),
+  delete: (backtestId: number) => api.delete(`/backtest/walk-forward/${backtestId}`),
+}

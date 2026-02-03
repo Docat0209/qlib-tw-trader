@@ -342,6 +342,33 @@ class Backtest(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
 
 
+class WalkForwardBacktest(Base):
+    """Walk-Forward 回測記錄"""
+
+    __tablename__ = "walk_forward_backtests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    start_week_id: Mapped[str] = mapped_column(String(7))  # "2024W01"
+    end_week_id: Mapped[str] = mapped_column(String(7))    # "2025W20"
+
+    # 回測配置
+    initial_capital: Mapped[Decimal] = mapped_column(Numeric(16, 2))
+    max_positions: Mapped[int] = mapped_column(Integer, default=10)
+    trade_price: Mapped[str] = mapped_column(String(10), default="open")
+    enable_incremental: Mapped[bool] = mapped_column(Boolean, default=False)
+    strategy: Mapped[str] = mapped_column(String(50), default="topk")
+
+    # 結果
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    result: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: ic_analysis, return_metrics
+    weekly_details: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: 每週詳情
+    equity_curve: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
+
+    # 時間戳
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 # =============================================================================
 # 超參數
 # =============================================================================

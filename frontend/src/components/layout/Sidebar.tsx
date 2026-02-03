@@ -9,6 +9,7 @@ import {
   Layers,
   SlidersHorizontal,
   Target,
+  Activity,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -25,6 +26,7 @@ const navigation: NavigationType[] = [
       { name: 'Hyperparams', href: '/models/hyperparams', icon: SlidersHorizontal },
       { name: 'Training', href: '/models/training', icon: LineChart },
       { name: 'Backtest', href: '/models/backtest', icon: BarChart3 },
+      { name: 'Walk-Forward', href: '/models/walk-forward', icon: Activity },
     ],
   },
   {

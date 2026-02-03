@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useDataStore } from '@/stores/dataStore'
 
-type EntityType = 'factors' | 'models' | 'datasets' | 'backtests' | 'dashboard' | 'hyperparams'
+type EntityType = 'factors' | 'models' | 'datasets' | 'backtests' | 'dashboard' | 'hyperparams' | 'walk_forward_backtests'
 
 /**
  * Auto-fetch hook that triggers fetchFn when data is invalidated
