@@ -261,10 +261,46 @@ export interface ModelStatus {
   needs_retrain: boolean
   retrain_threshold_days: number
   current_job: number | null
+  // 週訓練相關
+  current_week_id: string | null
+  latest_trained_week: string | null
+  untrained_weeks_count: number
+  current_factor_pool_hash: string | null
 }
 
 export interface TrainRequest {
-  train_end?: string
+  week_id: string  // "2026W05"
+}
+
+// Week Types
+export interface WeekModel {
+  id: string
+  name: string
+  model_ic: number
+  factor_count: number
+  factor_pool_hash: string | null
+  is_outdated: boolean
+}
+
+export interface WeekSlot {
+  week_id: string
+  valid_end: string
+  valid_start: string
+  train_end: string
+  train_start: string
+  status: 'trained' | 'trainable' | 'insufficient_data'
+  model: WeekModel | null
+}
+
+export interface DataRange {
+  start: string
+  end: string
+}
+
+export interface WeeksResponse {
+  slots: WeekSlot[]
+  current_factor_pool_hash: string
+  data_range: DataRange
 }
 
 export interface TrainResponse {
@@ -296,6 +332,10 @@ export const modelApi = {
   setCurrent: (id: string) => api.patch<SetCurrentResponse>(`/models/${id}/current`),
   dataRange: () => api.get<DataRangeResponse>('/models/data-range'),
 
+  // 週訓練
+  weeks: () => api.get<WeeksResponse>('/models/weeks'),
+  train: (data: TrainRequest) => api.post<TrainResponse>('/models/train', data),
+
   // 現有方法（向後兼容）
   current: () => api.get<Model>('/models/current'),
   history: (limit?: number) => {
@@ -307,7 +347,6 @@ export const modelApi = {
     return api.get<ModelComparisonResponse>(`/models/comparison${query}`)
   },
   status: () => api.get<ModelStatus>('/models/status'),
-  train: (data?: TrainRequest) => api.post<TrainResponse>('/models/train', data || {}),
 }
 
 // Hyperparams Types

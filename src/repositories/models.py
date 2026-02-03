@@ -252,6 +252,10 @@ class TrainingRun(Base):
     selection_method: Mapped[str | None] = mapped_column(String(50), nullable=True)
     selection_config: Mapped[str | None] = mapped_column(Text, nullable=True)
     selection_stats: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 週訓練相關欄位
+    week_id: Mapped[str | None] = mapped_column(String(10), nullable=True)  # "2026W05"
+    factor_pool_hash: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    embargo_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     selected_factors: Mapped[list["TrainingFactorResult"]] = relationship(
         back_populates="training_run"

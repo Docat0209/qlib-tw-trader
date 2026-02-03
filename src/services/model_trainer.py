@@ -778,10 +778,18 @@ class ModelTrainer:
         train_end: date,
         valid_start: date,
         valid_end: date,
+        week_id: str | None = None,
+        factor_pool_hash: str | None = None,
         on_progress: Callable[[float, str], None] | None = None,
     ) -> TrainingResult:
         """
-        執行 LightGBM IC 增量選擇訓練
+        執行 LightGBM IC 增量選擇訓練（週訓練架構）
+
+        流程：
+        1. 訓練模型 A（train_start ~ train_end）
+        2. 計算驗證期 IC（報告指標）
+        3. 增量更新：A + 驗證期資料 → A'
+        4. 保存 A'（部署用）
 
         Args:
             session: 資料庫 Session
@@ -789,11 +797,15 @@ class ModelTrainer:
             train_end: 訓練結束日期
             valid_start: 驗證開始日期
             valid_end: 驗證結束日期
+            week_id: 週 ID（如 "2026W05"）
+            factor_pool_hash: 因子池 hash
             on_progress: 進度回調 (progress: 0-100, message: str)
 
         Returns:
             TrainingResult
         """
+        from src.shared.constants import EMBARGO_DAYS
+
         factor_repo = FactorRepository(session)
         training_repo = TrainingRepository(session)
 
@@ -804,16 +816,19 @@ class ModelTrainer:
 
         candidate_ids = [f.id for f in enabled_factors]
 
-        # 生成臨時模型名稱（訓練完成後會更新為 YYYYMM-hash 格式）
-        temp_name = f"{valid_end.strftime('%Y%m')}-pending"
+        # 生成臨時模型名稱
+        temp_name = f"{week_id or valid_end.strftime('%Y%m')}-pending"
 
-        # 創建訓練記錄（立即設定臨時名稱，避免前端看到 m00X）
+        # 創建訓練記錄（含週訓練相關欄位）
         run = training_repo.create_run(
             name=temp_name,
             train_start=train_start,
             train_end=train_end,
             valid_start=valid_start,
             valid_end=valid_end,
+            week_id=week_id,
+            factor_pool_hash=factor_pool_hash,
+            embargo_days=EMBARGO_DAYS,
         )
         run.candidate_factor_ids = json.dumps(candidate_ids)
         run.status = "running"
@@ -915,10 +930,70 @@ class ModelTrainer:
                     selected=result.selected,
                 )
 
-            # 生成最終模型名稱：YYYYMM-hash（6位）
-            hash_input = f"{run.id}-{valid_end.isoformat()}-{len(selected_factors)}"
-            short_hash = hashlib.md5(hash_input.encode()).hexdigest()[:6]
-            model_name = f"{valid_end.strftime('%Y%m')}-{short_hash}"
+            # 生成最終模型名稱：{week_id}-{factor_pool_hash}
+            # 若無 week_id，使用舊格式 YYYYMM-hash
+            if week_id and factor_pool_hash:
+                model_name = f"{week_id}-{factor_pool_hash}"
+            else:
+                hash_input = f"{run.id}-{valid_end.isoformat()}-{len(selected_factors)}"
+                short_hash = hashlib.md5(hash_input.encode()).hexdigest()[:6]
+                model_name = f"{valid_end.strftime('%Y%m')}-{short_hash}"
+
+            # === 增量更新（驗證後重訓）===
+            # 根據設計文檔：訓練完成後，用驗證期資料做增量更新
+            # 保存的是 A'（增量更新後的模型），但報告的是 A 的 IC
+            import lightgbm as lgb
+
+            incremented_model = best_model
+            if best_model is not None and selected_factors:
+                if on_progress:
+                    on_progress(96.0, "Incremental update with validation data...")
+
+                factor_names = [f.name for f in selected_factors]
+                X_valid_incr = all_data[factor_names]
+                y_valid_incr = all_data["label"]
+
+                valid_mask = (all_data.index.get_level_values("datetime").date >= valid_start) & \
+                             (all_data.index.get_level_values("datetime").date <= valid_end)
+                X_valid_incr = X_valid_incr[valid_mask].dropna()
+                y_valid_incr = y_valid_incr[valid_mask].dropna()
+                common_idx = X_valid_incr.index.intersection(y_valid_incr.index)
+                X_valid_incr = X_valid_incr.loc[common_idx]
+                y_valid_incr = y_valid_incr.loc[common_idx]
+
+                if not X_valid_incr.empty:
+                    # 處理和標準化
+                    X_valid_processed = self._process_inf(X_valid_incr)
+                    X_valid_norm = self._zscore_by_date(X_valid_processed).fillna(0)
+                    y_valid_zscore = self._zscore_by_date(y_valid_incr.to_frame()).squeeze()
+
+                    # 增量更新：使用 init_model
+                    valid_data = lgb.Dataset(X_valid_norm.values, label=y_valid_zscore.values)
+
+                    # 使用相同參數，但從 best_model 開始
+                    incr_params = self._optimized_params or {
+                        "objective": "regression",
+                        "metric": "mse",
+                        "boosting_type": "gbdt",
+                        "verbosity": -1,
+                        "seed": 42,
+                    }
+
+                    try:
+                        incremented_model = lgb.train(
+                            incr_params,
+                            valid_data,
+                            num_boost_round=50,  # 少量更新
+                            init_model=best_model,
+                            keep_training_booster=True,
+                        )
+                        if on_progress:
+                            on_progress(98.0, "Incremental update completed")
+                    except Exception as e:
+                        # 增量更新失敗，使用原模型
+                        if on_progress:
+                            on_progress(98.0, f"Incremental update failed: {e}, using original model")
+                        incremented_model = best_model
 
             # 完成訓練
             run.name = model_name
@@ -930,8 +1005,9 @@ class ModelTrainer:
                 "std_multiplier": 0.2,
                 "threshold_min": -0.02,
                 "threshold_max": -0.005,
-                "require_positive_contribution": True,  # mean_diff >= 0
-                "require_positive_single_ic": True,  # single_ic > 0
+                "require_positive_contribution": True,
+                "require_positive_single_ic": True,
+                "incremental_update": True,  # 標記有做增量更新
             }
             run.selection_method = "composite_threshold_v3"
             run.selection_config = json.dumps(selection_config)
@@ -939,19 +1015,22 @@ class ModelTrainer:
 
             training_repo.complete_run(
                 run_id=run.id,
-                model_ic=model_ic,
+                model_ic=model_ic,  # 報告的是模型 A 的 IC（驗證期 IC）
                 icir=icir,
                 factor_count=len(selected_factors),
             )
 
-            # 保存模型檔案
+            # 保存模型檔案（保存增量更新後的 A'）
             config = {
                 "train_start": train_start.isoformat(),
                 "train_end": train_end.isoformat(),
                 "valid_start": valid_start.isoformat(),
                 "valid_end": valid_end.isoformat(),
-                "model_ic": model_ic,
+                "week_id": week_id,
+                "factor_pool_hash": factor_pool_hash,
+                "model_ic": model_ic,  # 報告的 IC（模型 A）
                 "icir": icir,
+                "incremental_updated": incremented_model is not best_model,
             }
             if self._optimized_params:
                 tuned_params = {k: v for k, v in self._optimized_params.items()
@@ -962,7 +1041,7 @@ class ModelTrainer:
                 model_name=model_name,
                 selected_factors=selected_factors,
                 config=config,
-                model=best_model,
+                model=incremented_model,  # 保存增量更新後的模型
             )
 
             if on_progress:

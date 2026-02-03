@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -110,12 +111,55 @@ class ModelStatus(BaseModel):
     needs_retrain: bool
     retrain_threshold_days: int
     current_job: int | None
+    # 週訓練相關
+    current_week_id: str | None = None
+    latest_trained_week: str | None = None
+    untrained_weeks_count: int = 0
+    current_factor_pool_hash: str | None = None
+
+
+class DataRange(BaseModel):
+    """資料日期範圍"""
+
+    start: date
+    end: date
+
+
+class WeekModel(BaseModel):
+    """週模型資訊"""
+
+    id: str  # "m001"
+    name: str  # "2026W05-a1b2c3"
+    model_ic: float
+    factor_count: int
+    factor_pool_hash: str | None
+    is_outdated: bool  # 因子池已變更
+
+
+class WeekSlot(BaseModel):
+    """週訓練時段"""
+
+    week_id: str  # "2026W05"
+    valid_end: date
+    valid_start: date
+    train_end: date
+    train_start: date
+    status: Literal["trained", "trainable", "insufficient_data"]
+    model: WeekModel | None = None
+
+
+class WeeksResponse(BaseModel):
+    """週列表回應"""
+
+    slots: list[WeekSlot]
+    current_factor_pool_hash: str
+    data_range: DataRange
 
 
 class TrainRequest(BaseModel):
     """訓練請求"""
 
-    train_end: date | None = None  # 預設：今日 - 驗證期長度
+    week_id: str  # "2026W05"
 
 
 class TrainResponse(BaseModel):

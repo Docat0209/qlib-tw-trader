@@ -15,6 +15,7 @@ from src.interfaces.dependencies import get_db
 from src.interfaces.schemas.model import (
     CultivationRequest,
     CultivationResponse,
+    DataRange,
     FactorSummary,
     HyperparamsInfo,
     ModelComparisonItem,
@@ -29,11 +30,21 @@ from src.interfaces.schemas.model import (
     SelectionInfo,
     TrainRequest,
     TrainResponse,
+    WeekModel,
+    WeekSlot,
+    WeeksResponse,
 )
 from src.repositories.factor import FactorRepository
 from src.repositories.training import TrainingRepository
 from src.services.job_manager import broadcast_data_updated
-from src.shared.constants import TRAIN_DAYS, VALID_DAYS
+from src.shared.constants import EMBARGO_DAYS, RETRAIN_THRESHOLD_DAYS, TRAIN_DAYS, VALID_DAYS
+from src.shared.week_utils import (
+    compute_factor_pool_hash,
+    compute_week_id,
+    get_current_week_id,
+    get_trainable_weeks,
+    get_week_valid_end,
+)
 
 router = APIRouter()
 
@@ -219,10 +230,48 @@ async def get_training_status(
     session: Session = Depends(get_db),
 ):
     """取得訓練狀態（用於檢查是否需要重訓）"""
+    from sqlalchemy import func
+    from src.repositories.models import StockDaily
+
     repo = TrainingRepository(session)
     status = repo.get_status()
 
-    return ModelStatus(**status)
+    # 計算週訓練相關資訊
+    current_week = get_current_week_id()
+
+    # 取得最新已訓練的週
+    all_runs = repo.get_all()
+    trained_weeks = [r.week_id for r in all_runs if r.week_id and r.status == "completed"]
+    latest_trained_week = max(trained_weeks) if trained_weeks else None
+
+    # 計算未訓練週數
+    db_range = session.query(
+        func.min(StockDaily.date),
+        func.max(StockDaily.date),
+    ).first()
+
+    untrained_count = 0
+    current_hash = None
+    if db_range and db_range[0] and db_range[1]:
+        factor_repo = FactorRepository(session)
+        enabled_factors = factor_repo.get_all(enabled=True)
+        current_hash = compute_factor_pool_hash([f.id for f in enabled_factors])
+
+        trainable_weeks = get_trainable_weeks(
+            data_start=db_range[0],
+            data_end=db_range[1],
+            session=session,
+        )
+        trained_set = set(trained_weeks)
+        untrained_count = sum(1 for w in trainable_weeks if w.week_id not in trained_set)
+
+    return ModelStatus(
+        **status,
+        current_week_id=current_week,
+        latest_trained_week=latest_trained_week,
+        untrained_weeks_count=untrained_count,
+        current_factor_pool_hash=current_hash,
+    )
 
 
 @router.get("/data-range")
@@ -244,6 +293,97 @@ async def get_data_range(session: Session = Depends(get_db)):
         "start": result[0].isoformat(),
         "end": result[1].isoformat(),
     }
+
+
+@router.get("/weeks", response_model=WeeksResponse)
+async def list_weeks(session: Session = Depends(get_db)):
+    """
+    取得所有可訓練週的狀態
+
+    Returns:
+        slots: 週列表（最新在前）
+        current_factor_pool_hash: 當前因子池 hash
+        data_range: 資料庫日期範圍
+    """
+    from sqlalchemy import func
+    from src.repositories.models import StockDaily
+
+    # 取得資料範圍
+    db_range = session.query(
+        func.min(StockDaily.date),
+        func.max(StockDaily.date),
+    ).first()
+
+    if not db_range or not db_range[0] or not db_range[1]:
+        raise HTTPException(status_code=404, detail="No stock data found")
+
+    data_start, data_end = db_range[0], db_range[1]
+
+    # 計算當前因子池 hash
+    factor_repo = FactorRepository(session)
+    enabled_factors = factor_repo.get_all(enabled=True)
+    current_hash = compute_factor_pool_hash([f.id for f in enabled_factors])
+
+    # 取得所有週（包含資料不足的）
+    all_weeks = get_trainable_weeks(
+        data_start=data_start,
+        data_end=data_end,
+        session=session,
+        include_insufficient=True,
+    )
+
+    # 取得所有已訓練的模型（按 week_id 索引）
+    training_repo = TrainingRepository(session)
+    all_runs = training_repo.get_all()
+    runs_by_week = {}
+    for run in all_runs:
+        if run.week_id and run.status == "completed":
+            runs_by_week[run.week_id] = run
+
+    # 建立週列表
+    slots = []
+    for week in all_weeks:
+        run = runs_by_week.get(week.week_id)
+
+        # 判斷狀態
+        if not week.is_trainable:
+            # 資料不足
+            status = "insufficient_data"
+            model = None
+        elif run:
+            # 已訓練
+            is_outdated = run.factor_pool_hash != current_hash if run.factor_pool_hash else True
+            model = WeekModel(
+                id=f"m{run.id:03d}",
+                name=run.name or "",
+                model_ic=float(run.model_ic) if run.model_ic else 0.0,
+                factor_count=run.factor_count or 0,
+                factor_pool_hash=run.factor_pool_hash,
+                is_outdated=is_outdated,
+            )
+            status = "trained"
+        else:
+            # 可訓練
+            model = None
+            status = "trainable"
+
+        slots.append(
+            WeekSlot(
+                week_id=week.week_id,
+                valid_end=week.valid_end,
+                valid_start=week.valid_start,
+                train_end=week.train_end,
+                train_start=week.train_start,
+                status=status,
+                model=model,
+            )
+        )
+
+    return WeeksResponse(
+        slots=slots,
+        current_factor_pool_hash=current_hash,
+        data_range=DataRange(start=data_start, end=data_end),
+    )
 
 
 @router.get("/hyperparams", response_model=HyperparamsInfo)
@@ -350,8 +490,13 @@ async def trigger_training(
     data: TrainRequest,
     session: Session = Depends(get_db),
 ):
-    """觸發模型訓練（非同步）"""
+    """
+    觸發週模型訓練（非同步）
+
+    接受 week_id 參數（如 "2026W05"），自動計算訓練/驗證期間
+    """
     from pathlib import Path
+    from datetime import timedelta
 
     from sqlalchemy import func
 
@@ -361,9 +506,10 @@ async def trigger_training(
     from src.services.model_trainer import ModelTrainer
     from src.services.qlib_exporter import ExportConfig, QlibExporter
 
+    week_id = data.week_id
     factor_repo = FactorRepository(session)
 
-    # 從資料庫取得日期範圍（不是 qlib 文件）
+    # 從資料庫取得日期範圍
     db_range = session.query(
         func.min(StockDaily.date),
         func.max(StockDaily.date),
@@ -374,31 +520,32 @@ async def trigger_training(
 
     db_start, db_end = db_range[0], db_range[1]
 
-    # 計算訓練和驗證期間
-    # train_end 由使用者指定，或預設為 db_end - VALID_DAYS
-    train_end = data.train_end or (db_end - timedelta(days=VALID_DAYS))
-    train_start = train_end - timedelta(days=TRAIN_DAYS)
+    # 從 week_id 計算訓練期間
+    trainable_weeks = get_trainable_weeks(
+        data_start=db_start,
+        data_end=db_end,
+        session=session,
+    )
 
-    # 驗證期間：train_end 後 VALID_DAYS 天
-    valid_start = train_end + timedelta(days=1)
-    valid_end = train_end + timedelta(days=VALID_DAYS)
+    # 找到對應的週
+    week_slot = next((w for w in trainable_weeks if w.week_id == week_id), None)
+    if not week_slot:
+        raise HTTPException(status_code=400, detail=f"Week {week_id} is not trainable")
 
-    # 確保日期在資料範圍內
-    if train_start < db_start:
-        train_start = db_start
-
-    if valid_end > db_end:
-        valid_end = db_end
-
-    # 臨時名稱用於訊息顯示（訓練完成後會更新為 YYYYMM-hash 格式）
-    temp_name = f"{valid_end.strftime('%Y%m')}"
+    train_start = week_slot.train_start
+    train_end = week_slot.train_end
+    valid_start = week_slot.valid_start
+    valid_end = week_slot.valid_end
 
     # 確認有啟用的因子
     enabled_factors = factor_repo.get_all(enabled=True)
     if not enabled_factors:
         raise HTTPException(status_code=400, detail="No enabled factors found")
 
-    # 定義訓練任務（使用 asyncio.to_thread 運行同步訓練）
+    # 計算因子池 hash
+    factor_pool_hash = compute_factor_pool_hash([f.id for f in enabled_factors])
+
+    # 定義訓練任務
     async def training_task(progress_callback, **kwargs):
         """訓練任務 wrapper"""
         task_session = get_session()
@@ -414,7 +561,6 @@ async def trigger_training(
             if export_start < db_start:
                 export_start = db_start
 
-            # 定義同步導出函數（避免阻塞 event loop）
             def do_export():
                 exporter = QlibExporter(task_session)
                 export_config = ExportConfig(
@@ -424,16 +570,13 @@ async def trigger_training(
                 )
                 return exporter.export(export_config)
 
-            # 使用 to_thread 運行同步導出
             export_result = await asyncio.to_thread(do_export)
             await progress_callback(5, f"Exported {export_result.stocks_exported} stocks")
 
             # Step 2: 執行訓練
             trainer = ModelTrainer(qlib_data_dir="data/qlib")
 
-            # 同步回調轉非同步（在主線程安全調用）
             def sync_progress(progress: int, message: str):
-                # 將訓練進度映射到 5-100%
                 adjusted_progress = 5 + int(progress * 0.95)
                 loop.call_soon_threadsafe(
                     lambda p=adjusted_progress, m=message: asyncio.create_task(
@@ -441,14 +584,15 @@ async def trigger_training(
                     )
                 )
 
-            # 使用 to_thread 運行同步訓練
             result = await asyncio.to_thread(
                 trainer.train,
                 session=task_session,
+                week_id=week_id,
                 train_start=train_start,
                 train_end=train_end,
                 valid_start=valid_start,
                 valid_end=valid_end,
+                factor_pool_hash=factor_pool_hash,
                 on_progress=sync_progress,
             )
 
@@ -466,13 +610,13 @@ async def trigger_training(
     job_id = await job_manager.create_job(
         job_type="train",
         task_fn=training_task,
-        message=f"Training model: {temp_name}",
+        message=f"Training model: {week_id}",
     )
 
     return TrainResponse(
         job_id=job_id,
         status="queued",
-        message=f"訓練任務已排入佇列 ({temp_name})",
+        message=f"訓練任務已排入佇列 ({week_id})",
     )
 
 

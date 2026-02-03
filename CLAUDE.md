@@ -40,6 +40,7 @@ curl -X POST http://localhost:8000/api/v1/qlib/export/sync \
 
 ## 待完成
 
+- [ ] **增量學習**（每日微調模型權重，詳見 [設計文檔](docs/incremental-learning-design.md)）
 - [ ] **排程系統**（每日自動同步+訓練）
 
 ## 關鍵規則
@@ -202,3 +203,4 @@ df.sort_values(by=["score", "symbol"], ascending=[False, True]).head(top_k)
 - [資料集](docs/datasets.md)
 - [原始欄位](docs/raw-fields.md)
 - [需求規格](docs/requirements.md)
+- [增量學習設計](docs/incremental-learning-design.md) - **重要：訓練配置與工作流程**

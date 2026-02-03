@@ -22,6 +22,9 @@ class TrainingRepository:
         valid_start: date | None = None,
         valid_end: date | None = None,
         name: str | None = None,
+        week_id: str | None = None,
+        factor_pool_hash: str | None = None,
+        embargo_days: int | None = None,
     ) -> TrainingRun:
         """建立訓練執行記錄"""
         run = TrainingRun(
@@ -30,12 +33,26 @@ class TrainingRepository:
             train_end=train_end,
             valid_start=valid_start,
             valid_end=valid_end,
+            week_id=week_id,
+            factor_pool_hash=factor_pool_hash,
+            embargo_days=embargo_days,
             status="queued",
         )
         self._session.add(run)
         self._session.commit()
         self._session.refresh(run)
         return run
+
+    def get_by_week_id(self, week_id: str) -> TrainingRun | None:
+        """依週 ID 取得訓練記錄"""
+        stmt = (
+            select(TrainingRun)
+            .where(TrainingRun.week_id == week_id)
+            .where(TrainingRun.status == "completed")
+            .order_by(TrainingRun.completed_at.desc())
+            .limit(1)
+        )
+        return self._session.execute(stmt).scalar()
 
     def complete_run(
         self,
