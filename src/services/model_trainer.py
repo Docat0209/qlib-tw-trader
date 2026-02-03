@@ -147,6 +147,8 @@ def get_conservative_default_params(factor_count: int) -> dict:
         "learning_rate": 0.05,
         "bagging_fraction": 0.8,
         "bagging_freq": 5,
+        "device": "gpu",
+        "gpu_use_dp": False,
     }
 
     if factor_count <= 3:
@@ -564,6 +566,8 @@ class ModelTrainer:
                 "verbosity": -1,
                 "seed": 42,
                 "feature_pre_filter": False,
+                "device": "gpu",
+                "gpu_use_dp": False,
             }
 
         # 訓練
@@ -851,40 +855,28 @@ class ModelTrainer:
             if all_data.empty:
                 raise ValueError("No data available for the specified date range")
 
-            # === 超參數載入（從培養文件）===
-            cultivated_params = self.load_cultivated_hyperparameters()
-            if cultivated_params and on_progress:
-                on_progress(10.0, "Using pre-cultivated hyperparameters")
+            # === 超參數載入（從資料庫）===
+            from src.repositories.hyperparams import HyperparamsRepository
 
-            if cultivated_params:
+            hp_repo = HyperparamsRepository(session)
+            latest_hp = hp_repo.get_latest()
+
+            if latest_hp:
+                cultivated_params = json.loads(latest_hp.params_json)
+                # 加入 GPU 設定
+                cultivated_params = cultivated_params.copy()
+                cultivated_params["device"] = "gpu"
+                cultivated_params["gpu_use_dp"] = False
                 self._optimized_params = cultivated_params
-            else:
-                # 無培養超參數，執行 Optuna 優化
                 if on_progress:
-                    on_progress(2.5, "No cultivated params, running Optuna...")
-
-                # 準備優化用的資料（使用所有因子）
-                factor_names = [f.name for f in enabled_factors]
-                X_all = all_data[factor_names]
-                y_all = all_data["label"]
-
-                X_train_opt, X_valid_opt, y_train_opt, y_valid_opt = self._prepare_train_valid_data(
-                    pd.concat([X_all, y_all], axis=1),
-                    train_start, train_end, valid_start, valid_end,
-                )
-
-                if not X_train_opt.empty and not X_valid_opt.empty:
-                    self._optimized_params = self._optimize_hyperparameters(
-                        X_train_opt, y_train_opt,
-                        X_valid_opt, y_valid_opt,
-                        on_progress=on_progress,
-                    )
-                    if on_progress:
-                        on_progress(10.0, f"Optuna done: best params found")
-                else:
-                    self._optimized_params = None
-                    if on_progress:
-                        on_progress(10.0, "Skipped Optuna (insufficient data)")
+                    on_progress(10.0, f"Using hyperparams: {latest_hp.name}")
+            else:
+                # 無培養超參數，使用保守預設值（不再跑 Optuna）
+                self._optimized_params = get_conservative_default_params(len(enabled_factors))
+                self._optimized_params["device"] = "gpu"
+                self._optimized_params["gpu_use_dp"] = False
+                if on_progress:
+                    on_progress(10.0, "No cultivated params, using conservative defaults")
 
             # 執行 IC 增量選擇（使用優化後的參數，並根據因子數動態調整）
             selected_factors, all_results, best_model, selection_stats = self._incremental_ic_selection(
@@ -1134,14 +1126,33 @@ class ModelTrainer:
             ic = self._calculate_single_factor_ic(factor, all_data, train_start, train_end)
             factor_ics.append((factor, ic))
 
-        # 按 IC 絕對值降序排列（高預測力因子優先測試）
-        sorted_factors = sorted(factor_ics, key=lambda x: abs(x[1]), reverse=True)
+        # 過濾 IC <= 0 的因子（無損優化：這些因子本來就不會被選中）
+        positive_ic_factors = [(f, ic) for f, ic in factor_ics if ic > 0]
+        filtered_factors = [(f, ic) for f, ic in factor_ics if ic <= 0]
+        filtered_count = len(filtered_factors)
+
+        if on_progress:
+            on_progress(12.0, f"Filtered {filtered_count} factors with IC <= 0, {len(positive_ic_factors)} remaining")
+
+        # 按 IC 降序排列（只處理正 IC 因子）
+        sorted_factors = sorted(positive_ic_factors, key=lambda x: x[1], reverse=True)
 
         if on_progress:
             on_progress(13.0, f"Sorted {len(sorted_factors)} factors by IC")
 
         selected_factors: list[Factor] = []
         all_results: list[FactorEvalResult] = []
+
+        # 先記錄被過濾掉的因子（IC <= 0，不會被選中）
+        for factor, ic in filtered_factors:
+            all_results.append(
+                FactorEvalResult(
+                    factor_id=factor.id,
+                    factor_name=factor.name,
+                    ic_value=ic,
+                    selected=False,
+                )
+            )
         current_ic = 0.0
         best_model = None
 

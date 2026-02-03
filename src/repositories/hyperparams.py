@@ -43,6 +43,11 @@ class HyperparamsRepository:
         stmt = select(Hyperparams).order_by(Hyperparams.cultivated_at.desc())
         return list(self._session.execute(stmt).scalars().all())
 
+    def get_latest(self) -> Hyperparams | None:
+        """取得最新的超參數組"""
+        stmt = select(Hyperparams).order_by(Hyperparams.cultivated_at.desc()).limit(1)
+        return self._session.execute(stmt).scalar_one_or_none()
+
     def get_by_id(self, hp_id: int) -> Hyperparams | None:
         """依 ID 取得"""
         return self._session.get(Hyperparams, hp_id)
