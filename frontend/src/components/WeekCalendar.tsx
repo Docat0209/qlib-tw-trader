@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
 import { WeekSlot } from '@/api/client'
-import { CheckCircle, AlertTriangle, Clock, PlayCircle } from 'lucide-react'
+import { CheckCircle, AlertTriangle, Clock, PlayCircle, XCircle, Loader2 } from 'lucide-react'
 
 interface WeekCalendarProps {
   slots: WeekSlot[]
@@ -9,9 +9,12 @@ interface WeekCalendarProps {
   currentFactorPoolHash: string | null
   onTrainYear?: (year: string) => void
   isTraining?: boolean
+  queueYear?: string | null
+  queueRemaining?: number
+  onCancelQueue?: () => void
 }
 
-export function WeekCalendar({ slots, selected, onSelect, currentFactorPoolHash, onTrainYear, isTraining }: WeekCalendarProps) {
+export function WeekCalendar({ slots, selected, onSelect, currentFactorPoolHash, onTrainYear, isTraining, queueYear, queueRemaining, onCancelQueue }: WeekCalendarProps) {
   // 按年份分組
   const byYear = slots.reduce((acc, slot) => {
     const year = slot.week_id.slice(0, 4)
@@ -47,10 +50,27 @@ export function WeekCalendar({ slots, selected, onSelect, currentFactorPoolHash,
                   /{totalCount}
                 </span>
               </div>
-              {onTrainYear && trainableCount > 0 && (
+              {queueYear === year ? (
+                // 正在批次訓練此年
+                <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-1 text-xs text-blue-600">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    {queueRemaining !== undefined ? queueRemaining + 1 : '?'} left
+                  </span>
+                  {onCancelQueue && (
+                    <button
+                      onClick={onCancelQueue}
+                      className="flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100"
+                      title="Cancel remaining training"
+                    >
+                      <XCircle className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              ) : onTrainYear && trainableCount > 0 && (
                 <button
                   onClick={() => onTrainYear(year)}
-                  disabled={isTraining}
+                  disabled={isTraining || !!queueYear}
                   className={cn(
                     "flex items-center gap-1 text-xs px-2 py-0.5 rounded",
                     "bg-blue-50 text-blue-600 hover:bg-blue-100",

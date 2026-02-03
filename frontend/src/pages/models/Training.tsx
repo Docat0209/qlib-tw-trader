@@ -31,6 +31,9 @@ export function Training() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
   const [hyperparamsList, setHyperparamsList] = useState<HyperparamsSummary[]>([])
+  // 批次訓練佇列
+  const [trainingQueue, setTrainingQueue] = useState<string[]>([])
+  const [queueYear, setQueueYear] = useState<string | null>(null)
 
   // WebSocket 訓練進度追蹤
   const { activeJob, clearJob, cancelJob } = useJobs()
@@ -93,17 +96,38 @@ export function Training() {
   useFetchOnChange('models', silentRefresh)
   useFetchOnChange('hyperparams', silentRefresh)
 
-  // 監聽訓練完成
+  // 監聽訓練完成，處理批次訓練佇列
   useEffect(() => {
     if (activeJob?.status === 'completed' && activeJob?.job_type === 'train') {
       fetchData(false)
-      const timer = setTimeout(() => clearJob(activeJob.id), 5000)
+
+      // 檢查佇列是否還有待訓練的週
+      if (trainingQueue.length > 0) {
+        const [nextWeek, ...remaining] = trainingQueue
+        setTrainingQueue(remaining)
+        // 延遲啟動下一個訓練，確保狀態更新
+        setTimeout(() => {
+          modelApi.train({ week_id: nextWeek }).catch(err => {
+            alert(err instanceof Error ? err.message : 'Failed to start training')
+            setTrainingQueue([])
+            setQueueYear(null)
+          })
+        }, 1000)
+      } else {
+        // 佇列已空，清除年份標記
+        setQueueYear(null)
+      }
+
+      const timer = setTimeout(() => clearJob(activeJob.id), 3000)
       return () => clearTimeout(timer)
     }
     if (activeJob?.status === 'failed' && activeJob?.job_type === 'train') {
       fetchData(false)
+      // 訓練失敗，清空佇列
+      setTrainingQueue([])
+      setQueueYear(null)
     }
-  }, [activeJob?.status, activeJob?.job_type, activeJob?.id, clearJob, fetchData])
+  }, [activeJob?.status, activeJob?.job_type, activeJob?.id, clearJob, fetchData, trainingQueue])
 
   const selectedSlot = weeksData?.slots.find(s => s.week_id === selectedWeekId)
 
@@ -123,7 +147,7 @@ export function Training() {
   }
 
   const handleStartTraining = async () => {
-    if (isTraining || !selectedWeekId) return
+    if (isTraining || trainingQueue.length > 0 || !selectedWeekId) return
     setActionLoading(true)
     try {
       await modelApi.train({ week_id: selectedWeekId })
@@ -136,7 +160,8 @@ export function Training() {
   }
 
   const handleTrainYear = async (year: string) => {
-    if (isTraining || !weeksData) return
+    if (isTraining || trainingQueue.length > 0 || !weeksData) return
+
     // 找出該年所有可訓練的週（未訓練）
     const trainableWeeks = weeksData.slots.filter(
       s => s.week_id.startsWith(year) && s.status === 'trainable'
@@ -145,20 +170,30 @@ export function Training() {
       alert(`${year} 年沒有待訓練的週`)
       return
     }
-    // 從最舊的週開始訓練
-    const sortedWeeks = trainableWeeks.sort((a, b) => a.week_id.localeCompare(b.week_id))
-    setActionLoading(true)
+
+    // 從最舊的週開始訓練（升序排列）
+    const sortedWeekIds = trainableWeeks
+      .sort((a, b) => a.week_id.localeCompare(b.week_id))
+      .map(s => s.week_id)
+
+    // 第一個立即訓練，其餘放入佇列
+    const [firstWeek, ...remainingWeeks] = sortedWeekIds
+    setTrainingQueue(remainingWeeks)
+    setQueueYear(year)
+
     try {
-      // 依序訓練每一週（排隊）
-      for (const slot of sortedWeeks) {
-        await modelApi.train({ week_id: slot.week_id })
-      }
+      await modelApi.train({ week_id: firstWeek })
       await fetchData(false)
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to start training')
-    } finally {
-      setActionLoading(false)
+      setTrainingQueue([])
+      setQueueYear(null)
     }
+  }
+
+  const handleCancelQueue = () => {
+    setTrainingQueue([])
+    setQueueYear(null)
   }
 
   const handleCancelTraining = async () => {
@@ -234,6 +269,9 @@ export function Training() {
                 currentFactorPoolHash={weeksData.current_factor_pool_hash}
                 onTrainYear={handleTrainYear}
                 isTraining={isTraining || actionLoading}
+                queueYear={queueYear}
+                queueRemaining={trainingQueue.length}
+                onCancelQueue={handleCancelQueue}
               />
             ) : (
               <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
