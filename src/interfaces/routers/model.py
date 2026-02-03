@@ -28,6 +28,7 @@ from src.interfaces.schemas.model import (
     ModelSummary,
     Period,
     SelectionInfo,
+    TrainBatchRequest,
     TrainRequest,
     TrainResponse,
     WeekModel,
@@ -617,6 +618,171 @@ async def trigger_training(
         job_id=job_id,
         status="queued",
         message=f"訓練任務已排入佇列 ({week_id})",
+    )
+
+
+@router.post("/train-batch", response_model=TrainResponse)
+async def trigger_batch_training(
+    data: TrainBatchRequest,
+    session: Session = Depends(get_db),
+):
+    """
+    批量訓練一整年的模型（後端管理佇列）
+
+    後端會依次訓練該年所有未訓練的週，不需要前端管理佇列。
+    """
+    from pathlib import Path
+    from datetime import timedelta
+
+    from sqlalchemy import func
+
+    from src.repositories.database import get_session
+    from src.repositories.models import StockDaily
+    from src.services.job_manager import job_manager
+    from src.services.model_trainer import ModelTrainer
+    from src.services.qlib_exporter import ExportConfig, QlibExporter
+
+    year = data.year
+    factor_repo = FactorRepository(session)
+    training_repo = TrainingRepository(session)
+
+    # 從資料庫取得日期範圍
+    db_range = session.query(
+        func.min(StockDaily.date),
+        func.max(StockDaily.date),
+    ).first()
+
+    if not db_range or not db_range[0] or not db_range[1]:
+        raise HTTPException(status_code=400, detail="No stock data found in database")
+
+    db_start, db_end = db_range[0], db_range[1]
+
+    # 取得該年所有可訓練的週
+    trainable_weeks = get_trainable_weeks(
+        data_start=db_start,
+        data_end=db_end,
+        session=session,
+    )
+
+    # 過濾出該年的週
+    year_weeks = [w for w in trainable_weeks if w.week_id.startswith(year)]
+
+    # 取得已訓練的週
+    all_runs = training_repo.get_all()
+    trained_week_ids = {r.week_id for r in all_runs if r.week_id and r.status == "completed"}
+
+    # 過濾出未訓練的週
+    untrained_weeks = [w for w in year_weeks if w.week_id not in trained_week_ids]
+
+    if not untrained_weeks:
+        raise HTTPException(status_code=400, detail=f"{year} 年沒有待訓練的週")
+
+    # 按週 ID 排序（從最早的週開始）
+    untrained_weeks.sort(key=lambda w: w.week_id)
+    week_ids = [w.week_id for w in untrained_weeks]
+
+    # 確認有啟用的因子
+    enabled_factors = factor_repo.get_all(enabled=True)
+    if not enabled_factors:
+        raise HTTPException(status_code=400, detail="No enabled factors found")
+
+    factor_pool_hash = compute_factor_pool_hash([f.id for f in enabled_factors])
+
+    # 定義批量訓練任務
+    async def batch_training_task(progress_callback, **kwargs):
+        """批量訓練任務"""
+        task_session = get_session()
+        loop = asyncio.get_event_loop()
+
+        try:
+            total_weeks = len(week_ids)
+            results = []
+
+            for idx, week_id in enumerate(week_ids):
+                # 計算整體進度
+                base_progress = (idx / total_weeks) * 100
+                week_progress_range = 100 / total_weeks
+
+                await progress_callback(
+                    base_progress,
+                    f"[{idx + 1}/{total_weeks}] Training {week_id}..."
+                )
+
+                # 取得該週的訓練參數
+                week_slot = next((w for w in untrained_weeks if w.week_id == week_id), None)
+                if not week_slot:
+                    continue
+
+                train_start = week_slot.train_start
+                train_end = week_slot.train_end
+                valid_start = week_slot.valid_start
+                valid_end = week_slot.valid_end
+
+                # 導出 qlib 資料
+                lookback_days = 90
+                export_start = train_start - timedelta(days=lookback_days)
+                if export_start < db_start:
+                    export_start = db_start
+
+                def do_export():
+                    exporter = QlibExporter(task_session)
+                    export_config = ExportConfig(
+                        start_date=export_start,
+                        end_date=valid_end,
+                        output_dir=Path("data/qlib"),
+                    )
+                    return exporter.export(export_config)
+
+                await asyncio.to_thread(do_export)
+
+                # 執行訓練
+                trainer = ModelTrainer(qlib_data_dir="data/qlib")
+
+                def sync_progress(progress: float, message: str):
+                    # 將單週進度映射到整體進度
+                    adjusted = base_progress + (progress / 100) * week_progress_range
+                    loop.call_soon_threadsafe(
+                        lambda p=adjusted, m=f"[{idx + 1}/{total_weeks}] {message}": asyncio.create_task(
+                            progress_callback(p, m)
+                        )
+                    )
+
+                result = await asyncio.to_thread(
+                    trainer.train,
+                    session=task_session,
+                    week_id=week_id,
+                    train_start=train_start,
+                    train_end=train_end,
+                    valid_start=valid_start,
+                    valid_end=valid_end,
+                    factor_pool_hash=factor_pool_hash,
+                    on_progress=sync_progress,
+                )
+
+                results.append({
+                    "week_id": week_id,
+                    "model_name": result.model_name,
+                    "model_ic": result.model_ic,
+                })
+
+            return {
+                "total_trained": len(results),
+                "results": results,
+            }
+        finally:
+            task_session.close()
+
+    # 建立批量訓練任務
+    job_id = await job_manager.create_job(
+        job_type="train_batch",
+        task_fn=batch_training_task,
+        message=f"Batch training {year}: {len(week_ids)} weeks",
+    )
+
+    return TrainResponse(
+        job_id=job_id,
+        status="queued",
+        message=f"批量訓練已排入佇列 ({year} 年 {len(week_ids)} 週)",
     )
 
 

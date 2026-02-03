@@ -14,7 +14,7 @@ import {
   XCircle,
   Calendar,
 } from 'lucide-react'
-import { modelApi, WeeksResponse, WeekSlot, Model, FactorSummary, hyperparamsApi, HyperparamsSummary } from '@/api/client'
+import { modelApi, WeeksResponse, Model, FactorSummary, hyperparamsApi, HyperparamsSummary } from '@/api/client'
 import { Link } from 'react-router-dom'
 import { useJobs } from '@/hooks/useJobs'
 import { useFetchOnChange } from '@/hooks/useFetchOnChange'
@@ -27,20 +27,31 @@ export function Training() {
   const [error, setError] = useState<string | null>(null)
   const [selectedWeekId, setSelectedWeekId] = useState<string | null>(null)
   const [selectedModel, setSelectedModel] = useState<Model | null>(null)
-  const [loadingDetail, setLoadingDetail] = useState(false)
+  const [, setLoadingDetail] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
   const [hyperparamsList, setHyperparamsList] = useState<HyperparamsSummary[]>([])
-  // 批次訓練佇列
-  const [trainingQueue, setTrainingQueue] = useState<string[]>([])
+  // 批量訓練年份標記
   const [queueYear, setQueueYear] = useState<string | null>(null)
 
   // WebSocket 訓練進度追蹤
   const { activeJob, clearJob, cancelJob } = useJobs()
 
-  // 訓練狀態
-  const isTraining = activeJob?.job_type === 'train' &&
+  // 訓練狀態（支援單週和批量訓練）
+  const isTraining = (activeJob?.job_type === 'train' || activeJob?.job_type === 'train_batch') &&
     ['queued', 'running'].includes(activeJob.status)
+
+  // 從批量訓練訊息解析剩餘數量 [1/5] Training... => 4
+  const getBatchRemaining = useCallback(() => {
+    if (activeJob?.job_type !== 'train_batch' || !activeJob.message) return 0
+    const match = activeJob.message.match(/\[(\d+)\/(\d+)\]/)
+    if (match) {
+      const current = parseInt(match[1], 10)
+      const total = parseInt(match[2], 10)
+      return total - current
+    }
+    return 0
+  }, [activeJob])
 
   const fetchData = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true)
@@ -96,38 +107,23 @@ export function Training() {
   useFetchOnChange('models', silentRefresh)
   useFetchOnChange('hyperparams', silentRefresh)
 
-  // 監聽訓練完成，處理批次訓練佇列
+  // 監聽訓練完成
   useEffect(() => {
-    if (activeJob?.status === 'completed' && activeJob?.job_type === 'train') {
-      fetchData(false)
+    const jobType = activeJob?.job_type
+    const isTrainJob = jobType === 'train' || jobType === 'train_batch'
 
-      // 檢查佇列是否還有待訓練的週
-      if (trainingQueue.length > 0) {
-        const [nextWeek, ...remaining] = trainingQueue
-        setTrainingQueue(remaining)
-        // 延遲啟動下一個訓練，確保狀態更新
-        setTimeout(() => {
-          modelApi.train({ week_id: nextWeek }).catch(err => {
-            alert(err instanceof Error ? err.message : 'Failed to start training')
-            setTrainingQueue([])
-            setQueueYear(null)
-          })
-        }, 1000)
-      } else {
-        // 佇列已空，清除年份標記
-        setQueueYear(null)
-      }
+    if (activeJob?.status === 'completed' && isTrainJob) {
+      fetchData(false)
+      setQueueYear(null)
 
       const timer = setTimeout(() => clearJob(activeJob.id), 3000)
       return () => clearTimeout(timer)
     }
-    if (activeJob?.status === 'failed' && activeJob?.job_type === 'train') {
+    if (activeJob?.status === 'failed' && isTrainJob) {
       fetchData(false)
-      // 訓練失敗，清空佇列
-      setTrainingQueue([])
       setQueueYear(null)
     }
-  }, [activeJob?.status, activeJob?.job_type, activeJob?.id, clearJob, fetchData, trainingQueue])
+  }, [activeJob?.status, activeJob?.job_type, activeJob?.id, clearJob, fetchData])
 
   const selectedSlot = weeksData?.slots.find(s => s.week_id === selectedWeekId)
 
@@ -147,7 +143,7 @@ export function Training() {
   }
 
   const handleStartTraining = async () => {
-    if (isTraining || trainingQueue.length > 0 || !selectedWeekId) return
+    if (isTraining || !selectedWeekId) return
     setActionLoading(true)
     try {
       await modelApi.train({ week_id: selectedWeekId })
@@ -160,7 +156,7 @@ export function Training() {
   }
 
   const handleTrainYear = async (year: string) => {
-    if (isTraining || trainingQueue.length > 0 || !weeksData) return
+    if (isTraining || !weeksData) return
 
     // 找出該年所有可訓練的週（未訓練）
     const trainableWeeks = weeksData.slots.filter(
@@ -171,29 +167,16 @@ export function Training() {
       return
     }
 
-    // 從最舊的週開始訓練（升序排列）
-    const sortedWeekIds = trainableWeeks
-      .sort((a, b) => a.week_id.localeCompare(b.week_id))
-      .map(s => s.week_id)
-
-    // 第一個立即訓練，其餘放入佇列
-    const [firstWeek, ...remainingWeeks] = sortedWeekIds
-    setTrainingQueue(remainingWeeks)
     setQueueYear(year)
 
     try {
-      await modelApi.train({ week_id: firstWeek })
+      // 使用後端批量訓練 API
+      await modelApi.trainBatch({ year })
       await fetchData(false)
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to start training')
-      setTrainingQueue([])
+      alert(err instanceof Error ? err.message : 'Failed to start batch training')
       setQueueYear(null)
     }
-  }
-
-  const handleCancelQueue = () => {
-    setTrainingQueue([])
-    setQueueYear(null)
   }
 
   const handleCancelTraining = async () => {
@@ -225,7 +208,7 @@ export function Training() {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4">
         <p className="text-red">{error}</p>
-        <button className="btn btn-secondary" onClick={fetchData}>
+        <button className="btn btn-secondary" onClick={() => fetchData()}>
           <RefreshCw className="h-4 w-4" />
           Retry
         </button>
@@ -255,7 +238,7 @@ export function Training() {
             <div className="flex items-center gap-2">
               <span className="badge badge-green text-xs">{trainedSlots.length} trained</span>
               <span className="badge badge-gray text-xs">{trainableSlots.length} pending</span>
-              <button onClick={fetchData} className="p-1 hover:bg-secondary rounded">
+              <button onClick={() => fetchData()} className="p-1 hover:bg-secondary rounded">
                 <RefreshCw className="h-3 w-3" />
               </button>
             </div>
@@ -269,9 +252,9 @@ export function Training() {
                 currentFactorPoolHash={weeksData.current_factor_pool_hash}
                 onTrainYear={handleTrainYear}
                 isTraining={isTraining || actionLoading}
-                queueYear={queueYear}
-                queueRemaining={trainingQueue.length}
-                onCancelQueue={handleCancelQueue}
+                queueYear={activeJob?.job_type === 'train_batch' && isTraining ? queueYear : null}
+                queueRemaining={getBatchRemaining()}
+                onCancelQueue={handleCancelTraining}
               />
             ) : (
               <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">

@@ -335,6 +335,7 @@ export const modelApi = {
   // 週訓練
   weeks: () => api.get<WeeksResponse>('/models/weeks'),
   train: (data: TrainRequest) => api.post<TrainResponse>('/models/train', data),
+  trainBatch: (data: { year: string }) => api.post<TrainResponse>('/models/train-batch', data),
 
   // 現有方法（向後兼容）
   current: () => api.get<Model>('/models/current'),

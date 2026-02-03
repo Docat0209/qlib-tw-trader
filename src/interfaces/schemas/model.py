@@ -162,6 +162,12 @@ class TrainRequest(BaseModel):
     week_id: str  # "2026W05"
 
 
+class TrainBatchRequest(BaseModel):
+    """批量訓練請求"""
+
+    year: str  # "2025"
+
+
 class TrainResponse(BaseModel):
     """訓練回應"""
 

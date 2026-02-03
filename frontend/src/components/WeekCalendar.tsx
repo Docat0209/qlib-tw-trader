@@ -110,8 +110,8 @@ interface WeekCellProps {
 
 function WeekCell({ slot, isSelected, onClick, currentFactorPoolHash }: WeekCellProps) {
   const weekNum = slot.week_id.slice(-2)
-  const isOutdated = slot.model?.is_outdated ||
-    (slot.model && currentFactorPoolHash && slot.model.factor_pool_hash !== currentFactorPoolHash)
+  const isOutdated = Boolean(slot.model?.is_outdated ||
+    (slot.model && currentFactorPoolHash && slot.model.factor_pool_hash !== currentFactorPoolHash))
 
   const statusStyles = {
     trained: 'bg-green-100 text-green-800 hover:bg-green-200',
