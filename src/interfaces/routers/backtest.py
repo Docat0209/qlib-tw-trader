@@ -203,6 +203,256 @@ async def get_backtest_summary(
     )
 
 
+# =============================================================================
+# Walk-Forward 回測 API（必須在 /{backtest_id} 之前定義）
+# =============================================================================
+
+
+@router.get("/walk-forward/available-weeks", response_model=AvailableWeeksResponse)
+async def get_available_weeks(
+    session: Session = Depends(get_db),
+):
+    """
+    取得可回測的週列表
+
+    返回所有週的狀態（可用、缺失需 fallback、不可選）
+    """
+    from src.services.walk_forward_backtester import WalkForwardBacktester
+    from src.shared.week_utils import get_current_week_id
+
+    backtester = WalkForwardBacktester(session)
+    weeks = backtester.get_available_weeks()
+
+    return AvailableWeeksResponse(
+        weeks=[
+            WeekStatus(
+                week_id=w["week_id"],
+                status=w["status"],
+                model_name=w.get("model_name"),
+                valid_ic=w.get("valid_ic"),
+                fallback_week=w.get("fallback_week"),
+                fallback_model=w.get("fallback_model"),
+                reason=w.get("reason"),
+            )
+            for w in weeks
+        ],
+        current_week_id=get_current_week_id(),
+    )
+
+
+@router.get("/walk-forward", response_model=WalkForwardListResponse)
+async def list_walk_forward_backtests(
+    session: Session = Depends(get_db),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """取得 Walk-Forward 回測列表"""
+    from src.repositories.walk_forward import WalkForwardBacktestRepository
+
+    repo = WalkForwardBacktestRepository(session)
+    backtests = repo.get_recent(limit)
+
+    return WalkForwardListResponse(
+        items=[
+            WalkForwardResponse(
+                id=bt.id,
+                start_week_id=bt.start_week_id,
+                end_week_id=bt.end_week_id,
+                status=bt.status,
+                config=WalkForwardConfig(
+                    initial_capital=float(bt.initial_capital),
+                    max_positions=bt.max_positions,
+                    trade_price=bt.trade_price,
+                    enable_incremental=bt.enable_incremental,
+                    strategy=bt.strategy,
+                ),
+                created_at=bt.created_at.isoformat() if bt.created_at else "",
+                completed_at=bt.completed_at.isoformat() if bt.completed_at else None,
+            )
+            for bt in backtests
+        ],
+        total=len(backtests),
+    )
+
+
+@router.get("/walk-forward/{backtest_id}", response_model=WalkForwardDetailResponse)
+async def get_walk_forward_backtest(
+    backtest_id: int,
+    session: Session = Depends(get_db),
+):
+    """取得 Walk-Forward 回測詳情"""
+    from src.repositories.walk_forward import WalkForwardBacktestRepository
+
+    repo = WalkForwardBacktestRepository(session)
+    bt = repo.get(backtest_id)
+
+    if not bt:
+        raise HTTPException(status_code=404, detail="Walk-forward backtest not found")
+
+    # 解析結果
+    ic_analysis = None
+    return_metrics = None
+    weekly_details = None
+    equity_curve = None
+
+    if bt.result:
+        try:
+            result_data = json.loads(bt.result)
+            if "ic_analysis" in result_data:
+                ic_data = result_data["ic_analysis"]
+                ic_analysis = IcAnalysis(
+                    avg_valid_ic=ic_data.get("avg_valid_ic", 0),
+                    avg_live_ic=ic_data.get("avg_live_ic", 0),
+                    ic_decay=ic_data.get("ic_decay", 0),
+                    ic_correlation=ic_data.get("ic_correlation"),
+                )
+            if "return_metrics" in result_data:
+                ret_data = result_data["return_metrics"]
+                return_metrics = WalkForwardReturnMetrics(
+                    cumulative_return=ret_data.get("cumulative_return", 0),
+                    market_return=ret_data.get("market_return", 0),
+                    excess_return=ret_data.get("excess_return", 0),
+                    sharpe_ratio=ret_data.get("sharpe_ratio"),
+                    max_drawdown=ret_data.get("max_drawdown"),
+                    win_rate=ret_data.get("win_rate"),
+                    total_trades=ret_data.get("total_trades"),
+                )
+        except json.JSONDecodeError:
+            pass
+
+    if bt.weekly_details:
+        try:
+            details_data = json.loads(bt.weekly_details)
+            weekly_details = [
+                WeeklyDetail(
+                    predict_week=d.get("predict_week", ""),
+                    model_week=d.get("model_week", ""),
+                    model_name=d.get("model_name", ""),
+                    valid_ic=d.get("valid_ic"),
+                    live_ic=d.get("live_ic"),
+                    ic_decay=d.get("ic_decay"),
+                    week_return=d.get("week_return"),
+                    market_return=d.get("market_return"),
+                    is_fallback=d.get("is_fallback", False),
+                    incremental_days=d.get("incremental_days"),
+                )
+                for d in details_data
+            ]
+        except json.JSONDecodeError:
+            pass
+
+    if bt.equity_curve:
+        try:
+            curve_data = json.loads(bt.equity_curve)
+            equity_curve = [
+                EquityCurvePoint(
+                    date=p.get("date", ""),
+                    equity=p.get("equity", 0),
+                    benchmark=p.get("benchmark"),
+                    drawdown=p.get("drawdown"),
+                )
+                for p in curve_data
+            ]
+        except json.JSONDecodeError:
+            pass
+
+    return WalkForwardDetailResponse(
+        id=bt.id,
+        start_week_id=bt.start_week_id,
+        end_week_id=bt.end_week_id,
+        status=bt.status,
+        config=WalkForwardConfig(
+            initial_capital=float(bt.initial_capital),
+            max_positions=bt.max_positions,
+            trade_price=bt.trade_price,
+            enable_incremental=bt.enable_incremental,
+            strategy=bt.strategy,
+        ),
+        ic_analysis=ic_analysis,
+        return_metrics=return_metrics,
+        weekly_details=weekly_details,
+        equity_curve=equity_curve,
+        created_at=bt.created_at.isoformat() if bt.created_at else "",
+        completed_at=bt.completed_at.isoformat() if bt.completed_at else None,
+    )
+
+
+@router.post("/walk-forward", response_model=WalkForwardRunResponse)
+async def run_walk_forward_backtest(
+    request: WalkForwardRequest,
+    session: Session = Depends(get_db),
+):
+    """執行 Walk-Forward 回測"""
+    from src.repositories.walk_forward import WalkForwardBacktestRepository
+    from src.shared.week_utils import compare_week_ids, get_current_week_id
+
+    # 驗證週 ID
+    current_week = get_current_week_id()
+    if compare_week_ids(request.end_week_id, current_week) >= 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"End week must be before current week ({current_week})"
+        )
+
+    if compare_week_ids(request.start_week_id, request.end_week_id) > 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Start week must be before or equal to end week"
+        )
+
+    # 建立回測記錄
+    repo = WalkForwardBacktestRepository(session)
+    backtest = repo.create(
+        start_week_id=request.start_week_id,
+        end_week_id=request.end_week_id,
+        initial_capital=Decimal(str(request.initial_capital)),
+        max_positions=request.max_positions,
+        trade_price=request.trade_price,
+        enable_incremental=request.enable_incremental,
+        strategy=request.strategy,
+    )
+
+    # 建立非同步任務
+    job_id = await job_manager.create_job(
+        job_type="walk_forward",
+        task_fn=run_walk_forward_task,
+        message=f"Running walk-forward backtest {backtest.id}",
+        backtest_id=backtest.id,
+        start_week_id=request.start_week_id,
+        end_week_id=request.end_week_id,
+        initial_capital=request.initial_capital,
+        max_positions=request.max_positions,
+        trade_price=request.trade_price,
+        enable_incremental=request.enable_incremental,
+    )
+
+    return WalkForwardRunResponse(
+        backtest_id=backtest.id,
+        job_id=job_id,
+        status="queued",
+        message="Walk-forward backtest started",
+    )
+
+
+@router.delete("/walk-forward/{backtest_id}")
+async def delete_walk_forward_backtest(
+    backtest_id: int,
+    session: Session = Depends(get_db),
+):
+    """刪除 Walk-Forward 回測記錄"""
+    from src.repositories.walk_forward import WalkForwardBacktestRepository
+
+    repo = WalkForwardBacktestRepository(session)
+    if not repo.delete(backtest_id):
+        raise HTTPException(status_code=404, detail="Walk-forward backtest not found")
+
+    return {"message": "Walk-forward backtest deleted", "id": backtest_id}
+
+
+# =============================================================================
+# 原有回測 API
+# =============================================================================
+
+
 @router.get("/{backtest_id}", response_model=BacktestDetailResponse)
 async def get_backtest(
     backtest_id: int,
@@ -905,248 +1155,8 @@ async def get_all_trades(
 
 
 # =============================================================================
-# Walk-Forward 回測 API
+# Walk-Forward 回測任務（非 API 端點）
 # =============================================================================
-
-
-@router.get("/walk-forward/available-weeks", response_model=AvailableWeeksResponse)
-async def get_available_weeks(
-    session: Session = Depends(get_db),
-):
-    """
-    取得可回測的週列表
-
-    返回所有週的狀態（可用、缺失需 fallback、不可選）
-    """
-    from src.services.walk_forward_backtester import WalkForwardBacktester
-    from src.shared.week_utils import get_current_week_id
-
-    backtester = WalkForwardBacktester(session)
-    weeks = backtester.get_available_weeks()
-
-    return AvailableWeeksResponse(
-        weeks=[
-            WeekStatus(
-                week_id=w["week_id"],
-                status=w["status"],
-                model_name=w.get("model_name"),
-                valid_ic=w.get("valid_ic"),
-                fallback_week=w.get("fallback_week"),
-                fallback_model=w.get("fallback_model"),
-                reason=w.get("reason"),
-            )
-            for w in weeks
-        ],
-        current_week_id=get_current_week_id(),
-    )
-
-
-@router.get("/walk-forward", response_model=WalkForwardListResponse)
-async def list_walk_forward_backtests(
-    session: Session = Depends(get_db),
-    limit: int = Query(20, ge=1, le=100),
-):
-    """取得 Walk-Forward 回測列表"""
-    from src.repositories.walk_forward import WalkForwardBacktestRepository
-
-    repo = WalkForwardBacktestRepository(session)
-    backtests = repo.get_recent(limit)
-
-    return WalkForwardListResponse(
-        items=[
-            WalkForwardResponse(
-                id=bt.id,
-                start_week_id=bt.start_week_id,
-                end_week_id=bt.end_week_id,
-                status=bt.status,
-                config=WalkForwardConfig(
-                    initial_capital=float(bt.initial_capital),
-                    max_positions=bt.max_positions,
-                    trade_price=bt.trade_price,
-                    enable_incremental=bt.enable_incremental,
-                    strategy=bt.strategy,
-                ),
-                created_at=bt.created_at.isoformat() if bt.created_at else "",
-                completed_at=bt.completed_at.isoformat() if bt.completed_at else None,
-            )
-            for bt in backtests
-        ],
-        total=len(backtests),
-    )
-
-
-@router.get("/walk-forward/{backtest_id}", response_model=WalkForwardDetailResponse)
-async def get_walk_forward_backtest(
-    backtest_id: int,
-    session: Session = Depends(get_db),
-):
-    """取得 Walk-Forward 回測詳情"""
-    from src.repositories.walk_forward import WalkForwardBacktestRepository
-
-    repo = WalkForwardBacktestRepository(session)
-    bt = repo.get(backtest_id)
-
-    if not bt:
-        raise HTTPException(status_code=404, detail="Walk-forward backtest not found")
-
-    # 解析結果
-    ic_analysis = None
-    return_metrics = None
-    weekly_details = None
-    equity_curve = None
-
-    if bt.result:
-        try:
-            result_data = json.loads(bt.result)
-            if "ic_analysis" in result_data:
-                ic_data = result_data["ic_analysis"]
-                ic_analysis = IcAnalysis(
-                    avg_valid_ic=ic_data.get("avg_valid_ic", 0),
-                    avg_live_ic=ic_data.get("avg_live_ic", 0),
-                    ic_decay=ic_data.get("ic_decay", 0),
-                    ic_correlation=ic_data.get("ic_correlation"),
-                )
-            if "return_metrics" in result_data:
-                ret_data = result_data["return_metrics"]
-                return_metrics = WalkForwardReturnMetrics(
-                    cumulative_return=ret_data.get("cumulative_return", 0),
-                    market_return=ret_data.get("market_return", 0),
-                    excess_return=ret_data.get("excess_return", 0),
-                    sharpe_ratio=ret_data.get("sharpe_ratio"),
-                    max_drawdown=ret_data.get("max_drawdown"),
-                    win_rate=ret_data.get("win_rate"),
-                    total_trades=ret_data.get("total_trades"),
-                )
-        except json.JSONDecodeError:
-            pass
-
-    if bt.weekly_details:
-        try:
-            details_data = json.loads(bt.weekly_details)
-            weekly_details = [
-                WeeklyDetail(
-                    predict_week=d.get("predict_week", ""),
-                    model_week=d.get("model_week", ""),
-                    model_name=d.get("model_name", ""),
-                    valid_ic=d.get("valid_ic"),
-                    live_ic=d.get("live_ic"),
-                    ic_decay=d.get("ic_decay"),
-                    week_return=d.get("week_return"),
-                    market_return=d.get("market_return"),
-                    is_fallback=d.get("is_fallback", False),
-                    incremental_days=d.get("incremental_days"),
-                )
-                for d in details_data
-            ]
-        except json.JSONDecodeError:
-            pass
-
-    if bt.equity_curve:
-        try:
-            curve_data = json.loads(bt.equity_curve)
-            equity_curve = [
-                EquityCurvePoint(
-                    date=p.get("date", ""),
-                    equity=p.get("equity", 0),
-                    benchmark=p.get("benchmark"),
-                    drawdown=p.get("drawdown"),
-                )
-                for p in curve_data
-            ]
-        except json.JSONDecodeError:
-            pass
-
-    return WalkForwardDetailResponse(
-        id=bt.id,
-        start_week_id=bt.start_week_id,
-        end_week_id=bt.end_week_id,
-        status=bt.status,
-        config=WalkForwardConfig(
-            initial_capital=float(bt.initial_capital),
-            max_positions=bt.max_positions,
-            trade_price=bt.trade_price,
-            enable_incremental=bt.enable_incremental,
-            strategy=bt.strategy,
-        ),
-        ic_analysis=ic_analysis,
-        return_metrics=return_metrics,
-        weekly_details=weekly_details,
-        equity_curve=equity_curve,
-        created_at=bt.created_at.isoformat() if bt.created_at else "",
-        completed_at=bt.completed_at.isoformat() if bt.completed_at else None,
-    )
-
-
-@router.post("/walk-forward", response_model=WalkForwardRunResponse)
-async def run_walk_forward_backtest(
-    request: WalkForwardRequest,
-    session: Session = Depends(get_db),
-):
-    """執行 Walk-Forward 回測"""
-    from src.repositories.walk_forward import WalkForwardBacktestRepository
-    from src.shared.week_utils import compare_week_ids, get_current_week_id
-
-    # 驗證週 ID
-    current_week = get_current_week_id()
-    if compare_week_ids(request.end_week_id, current_week) >= 0:
-        raise HTTPException(
-            status_code=400,
-            detail=f"End week must be before current week ({current_week})"
-        )
-
-    if compare_week_ids(request.start_week_id, request.end_week_id) > 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Start week must be before or equal to end week"
-        )
-
-    # 建立回測記錄
-    repo = WalkForwardBacktestRepository(session)
-    backtest = repo.create(
-        start_week_id=request.start_week_id,
-        end_week_id=request.end_week_id,
-        initial_capital=Decimal(str(request.initial_capital)),
-        max_positions=request.max_positions,
-        trade_price=request.trade_price,
-        enable_incremental=request.enable_incremental,
-        strategy=request.strategy,
-    )
-
-    # 建立非同步任務
-    job_id = await job_manager.create_job(
-        job_type="walk_forward",
-        task_fn=run_walk_forward_task,
-        message=f"Running walk-forward backtest {backtest.id}",
-        backtest_id=backtest.id,
-        start_week_id=request.start_week_id,
-        end_week_id=request.end_week_id,
-        initial_capital=request.initial_capital,
-        max_positions=request.max_positions,
-        trade_price=request.trade_price,
-        enable_incremental=request.enable_incremental,
-    )
-
-    return WalkForwardRunResponse(
-        backtest_id=backtest.id,
-        job_id=job_id,
-        status="queued",
-        message="Walk-forward backtest started",
-    )
-
-
-@router.delete("/walk-forward/{backtest_id}")
-async def delete_walk_forward_backtest(
-    backtest_id: int,
-    session: Session = Depends(get_db),
-):
-    """刪除 Walk-Forward 回測記錄"""
-    from src.repositories.walk_forward import WalkForwardBacktestRepository
-
-    repo = WalkForwardBacktestRepository(session)
-    if not repo.delete(backtest_id):
-        raise HTTPException(status_code=404, detail="Walk-forward backtest not found")
-
-    return {"message": "Walk-forward backtest deleted", "id": backtest_id}
 
 
 async def run_walk_forward_task(
