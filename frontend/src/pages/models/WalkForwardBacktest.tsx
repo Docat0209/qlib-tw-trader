@@ -9,9 +9,9 @@ import {
   AlertCircle,
   CheckCircle,
   TrendingUp,
-  TrendingDown,
   Trash2,
   Activity,
+  AlertTriangle,
 } from 'lucide-react'
 import {
   walkForwardApi,
@@ -28,7 +28,6 @@ export function WalkForwardBacktest() {
   const [backtests, setBacktests] = useState<WalkForwardItem[]>([])
   const [selectedBacktest, setSelectedBacktest] = useState<WalkForwardDetail | null>(null)
   const [availableWeeks, setAvailableWeeks] = useState<WeekStatus[]>([])
-  const [currentWeekId, setCurrentWeekId] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
@@ -41,7 +40,8 @@ export function WalkForwardBacktest() {
   const [tradePrice, setTradePrice] = useState<'close' | 'open'>('open')
   const [enableIncremental, setEnableIncremental] = useState(false)
 
-  const { activeJob } = useJobs()
+  const { activeJob, cancelJob } = useJobs()
+  const [actionLoading, setActionLoading] = useState(false)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -53,7 +53,6 @@ export function WalkForwardBacktest() {
       ])
       setBacktests(backtestsRes.items)
       setAvailableWeeks(weeksRes.weeks)
-      setCurrentWeekId(weeksRes.current_week_id)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data')
     } finally {
@@ -116,6 +115,19 @@ export function WalkForwardBacktest() {
     setEndWeek(end)
   }
 
+  const handleCancelBacktest = async () => {
+    if (!activeJob) return
+    setActionLoading(true)
+    try {
+      await cancelJob(activeJob.id)
+      await fetchData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to cancel backtest')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   useEffect(() => {
     fetchData()
   }, [fetchData])
@@ -123,7 +135,7 @@ export function WalkForwardBacktest() {
   useFetchOnChange('walk_forward_backtests', fetchData)
 
   useEffect(() => {
-    if (activeJob?.job_type === 'walk_forward_backtest') {
+    if (activeJob?.job_type === 'walk_forward') {
       if (activeJob.status === 'completed') {
         fetchData()
       } else if (activeJob.status === 'failed') {
@@ -170,7 +182,6 @@ export function WalkForwardBacktest() {
               startWeek={startWeek}
               endWeek={endWeek}
               onRangeChange={handleRangeChange}
-              currentWeekId={currentWeekId}
             />
           </CardContent>
         </Card>
@@ -250,25 +261,36 @@ export function WalkForwardBacktest() {
         )}
 
         {/* Active Job Progress */}
-        {activeJob && activeJob.job_type === 'walk_forward_backtest' && ['queued', 'running'].includes(activeJob.status) && (
-          <Card className="shrink-0">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <Loader2 className="h-4 w-4 animate-spin text-blue" />
-                <div className="flex-1">
-                  <p className="text-sm font-semibold">Running Walk-Forward Backtest</p>
-                  <p className="text-xs text-muted-foreground">{activeJob.message || 'Processing...'}</p>
-                </div>
-                <span className="text-lg font-semibold text-blue">{activeJob.progress}%</span>
+        {activeJob && activeJob.job_type === 'walk_forward' && ['queued', 'running'].includes(activeJob.status) && (
+          <div className="p-4 rounded-lg bg-blue/10 border border-blue/20 shrink-0">
+            <div className="flex items-center gap-3 mb-2">
+              <Loader2 className="h-5 w-5 animate-spin text-blue" />
+              <div className="flex-1">
+                <p className="font-semibold text-blue">Walk-Forward Backtest in Progress</p>
+                <p className="text-sm text-muted-foreground">
+                  {activeJob.message || 'Processing...'}
+                </p>
               </div>
-              <div className="mt-2 h-1.5 bg-secondary rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-blue transition-all duration-300"
-                  style={{ width: `${activeJob.progress}%` }}
-                />
-              </div>
-            </CardContent>
-          </Card>
+              <span className="font-mono text-lg text-blue">
+                {typeof activeJob.progress === 'number' ? activeJob.progress.toFixed(1) : activeJob.progress}%
+              </span>
+              <button
+                className="btn btn-sm btn-ghost text-red hover:bg-red/10"
+                onClick={handleCancelBacktest}
+                disabled={actionLoading}
+                title="Cancel backtest"
+              >
+                <AlertTriangle className="h-4 w-4" />
+                Cancel
+              </button>
+            </div>
+            <div className="h-2 bg-secondary rounded-full overflow-hidden">
+              <div
+                className="h-full bg-blue transition-all duration-300"
+                style={{ width: `${activeJob.progress}%` }}
+              />
+            </div>
+          </div>
         )}
 
         {/* Row 1: Config + IC Analysis */}

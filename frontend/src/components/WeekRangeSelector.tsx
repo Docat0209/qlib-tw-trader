@@ -7,7 +7,6 @@ interface WeekRangeSelectorProps {
   startWeek: string | null
   endWeek: string | null
   onRangeChange: (start: string | null, end: string | null) => void
-  currentWeekId: string
 }
 
 export function WeekRangeSelector({
@@ -15,7 +14,6 @@ export function WeekRangeSelector({
   startWeek,
   endWeek,
   onRangeChange,
-  currentWeekId,
 }: WeekRangeSelectorProps) {
   // 按年份分組
   const byYear = weeks.reduce((acc, week) => {
