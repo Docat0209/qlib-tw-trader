@@ -12,7 +12,9 @@ import qlib
 from qlib.data import D
 from sqlalchemy.orm import Session
 
-from src.shared.constants import LABEL_EXPR, QLIB_DATA_DIR
+# 常數定義
+QLIB_DATA_DIR = Path("data/qlib")
+LABEL_EXPR = "Ref($close, -2) / Ref($close, -1) - 1"
 
 
 class IncrementalLearner:
