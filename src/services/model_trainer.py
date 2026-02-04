@@ -1023,7 +1023,7 @@ class ModelTrainer:
                 progress = 11.0 + p * 0.79
                 on_progress(progress, msg)
 
-        robust_selector = RobustFactorSelector(lgbm_params=lgbm_params)
+        robust_selector = RobustFactorSelector()
         result = robust_selector.select(
             factors=factors,
             X=X_train,
