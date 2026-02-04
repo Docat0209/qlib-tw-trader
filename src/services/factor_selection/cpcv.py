@@ -37,15 +37,52 @@ from src.shared.constants import (
     CPCV_EMBARGO_DAYS,
     CPCV_FALLBACK_MAX_FACTORS,
     CPCV_FALLBACK_POSITIVE_RATIO,
-    CPCV_FALLBACK_T_STATISTIC,
     CPCV_MIN_FACTORS_BEFORE_FALLBACK,
+    CPCV_MIN_POSITIVE_RATIO,
     CPCV_N_FOLDS,
     CPCV_N_TEST_FOLDS,
     CPCV_PURGE_DAYS,
+    CPCV_SIGNIFICANCE_ALPHA,
     CPCV_TIME_DECAY_RATE,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def calculate_dynamic_t_threshold(
+    n_factors: int, n_paths: int, alpha: float = 0.05
+) -> float:
+    """
+    計算動態 t 閾值
+
+    基於 Bonferroni 校正 + 小樣本 t 分佈。
+
+    原理：
+    - Harvey et al. (2016) 的 t >= 3.0 假設大樣本 (df → ∞) 和 ~300 個因子
+    - 我們需要根據實際的因子數量和路徑數量動態調整
+    - 小樣本 (n_paths=15) 下，t 分佈的尾部更厚，臨界值更大
+
+    Args:
+        n_factors: 測試的因子數量（用於多重比較校正）
+        n_paths: CPCV 路徑數量（決定自由度）
+        alpha: 顯著水準（預設 0.05）
+
+    Returns:
+        動態計算的 t 閾值
+
+    References:
+        - Harvey, C., Liu, Y. & Zhu, H. (2016). "...and the Cross-Section of Expected Returns"
+        - Bonferroni correction: α_adjusted = α / n_factors
+        - t-distribution critical value with df = n_paths - 1
+    """
+    # Bonferroni 校正：調整顯著水準
+    alpha_adjusted = alpha / max(1, n_factors)
+
+    # 小樣本使用 t 分佈（雙尾檢驗）
+    df = max(1, n_paths - 1)
+    t_threshold = stats.t.ppf(1 - alpha_adjusted / 2, df)
+
+    return float(t_threshold)
 
 
 @dataclass
@@ -71,9 +108,8 @@ class CPCVSelector(FactorSelector):
         n_test_folds: int = CPCV_N_TEST_FOLDS,
         purge_days: int = CPCV_PURGE_DAYS,
         embargo_days: int = CPCV_EMBARGO_DAYS,
-        significance_level: float = 0.05,  # FDR 標準閾值 (Benjamini & Hochberg, 1995)
-        min_t_statistic: float = 3.0,  # Harvey et al. (2016) 建議 t ≥ 3.0 控制假發現率
-        min_positive_ratio: float = 0.6,  # 至少 60% 路徑有正向貢獻
+        significance_level: float = CPCV_SIGNIFICANCE_ALPHA,  # BH-FDR + 動態 t 閾值
+        min_positive_ratio: float = CPCV_MIN_POSITIVE_RATIO,  # 至少 60% 路徑有正向貢獻
         lgbm_params: dict[str, Any] | None = None,
     ):
         """
@@ -84,17 +120,20 @@ class CPCVSelector(FactorSelector):
             n_test_folds: 每次組合中的測試 fold 數（López de Prado 示例用 2）
             purge_days: Purging 天數（label lookahead 防護）
             embargo_days: Embargo 天數（序列相關防護）
-            significance_level: BH-FDR 顯著水準（標準 0.05）
-            min_t_statistic: 最低 t 統計量（Harvey et al. 2016 建議 3.0）
+            significance_level: 顯著水準，用於 BH-FDR 和動態 t 閾值計算
             min_positive_ratio: 最低正向路徑比例（穩定性要求）
             lgbm_params: LightGBM 參數
+
+        Note:
+            t 閾值不再硬編碼為 3.0，而是根據因子數量和路徑數量動態計算。
+            這遵循 Harvey et al. (2016) 的 Bonferroni 校正原理，同時考慮
+            小樣本的 t 分佈特性。
         """
         self.n_folds = n_folds
         self.n_test_folds = n_test_folds
         self.purge_days = purge_days
         self.embargo_days = embargo_days
         self.significance_level = significance_level
-        self.min_t_statistic = min_t_statistic
         self.min_positive_ratio = min_positive_ratio
         self.lgbm_params = lgbm_params or self._get_default_lgbm_params()
 
@@ -417,14 +456,34 @@ class CPCVSelector(FactorSelector):
             }
             factor_p_values[factor_name] = p_value
 
-        # === 論文支持的選擇標準 ===
-        # 方法 A: t >= 3.0 直接選擇 (Harvey, Liu & Zhu, 2016)
-        #         Harvey 等人建議 t > 3.0 作為因子發現的門檻，可替代多重檢驗校正
-        # 方法 B: BH-FDR + t >= 2.0 (Benjamini & Hochberg, 1995)
-        #         對於較弱的效果，需要同時通過 FDR 校正
+        # === 動態 t 閾值選擇標準 ===
+        # 基於 Harvey et al. (2016) 的多重比較校正原理，但動態調整：
+        # - 根據實際測試的因子數量計算 Bonferroni 校正
+        # - 根據 CPCV 路徑數量（小樣本）使用 t 分佈而非正態分佈
+        #
+        # 同時使用 BH-FDR 作為備選路徑（對於邊緣情況更有統計功效）
         # 兩者都要求: 正向路徑比例 >= 門檻 (穩定性要求)
 
-        HARVEY_T_THRESHOLD = 3.0  # Harvey et al. (2016) 建議的嚴格門檻
+        # 動態計算 t 閾值
+        dynamic_t_threshold = calculate_dynamic_t_threshold(
+            n_factors=n_factors,
+            n_paths=n_paths,
+            alpha=self.significance_level,
+        )
+
+        # Fallback t 閾值：使用較寬鬆的校正（10% 顯著水準）
+        fallback_t_threshold = calculate_dynamic_t_threshold(
+            n_factors=n_factors,
+            n_paths=n_paths,
+            alpha=0.10,  # 較寬鬆的顯著水準
+        )
+
+        logger.info(
+            f"CPCV: Dynamic t-thresholds calculated: "
+            f"primary={dynamic_t_threshold:.3f} (α={self.significance_level}), "
+            f"fallback={fallback_t_threshold:.3f} (α=0.10), "
+            f"n_factors={n_factors}, n_paths={n_paths}"
+        )
 
         sorted_factors = sorted(factor_p_values.items(), key=lambda x: x[1])
         n_tested = len(sorted_factors)
@@ -444,40 +503,40 @@ class CPCVSelector(FactorSelector):
             t_stat = stats_dict["t_stat"]
             positive_ratio = stats_dict["positive_ratio"]
 
-            # 條件檢查
-            pass_harvey = t_stat >= HARVEY_T_THRESHOLD  # Harvey 嚴格標準
+            # 條件檢查（使用動態閾值）
+            pass_dynamic_t = t_stat >= dynamic_t_threshold  # 動態 Bonferroni 校正
             pass_bh = rank <= bh_cutoff_rank  # BH-FDR 校正
-            pass_t = t_stat >= self.min_t_statistic  # 較寬鬆的 t 門檻
             pass_stability = positive_ratio >= self.min_positive_ratio  # 穩定性
 
-            stats_dict["pass_harvey"] = pass_harvey
+            stats_dict["pass_dynamic_t"] = pass_dynamic_t
+            stats_dict["dynamic_t_threshold"] = dynamic_t_threshold
             stats_dict["pass_bh"] = pass_bh
-            stats_dict["pass_t"] = pass_t
             stats_dict["pass_stability"] = pass_stability
 
             # 選擇邏輯：
-            # 路徑 A: t >= 3.0 (Harvey) + 穩定性 → 直接選擇
-            # 路徑 B: BH-FDR + t >= 2.0 + 穩定性 → 選擇
-            if (pass_harvey and pass_stability) or (pass_bh and pass_t and pass_stability):
+            # 路徑 A: t >= 動態閾值 (Bonferroni) + 穩定性 → 直接選擇
+            # 路徑 B: BH-FDR + 穩定性 → 選擇
+            if (pass_dynamic_t and pass_stability) or (pass_bh and pass_stability):
                 selected_names.append(factor_name)
                 stats_dict["selected"] = True
-                stats_dict["selection_path"] = "harvey" if pass_harvey else "bh_fdr"
+                stats_dict["selection_path"] = "bonferroni" if pass_dynamic_t else "bh_fdr"
             else:
                 stats_dict["selected"] = False
 
         logger.info(
-            f"CPCV: Strict selection: {len(selected_names)} factors "
-            f"(Harvey path: {sum(1 for n in selected_names if factor_stats[n].get('selection_path') == 'harvey')}, "
+            f"CPCV: Primary selection: {len(selected_names)} factors "
+            f"(Bonferroni path: {sum(1 for n in selected_names if factor_stats[n].get('selection_path') == 'bonferroni')}, "
             f"BH-FDR path: {sum(1 for n in selected_names if factor_stats[n].get('selection_path') == 'bh_fdr')})"
         )
 
-        # 備用：如果嚴格標準選出的因子太少，使用 fallback 補充
+        # 備用：如果主選擇的因子太少，使用較寬鬆的動態閾值補充
         # 原因：只有 1-2 個因子的模型太不穩定
         if len(selected_names) < CPCV_MIN_FACTORS_BEFORE_FALLBACK:
             logger.warning(
-                f"CPCV: Only {len(selected_names)} factors passed strict criteria (< {CPCV_MIN_FACTORS_BEFORE_FALLBACK}), "
-                f"using fallback to supplement "
-                f"(t>={CPCV_FALLBACK_T_STATISTIC}, positive_ratio>={CPCV_FALLBACK_POSITIVE_RATIO})"
+                f"CPCV: Only {len(selected_names)} factors passed primary criteria "
+                f"(< {CPCV_MIN_FACTORS_BEFORE_FALLBACK}), "
+                f"using fallback with relaxed threshold "
+                f"(t>={fallback_t_threshold:.3f}, positive_ratio>={CPCV_FALLBACK_POSITIVE_RATIO})"
             )
             # 找出符合 fallback 條件但尚未被選中的因子
             already_selected = set(selected_names)
@@ -485,7 +544,7 @@ class CPCVSelector(FactorSelector):
                 (name, factor_stats[name]["t_stat"])
                 for name in factor_p_values.keys()
                 if name not in already_selected
-                and factor_stats[name]["t_stat"] >= CPCV_FALLBACK_T_STATISTIC
+                and factor_stats[name]["t_stat"] >= fallback_t_threshold
                 and factor_stats[name]["positive_ratio"] >= CPCV_FALLBACK_POSITIVE_RATIO
             ]
             relaxed_candidates.sort(key=lambda x: x[1], reverse=True)
@@ -496,7 +555,8 @@ class CPCVSelector(FactorSelector):
             supplement_names = [name for name, _ in relaxed_candidates[:max_supplement]]
 
             for name in supplement_names:
-                factor_stats[name]["relaxed_selected"] = True
+                factor_stats[name]["fallback_selected"] = True
+                factor_stats[name]["fallback_t_threshold"] = fallback_t_threshold
                 selected_names.append(name)
 
             logger.info(
@@ -529,9 +589,10 @@ class CPCVSelector(FactorSelector):
                 "purge_days": self.purge_days,
                 "embargo_days": self.embargo_days,
                 "significance_level": self.significance_level,
-                "min_t_statistic": self.min_t_statistic,
+                "dynamic_t_threshold": dynamic_t_threshold,
+                "fallback_t_threshold": fallback_t_threshold,
                 "min_positive_ratio": self.min_positive_ratio,
-                "correction_method": "benjamini-hochberg",
+                "correction_method": "dynamic-bonferroni + benjamini-hochberg",
                 "bh_cutoff_rank": bh_cutoff_rank,
                 "time_decay_rate": CPCV_TIME_DECAY_RATE,
             },

@@ -47,8 +47,7 @@ class RobustFactorSelector(FactorSelector):
         cpcv_n_test_folds: int = 2,
         cpcv_purge_days: int = 5,
         cpcv_embargo_days: int = 5,
-        cpcv_significance: float = 0.05,  # BH-FDR 標準閾值
-        cpcv_min_t_stat: float = 2.0,  # Harvey et al. 建議 3.0，我們用 2.0
+        cpcv_significance: float = 0.05,  # 用於動態 t 閾值計算
         cpcv_min_positive_ratio: float = 0.6,  # 穩定性要求
         # LightGBM 參數
         lgbm_params: dict[str, Any] | None = None,
@@ -61,6 +60,9 @@ class RobustFactorSelector(FactorSelector):
             bootstrap_*: Bootstrap 參數
             cpcv_*: CPCV 參數 (基於 López de Prado 和 Harvey 等人的論文)
             lgbm_params: LightGBM 參數
+
+        Note:
+            t 閾值不再硬編碼，而是由 CPCVSelector 根據因子數量和路徑數量動態計算。
         """
         self.enable_bootstrap = enable_bootstrap
 
@@ -72,14 +74,13 @@ class RobustFactorSelector(FactorSelector):
             min_ic=bootstrap_min_ic,
         )
 
-        # CPCV 選擇器
+        # CPCV 選擇器（t 閾值動態計算）
         self.cpcv_selector = CPCVSelector(
             n_folds=cpcv_n_folds,
             n_test_folds=cpcv_n_test_folds,
             purge_days=cpcv_purge_days,
             embargo_days=cpcv_embargo_days,
             significance_level=cpcv_significance,
-            min_t_statistic=cpcv_min_t_stat,
             min_positive_ratio=cpcv_min_positive_ratio,
             lgbm_params=lgbm_params,
         )

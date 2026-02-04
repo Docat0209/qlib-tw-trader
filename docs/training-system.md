@@ -156,21 +156,55 @@ BOOTSTRAP_SAMPLE_RATIO = 0.8     # 每次抽樣比例
 
 **參數**（`constants.py`）：
 ```python
-CPCV_N_FOLDS = 6           # 分割數
-CPCV_N_TEST_FOLDS = 2      # 測試 fold 數 → C(6,2)=15 條路徑
-CPCV_PURGE_DAYS = 5        # Purging 天數
-CPCV_EMBARGO_DAYS = 5      # Embargo 天數
-CPCV_MIN_T_STATISTIC = 3.0 # t-statistic 門檻 (Harvey et al., 2016)
-CPCV_TIME_DECAY_RATE = 0.95 # 時間衰減率
+CPCV_N_FOLDS = 6              # 分割數
+CPCV_N_TEST_FOLDS = 2         # 測試 fold 數 → C(6,2)=15 條路徑
+CPCV_PURGE_DAYS = 5           # Purging 天數
+CPCV_EMBARGO_DAYS = 5         # Embargo 天數
+CPCV_SIGNIFICANCE_ALPHA = 0.05 # 動態 t 閾值的顯著水準
+CPCV_TIME_DECAY_RATE = 0.95   # 時間衰減率
 ```
 
+**動態 t 閾值**（`cpcv.py`）：
+
+不使用硬編碼的 t ≥ 3.0，而是根據 Bonferroni 校正動態計算：
+
+```python
+from scipy import stats
+
+def calculate_dynamic_t_threshold(n_factors, n_paths, alpha=0.05):
+    """
+    動態計算 t 閾值
+
+    基於 Harvey et al. (2016) 的多重比較校正原理：
+    - Bonferroni 校正：α_adjusted = α / n_factors
+    - 小樣本使用 t 分佈：df = n_paths - 1
+    """
+    alpha_adjusted = alpha / max(1, n_factors)
+    df = max(1, n_paths - 1)
+    return stats.t.ppf(1 - alpha_adjusted / 2, df)
+```
+
+**範例閾值**：
+
+| n_factors | n_paths | t_threshold |
+|-----------|---------|-------------|
+| 10        | 15      | 3.33        |
+| 36        | 15      | 3.97        |
+| 36        | 45      | 3.41        |
+| 100       | 15      | 4.50        |
+
+**為什麼不硬編碼 t ≥ 3.0？**
+- Harvey et al. (2016) 的 t ≥ 3.0 假設大樣本（df → ∞）和 ~300 個因子
+- 我們只有 15 條 CPCV 路徑（df = 14），t 分佈的尾部更厚
+- 動態閾值根據實際情況調整，更符合統計原理
+
 **選擇邏輯**：
-1. **嚴格路徑**：t ≥ 3.0 + positive_ratio ≥ 0.6 → 直接選擇
-2. **BH-FDR 路徑**：BH 校正顯著 + t ≥ 2.0 + 穩定性 → 選擇
-3. **Fallback**（如果嚴格標準選出 < 5 個因子）：
-   - 從 t ≥ 2.0 + positive_ratio ≥ 0.55 的因子中補充
+1. **Bonferroni 路徑**：t ≥ 動態閾值 + positive_ratio ≥ 0.6 → 直接選擇
+2. **BH-FDR 路徑**：BH 校正顯著 + 穩定性 → 選擇
+3. **Fallback**（如果主選擇 < 5 個因子）：
+   - 使用較寬鬆的閾值（α = 0.10）
+   - 從通過 fallback 閾值 + positive_ratio ≥ 0.55 的因子中補充
    - 補充到至少 5 個，最多 15 個因子
-   - 避免只有 1-2 個因子導致模型不穩定
 
 **時間衰減權重**：
 - 近期路徑權重更高：`weight = 0.95^i`
@@ -374,13 +408,14 @@ CPCV_N_FOLDS = 6
 CPCV_N_TEST_FOLDS = 2
 CPCV_PURGE_DAYS = 5
 CPCV_EMBARGO_DAYS = 5
-CPCV_MIN_T_STATISTIC = 3.0
+CPCV_SIGNIFICANCE_ALPHA = 0.05  # 用於動態 t 閾值計算
 CPCV_TIME_DECAY_RATE = 0.95
 
-# === CPCV Fallback ===
-CPCV_FALLBACK_T_STATISTIC = 2.0
-CPCV_FALLBACK_POSITIVE_RATIO = 0.55
+# === CPCV 選擇參數 ===
+CPCV_MIN_POSITIVE_RATIO = 0.6      # 主選擇穩定性門檻
+CPCV_FALLBACK_POSITIVE_RATIO = 0.55  # Fallback 穩定性門檻
 CPCV_FALLBACK_MAX_FACTORS = 15
+CPCV_MIN_FACTORS_BEFORE_FALLBACK = 5
 
 # === Bootstrap 穩定性 ===
 BOOTSTRAP_N_ITERATIONS = 30
@@ -406,7 +441,8 @@ QUALITY_ICIR_MIN = 0.5
 
 2. **Harvey Multiple Testing**
    - Harvey, C., Liu, Y., & Zhu, H. (2016). "...and the Cross-Section of Expected Returns"
-   - 核心觀點：t-statistic ≥ 3.0 控制假發現率
+   - 核心觀點：使用 Bonferroni 校正控制假發現率
+   - 注意：原論文的 t ≥ 3.0 假設大樣本和 ~300 個因子，需根據實際情況動態調整
 
 3. **CPCV**
    - López de Prado, M. (2018). "Advances in Financial Machine Learning"
@@ -428,4 +464,5 @@ QUALITY_ICIR_MIN = 0.5
 
 | 日期 | 變更 |
 |------|------|
+| 2026-02-04 | 動態 t 閾值：移除硬編碼 t≥3.0，改用 Bonferroni 校正動態計算 |
 | 2026-02-04 | 初版：統一 IC 計算（Spearman）、Label 使用 CSRankNorm |

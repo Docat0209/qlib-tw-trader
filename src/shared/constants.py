@@ -23,15 +23,17 @@ CPCV_N_TEST_FOLDS = 2  # 測試 fold 數 → C(6,2)=15 條路徑
 CPCV_PURGE_DAYS = 5  # Purging 天數（避免 label 洩漏）
 CPCV_EMBARGO_DAYS = 5  # Embargo 天數（避免序列相關）
 
-# === 強化 CPCV 參數（Harvey et al., 2016）===
+# === 強化 CPCV 參數 ===
+# 動態 t 閾值：基於 Bonferroni 校正 + 小樣本 t 分佈
+# 參考：Harvey et al. (2016) 的多重比較校正原理，但調整為動態計算
 
-CPCV_MIN_T_STATISTIC = 3.0  # t ≥ 3.0 控制假發現率
+CPCV_SIGNIFICANCE_ALPHA = 0.05  # 顯著水準（用於動態 t 閾值計算）
 CPCV_TIME_DECAY_RATE = 0.95  # 時間衰減率（每 fold 衰減 5%）
 CPCV_CONSISTENCY_LOOKBACK = 4  # 一致性獎勵參考週數
 
-# === CPCV Fallback 參數（嚴格標準失敗時的備用）===
+# === CPCV 選擇參數 ===
 
-CPCV_FALLBACK_T_STATISTIC = 2.0  # Fallback t 門檻（比主門檻低）
+CPCV_MIN_POSITIVE_RATIO = 0.6  # 最低正向路徑比例（穩定性要求）
 CPCV_FALLBACK_POSITIVE_RATIO = 0.55  # Fallback positive ratio 門檻
 CPCV_FALLBACK_MAX_FACTORS = 15  # Fallback 最多選擇的因子數
 CPCV_MIN_FACTORS_BEFORE_FALLBACK = 5  # 低於此數量時觸發 Fallback 補充
