@@ -407,6 +407,10 @@ class WalkForwardBacktester:
 
         Live IC = corr(預測分數, 實際收益)
 
+        重要：收益計算必須對齊 Label 定義！
+        - Label: Ref($close, -2) / Ref($close, -1) - 1 = T+1 收盤 → T+2 收盤
+        - T 日分數預測的是 T+1→T+2 的收益
+
         Args:
             predictions: DataFrame with index=date, columns=stock_id, values=score
             predict_start: 預測期開始日期
@@ -422,13 +426,14 @@ class WalkForwardBacktester:
         if not instruments:
             return None
 
-        # 取得實際收益（使用 label 定義：Ref($close, -2) / Ref($close, -1) - 1）
-        # 這裡我們用簡化版：當日收盤價 / 前一日收盤價 - 1
+        # 擴展查詢範圍：往後多取 5 天（確保能計算 T+1→T+2 收益）
+        extended_end = predict_end + timedelta(days=7)
+
         price_df = D.features(
             instruments=instruments,
             fields=["$close"],
             start_time=predict_start.strftime("%Y-%m-%d"),
-            end_time=predict_end.strftime("%Y-%m-%d"),
+            end_time=extended_end.strftime("%Y-%m-%d"),
         )
 
         if price_df.empty:
@@ -436,15 +441,21 @@ class WalkForwardBacktester:
 
         price_df.columns = ["close"]
 
-        # 計算日收益
-        returns = price_df.groupby(level="instrument").pct_change()
+        # 計算 Label 對齊的收益：T+1 收盤 → T+2 收盤
+        # 對於 T 日，計算 close[T+2] / close[T+1] - 1
+        def calc_forward_returns(group: pd.DataFrame) -> pd.Series:
+            close = group["close"]
+            # shift(-1) 是 T+1 的價格, shift(-2) 是 T+2 的價格
+            return close.shift(-2) / close.shift(-1) - 1
+
+        returns = price_df.groupby(level="instrument", group_keys=False).apply(calc_forward_returns)
         returns = returns.dropna()
 
         if returns.empty:
             return None
 
         # 整理為寬表
-        returns_wide = returns["close"].unstack(level="instrument")
+        returns_wide = returns.unstack(level="instrument")
         returns_wide.index = pd.to_datetime(returns_wide.index.date)
 
         # 對齊日期

@@ -9,8 +9,8 @@ TZ_TAIPEI = ZoneInfo("Asia/Taipei")
 # === 訓練期設定（週訓練架構）===
 
 TRAIN_DAYS = 252  # 訓練期：1 年
-VALID_DAYS = 20   # 驗證期：20 個交易日（由 ValidPeriodCalculator Half-Life 計算）
-EMBARGO_DAYS = 5  # Embargo：1 週（防止 label lookahead）
+VALID_DAYS = 5    # 驗證期：5 個交易日（避免連續週重疊）
+EMBARGO_DAYS = 7  # Embargo：7 天（防止 label lookahead，對齊週移動間隔）
 
 # === 重訓練設定 ===
 
@@ -28,6 +28,12 @@ CPCV_EMBARGO_DAYS = 5  # Embargo 天數（避免序列相關）
 CPCV_MIN_T_STATISTIC = 3.0  # t ≥ 3.0 控制假發現率
 CPCV_TIME_DECAY_RATE = 0.95  # 時間衰減率（每 fold 衰減 5%）
 CPCV_CONSISTENCY_LOOKBACK = 4  # 一致性獎勵參考週數
+
+# === CPCV Fallback 參數（嚴格標準失敗時的備用）===
+
+CPCV_FALLBACK_T_STATISTIC = 2.0  # Fallback t 門檻（比主門檻低）
+CPCV_FALLBACK_POSITIVE_RATIO = 0.55  # Fallback positive ratio 門檻
+CPCV_FALLBACK_MAX_FACTORS = 15  # Fallback 最多選擇的因子數
 
 # === Bootstrap 穩定性過濾 ===
 

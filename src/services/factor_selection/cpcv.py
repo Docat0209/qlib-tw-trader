@@ -35,6 +35,9 @@ from src.repositories.models import Factor
 from src.services.factor_selection.base import FactorSelectionResult, FactorSelector
 from src.shared.constants import (
     CPCV_EMBARGO_DAYS,
+    CPCV_FALLBACK_MAX_FACTORS,
+    CPCV_FALLBACK_POSITIVE_RATIO,
+    CPCV_FALLBACK_T_STATISTIC,
     CPCV_N_FOLDS,
     CPCV_N_TEST_FOLDS,
     CPCV_PURGE_DAYS,
@@ -466,21 +469,26 @@ class CPCVSelector(FactorSelector):
             f"BH-FDR path: {sum(1 for n in selected_names if factor_stats[n].get('selection_path') == 'bh_fdr')})"
         )
 
-        # 備用：如果嚴格標準選不出，使用 t > 1.5 + stability 的放寬條件
+        # 備用：如果嚴格標準選不出，使用較嚴格的 fallback 條件
+        # 使用 constants.py 中定義的 fallback 參數
         if len(selected_names) == 0:
-            logger.warning("CPCV: No factors passed strict criteria, using relaxed selection")
+            logger.warning(
+                f"CPCV: No factors passed strict criteria, using relaxed selection "
+                f"(t>={CPCV_FALLBACK_T_STATISTIC}, positive_ratio>={CPCV_FALLBACK_POSITIVE_RATIO})"
+            )
             relaxed_candidates = [
                 (name, factor_stats[name]["t_stat"])
                 for name in factor_p_values.keys()
-                if factor_stats[name]["t_stat"] > 1.5
-                and factor_stats[name]["positive_ratio"] >= 0.5
+                if factor_stats[name]["t_stat"] >= CPCV_FALLBACK_T_STATISTIC
+                and factor_stats[name]["positive_ratio"] >= CPCV_FALLBACK_POSITIVE_RATIO
             ]
             relaxed_candidates.sort(key=lambda x: x[1], reverse=True)
-            # 選擇 t-statistic 最高的前 N 個（最多 30% 的因子）
-            max_relaxed = max(3, int(n_factors * 0.3))
+            # 選擇 t-statistic 最高的前 N 個（最多 CPCV_FALLBACK_MAX_FACTORS 個）
+            max_relaxed = min(CPCV_FALLBACK_MAX_FACTORS, max(3, int(n_factors * 0.1)))
             selected_names = [name for name, _ in relaxed_candidates[:max_relaxed]]
             for name in selected_names:
                 factor_stats[name]["relaxed_selected"] = True
+            logger.info(f"CPCV: Fallback selected {len(selected_names)} factors (max={max_relaxed})")
 
         # 打印統計摘要
         all_t_stats = [s["t_stat"] for s in factor_stats.values()]
