@@ -38,6 +38,7 @@ from src.shared.constants import (
     CPCV_N_FOLDS,
     CPCV_N_TEST_FOLDS,
     CPCV_PURGE_DAYS,
+    CPCV_TIME_DECAY_RATE,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,7 +68,7 @@ class CPCVSelector(FactorSelector):
         purge_days: int = CPCV_PURGE_DAYS,
         embargo_days: int = CPCV_EMBARGO_DAYS,
         significance_level: float = 0.05,  # FDR 標準閾值 (Benjamini & Hochberg, 1995)
-        min_t_statistic: float = 2.0,  # Harvey et al. 建議 3.0，但我們已有 BH-FDR 校正
+        min_t_statistic: float = 3.0,  # Harvey et al. (2016) 建議 t ≥ 3.0 控制假發現率
         min_positive_ratio: float = 0.6,  # 至少 60% 路徑有正向貢獻
         lgbm_params: dict[str, Any] | None = None,
     ):
@@ -332,7 +333,25 @@ class CPCVSelector(FactorSelector):
         if on_progress:
             on_progress(90, "CPCV: Statistical testing...")
 
-        # 計算每個因子的統計量
+        # 計算時間衰減權重（近期路徑權重更高）
+        # 權重基於 fold 的最大測試區塊索引：測試越近期的路徑權重越高
+        path_weights = []
+        for fold in folds:
+            max_test_idx = max(fold.test_fold_indices)
+            # 近期（高索引）權重高，遠期（低索引）權重低
+            weight = CPCV_TIME_DECAY_RATE ** (self.n_folds - 1 - max_test_idx)
+            path_weights.append(weight)
+
+        # 正規化權重
+        total_weight = sum(path_weights)
+        path_weights = [w / total_weight for w in path_weights]
+
+        logger.info(
+            f"CPCV: Time decay weights: min={min(path_weights):.3f}, "
+            f"max={max(path_weights):.3f}, decay_rate={CPCV_TIME_DECAY_RATE}"
+        )
+
+        # 計算每個因子的統計量（使用時間加權）
         n_factors = len(factor_names)
         factor_stats = {}
         factor_p_values = {}  # 用於 BH-FDR 校正
@@ -343,22 +362,49 @@ class CPCVSelector(FactorSelector):
                 logger.warning(f"CPCV: {factor_name} skipped (only {len(ics)} paths)")
                 continue
 
-            mean_ic = np.mean(ics)
-            std_ic = np.std(ics, ddof=1)
+            # 取得對應的權重（可能某些 fold 被跳過，長度不一定相等）
+            # 使用已計算的路徑數量來對齊權重
+            n_ics = len(ics)
+            if n_ics == len(path_weights):
+                weights = np.array(path_weights)
+            else:
+                # 如果長度不一致，使用均勻權重
+                weights = np.ones(n_ics) / n_ics
+
+            ics_array = np.array(ics)
+
+            # 時間加權平均
+            weighted_mean = np.average(ics_array, weights=weights)
+
+            # 時間加權標準差
+            weighted_var = np.average((ics_array - weighted_mean) ** 2, weights=weights)
+            weighted_std = np.sqrt(weighted_var)
+
+            # 有效樣本數（Kish's effective sample size）
+            # n_eff = (Σw)² / Σw² = 1 / Σ(w_normalized)²
+            effective_n = 1.0 / np.sum(weights ** 2)
+
+            # 同時計算未加權統計量以供參考
+            raw_mean = np.mean(ics_array)
+            raw_std = np.std(ics_array, ddof=1)
+
             n_positive = sum(1 for ic in ics if ic > 0)
             positive_ratio = n_positive / len(ics)
 
-            # 單樣本 t-test: H0: mean <= 0, H1: mean > 0
-            if std_ic > 0:
-                t_stat = mean_ic / (std_ic / np.sqrt(len(ics)))
-                p_value = 1 - stats.t.cdf(t_stat, df=len(ics) - 1)
+            # 使用時間加權的 t-test
+            if weighted_std > 0:
+                t_stat = weighted_mean / (weighted_std / np.sqrt(effective_n))
+                p_value = 1 - stats.t.cdf(t_stat, df=max(1, effective_n - 1))
             else:
                 t_stat = 0
                 p_value = 1.0
 
             factor_stats[factor_name] = {
-                "mean_importance": float(mean_ic),
-                "std_importance": float(std_ic),
+                "mean_importance": float(weighted_mean),
+                "std_importance": float(weighted_std),
+                "raw_mean": float(raw_mean),
+                "raw_std": float(raw_std),
+                "effective_n": float(effective_n),
                 "t_stat": float(t_stat),
                 "p_value": float(p_value),
                 "n_paths": len(ics),
@@ -465,6 +511,7 @@ class CPCVSelector(FactorSelector):
                 "min_positive_ratio": self.min_positive_ratio,
                 "correction_method": "benjamini-hochberg",
                 "bh_cutoff_rank": bh_cutoff_rank,
+                "time_decay_rate": CPCV_TIME_DECAY_RATE,
             },
             method="cpcv",
             stage_results={

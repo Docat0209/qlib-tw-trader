@@ -210,3 +210,26 @@ class HyperparamsInfo(BaseModel):
     params: dict | None
     stability: dict[str, float] | None
     periods: list[CultivationPeriod] | None
+
+
+class QualityMetricsItem(BaseModel):
+    """訓練品質指標項目"""
+
+    training_run_id: int
+    week_id: str | None
+    factor_jaccard_sim: float | None
+    factor_overlap_count: int | None
+    ic_moving_avg_5w: float | None
+    ic_moving_std_5w: float | None
+    icir_5w: float | None
+    has_warning: bool
+    warning_type: str | None
+    warning_message: str | None
+    created_at: str | None
+
+
+class QualityResponse(BaseModel):
+    """訓練品質回應"""
+
+    items: list[QualityMetricsItem]
+    thresholds: dict[str, float]

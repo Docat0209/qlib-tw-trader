@@ -863,6 +863,16 @@ class ModelTrainer:
             if on_progress:
                 on_progress(100.0, "Training completed")
 
+            # 計算並儲存訓練品質指標
+            try:
+                from src.services.stability import QualityMonitor
+
+                quality_monitor = QualityMonitor(session)
+                quality_monitor.compute_and_save(run)
+                logger.info(f"Computed quality metrics for training run {run.id}")
+            except Exception as qe:
+                logger.warning(f"Failed to compute quality metrics: {qe}")
+
             return TrainingResult(
                 run_id=run.id,
                 model_name=model_name,

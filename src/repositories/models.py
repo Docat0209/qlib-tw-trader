@@ -387,3 +387,37 @@ class Hyperparams(Base):
     stability_json: Mapped[str] = mapped_column(Text)  # 穩定性指標 JSON
     periods_json: Mapped[str] = mapped_column(Text)  # 各窗口結果 JSON
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
+
+
+# =============================================================================
+# 訓練品質監控
+# =============================================================================
+
+
+class TrainingQualityMetrics(Base):
+    """訓練品質指標（追蹤因子穩定性和 IC 穩定性）"""
+
+    __tablename__ = "training_quality_metrics"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    training_run_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("training_runs.id"), unique=True, index=True
+    )
+
+    # 因子穩定性（與上一週比較）
+    factor_jaccard_sim: Mapped[float | None] = mapped_column(Float, nullable=True)
+    factor_overlap_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # IC 穩定性（5 週移動統計）
+    ic_moving_avg_5w: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ic_moving_std_5w: Mapped[float | None] = mapped_column(Float, nullable=True)
+    icir_5w: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # 警報
+    has_warning: Mapped[bool] = mapped_column(Boolean, default=False)
+    warning_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    warning_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_taipei)
+
+    training_run: Mapped["TrainingRun"] = relationship()

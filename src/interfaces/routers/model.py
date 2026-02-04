@@ -27,6 +27,8 @@ from src.interfaces.schemas.model import (
     ModelStatus,
     ModelSummary,
     Period,
+    QualityMetricsItem,
+    QualityResponse,
     SelectionInfo,
     TrainBatchRequest,
     TrainRequest,
@@ -409,6 +411,35 @@ async def get_hyperparams():
         params=info.get("params"),
         stability=info.get("stability"),
         periods=info.get("periods"),
+    )
+
+
+@router.get("/quality", response_model=QualityResponse)
+async def get_quality_metrics(
+    limit: int = Query(10, ge=1, le=50),
+    session: Session = Depends(get_db),
+):
+    """
+    取得訓練品質指標
+
+    追蹤連續週的因子穩定性（Jaccard 相似度）和 IC 穩定性（移動平均/標準差/ICIR）。
+    當指標低於閾值時會產生警報。
+    """
+    from src.services.stability import QualityMonitor
+    from src.shared.constants import QUALITY_IC_STD_MAX, QUALITY_ICIR_MIN, QUALITY_JACCARD_MIN
+
+    monitor = QualityMonitor(session)
+    metrics = monitor.get_latest_metrics(limit=limit)
+
+    items = [QualityMetricsItem(**m) for m in metrics]
+
+    return QualityResponse(
+        items=items,
+        thresholds={
+            "jaccard_min": QUALITY_JACCARD_MIN,
+            "ic_std_max": QUALITY_IC_STD_MAX,
+            "icir_min": QUALITY_ICIR_MIN,
+        },
     )
 
 
