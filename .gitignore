@@ -64,3 +64,6 @@ Thumbs.db
 *.key
 *.pem
 credentials.json
+
+# Trained model files
+data/models/
