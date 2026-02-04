@@ -1,5 +1,5 @@
 """
-模型訓練服務 - LightGBM CPCV 因子選擇
+模型訓練服務 - LightGBM + RD-Agent IC 去重複
 """
 
 import hashlib
@@ -751,7 +751,7 @@ class ModelTrainer:
                 if on_progress:
                     on_progress(10.0, "No cultivated params, using conservative defaults")
 
-            # 執行 CPCV 因子選擇
+            # 執行因子選擇（IC 去重複）
             selected_factors, all_results, best_model, selection_stats = self._robust_factor_selection(
                 factors=enabled_factors,
                 all_data=all_data,
@@ -976,12 +976,12 @@ class ModelTrainer:
         on_progress: Callable[[float, str], None] | None = None,
     ) -> tuple[list[Factor], list[FactorEvalResult], Any, dict]:
         """
-        三階段穩健因子選擇（Elastic Net + CPCV + Permutation Importance）
+        因子選擇（RD-Agent IC 去重複）
 
-        解決 IC Decay 過擬合問題：
-        1. Elastic Net 預篩選：過濾噪音因子
-        2. CPCV 多路徑驗證：解決單一驗證期過擬合
-        3. Permutation Importance：確認因子被模型使用
+        使用 RD-Agent 論文的方法移除高相關因子：
+        - 計算因子間相關係數
+        - 移除 corr >= 0.99 的冗餘因子
+        - 保留高 IC 因子
 
         Returns:
             (selected_factors, all_results, best_model, selection_stats)
@@ -1075,17 +1075,18 @@ class ModelTrainer:
             X_valid_clean = X_valid[valid_valid]
             y_valid_clean = y_valid[valid_valid]
 
-            # 標準化
+            # 標準化（訓練和驗證使用相同的標準化方式）
             X_train_processed = self._process_inf(X_train_clean)
             X_train_norm = self._zscore_by_date(X_train_processed).fillna(0)
             y_train_zscore = self._zscore_by_date(y_train_clean.to_frame()).squeeze()
 
             X_valid_processed = self._process_inf(X_valid_clean)
             X_valid_norm = self._zscore_by_date(X_valid_processed).fillna(0)
+            y_valid_zscore = self._zscore_by_date(y_valid_clean.to_frame()).squeeze()
 
             try:
                 train_data = lgb.Dataset(X_train_norm.values, label=y_train_zscore.values)
-                valid_data = lgb.Dataset(X_valid_norm.values, label=y_valid_clean.values)
+                valid_data = lgb.Dataset(X_valid_norm.values, label=y_valid_zscore.values)
 
                 best_model = lgb.train(
                     lgbm_params,

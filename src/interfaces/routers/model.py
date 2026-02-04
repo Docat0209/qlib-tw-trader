@@ -642,7 +642,7 @@ async def trigger_training(
     job_id = await job_manager.create_job(
         job_type="train",
         task_fn=training_task,
-        message=f"Training model: {week_id} (CPCV)",
+        message=f"Training model: {week_id}",
     )
 
     return TrainResponse(
@@ -807,7 +807,7 @@ async def trigger_batch_training(
     job_id = await job_manager.create_job(
         job_type="train_batch",
         task_fn=batch_training_task,
-        message=f"Batch training {year}: {len(week_ids)} weeks (CPCV)",
+        message=f"Batch training {year}: {len(week_ids)} weeks",
     )
 
     return TrainResponse(
