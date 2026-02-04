@@ -270,12 +270,10 @@ export interface ModelStatus {
 
 export interface TrainRequest {
   week_id: string  // "2026W05"
-  selection_method?: 'robust' | 'ic_incremental'  // 因子選擇方法
 }
 
 export interface TrainBatchRequest {
   year: string  // "2025"
-  selection_method?: 'robust' | 'ic_incremental'  // 因子選擇方法
 }
 
 // Week Types

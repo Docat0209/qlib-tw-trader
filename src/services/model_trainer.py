@@ -1,10 +1,9 @@
 """
-模型訓練服務 - LightGBM IC 增量選擇法
+模型訓練服務 - LightGBM CPCV 因子選擇
 """
 
 import hashlib
 import json
-import math
 import pickle
 import statistics
 from dataclasses import dataclass, field
@@ -15,14 +14,13 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
-from scipy import stats
 from sqlalchemy.orm import Session
 
 from src.repositories.factor import FactorRepository
 from src.repositories.models import Factor, TrainingRun
 from src.repositories.training import TrainingRepository
 from src.services.factor_selection import RobustFactorSelector
-from src.shared.constants import TRAIN_DAYS, VALID_DAYS, FactorSelectionMethod
+from src.shared.constants import TRAIN_DAYS, VALID_DAYS
 
 TZ_TAIPEI = ZoneInfo("Asia/Taipei")
 
@@ -76,60 +74,6 @@ class CultivationResult:
     params: dict
     stability: dict[str, float]
     periods: list[PeriodResult] = field(default_factory=list)
-
-
-def scale_params_for_factor_count(
-    base_params: dict,
-    base_factor_count: int,
-    actual_factor_count: int,
-) -> dict:
-    """
-    根據實際因子數量縮放超參數
-
-    原理：
-    - 超參數是針對 base_factor_count 個因子優化的
-    - 但實際使用時可能只有 actual_factor_count 個因子
-    - 需要調整模型複雜度以避免過擬合
-
-    縮放規則：
-    - num_leaves: sqrt 縮放，下限 8
-    - max_depth: 減少 log2(base/actual)，下限 3
-    - min_data_in_leaf: sqrt 縮放，下限 10
-    - lambda_l1/l2: sqrt 縮放（低維需較少正則化）
-    - feature_fraction: 少因子時用 1.0
-    """
-    if actual_factor_count >= base_factor_count:
-        return base_params.copy()
-
-    ratio = actual_factor_count / base_factor_count
-    sqrt_ratio = math.sqrt(ratio)
-
-    scaled = base_params.copy()
-
-    # num_leaves: 與因子數正相關
-    if "num_leaves" in base_params:
-        scaled["num_leaves"] = max(8, int(base_params["num_leaves"] * sqrt_ratio))
-
-    # max_depth: 對數縮減
-    if "max_depth" in base_params:
-        reduction = int(math.log2(max(1, base_factor_count / actual_factor_count)))
-        scaled["max_depth"] = max(3, base_params["max_depth"] - reduction)
-
-    # min_data_in_leaf: 允許更小的葉節點
-    if "min_data_in_leaf" in base_params:
-        scaled["min_data_in_leaf"] = max(10, int(base_params["min_data_in_leaf"] * sqrt_ratio))
-
-    # 正則化：低維需較少正則化
-    if "lambda_l1" in base_params:
-        scaled["lambda_l1"] = base_params["lambda_l1"] * sqrt_ratio
-    if "lambda_l2" in base_params:
-        scaled["lambda_l2"] = base_params["lambda_l2"] * sqrt_ratio
-
-    # feature_fraction：少因子時使用全部
-    if "feature_fraction" in base_params and actual_factor_count <= 5:
-        scaled["feature_fraction"] = 1.0
-
-    return scaled
 
 
 def get_conservative_default_params(factor_count: int) -> dict:
@@ -660,122 +604,6 @@ class ModelTrainer:
 
         return daily_ic.dropna().values
 
-    def _should_select_factor_with_test(
-        self,
-        ic_daily_new: np.ndarray,
-        ic_daily_current: np.ndarray,
-        alpha: float = 0.10,
-    ) -> tuple[bool, dict]:
-        """
-        判斷是否應該選擇因子（複合動態閾值 + 雙重條件）
-
-        基於 Harvey et al. (2016) 研究：296 個因子中 53% 是假發現，
-        需要更嚴格的門檻來過濾冗餘因子。
-
-        複合動態閾值設計：
-        1. 相對百分比：不能下降超過當前 IC 的 10%
-        2. σ 倍數：不能下降超過 0.2σ
-        3. 取兩者中更嚴格者
-        4. 安全範圍：-0.5% ~ -2%
-
-        雙重條件（關鍵改進）：
-        - 條件 1：CI 上界 > 閾值（非劣性檢驗）
-        - 條件 2：mean_diff > 閾值（正向貢獻要求）
-
-        Args:
-            ic_daily_new: 新模型的每日 IC
-            ic_daily_current: 當前模型的每日 IC
-            alpha: 顯著性水準
-
-        Returns:
-            (should_select, test_result)
-        """
-        # 計算複合動態閾值
-        current_ic = np.mean(ic_daily_current) if len(ic_daily_current) > 0 else 0.05
-        ic_std = np.std(ic_daily_current) if len(ic_daily_current) > 1 else 0.02
-
-        # 閾值 1：不能下降超過當前 IC 的 10%
-        relative_threshold = -0.10 * abs(current_ic)
-
-        # 閾值 2：不能下降超過 0.2σ（比原本的 0.5σ 更嚴格）
-        std_threshold = -0.2 * ic_std
-
-        # 取更嚴格者（數值更大的負數，即更接近 0）
-        decline_threshold = max(relative_threshold, std_threshold)
-
-        # 安全範圍：-0.5% ~ -2%
-        decline_threshold = max(decline_threshold, -0.02)  # 下限：最多允許 2% 下降
-        decline_threshold = min(decline_threshold, -0.005)  # 上限：至少允許 0.5% 下降
-
-        # 確保長度一致
-        min_len = min(len(ic_daily_new), len(ic_daily_current))
-        if min_len < 5:
-            # 資料太少，使用簡單比較
-            mean_new = np.mean(ic_daily_new)
-            mean_current = np.mean(ic_daily_current)
-            mean_diff = mean_new - mean_current
-            # 正向貢獻要求：mean_diff >= 0
-            should_select = mean_diff >= 0
-            return should_select, {
-                'method': 'simple',
-                'n_days': min_len,
-                'mean_diff': float(mean_diff),
-                'threshold': float(decline_threshold),
-                'current_ic': float(current_ic),
-                'ic_std': float(ic_std),
-                'relative_threshold': float(relative_threshold),
-                'std_threshold': float(std_threshold),
-            }
-
-        diff = ic_daily_new[:min_len] - ic_daily_current[:min_len]
-        n = len(diff)
-        mean_diff = np.mean(diff)
-        se = np.std(diff, ddof=1) / np.sqrt(n)
-
-        if se == 0:
-            # 雙重條件：需要 mean_diff >= 0
-            should_select = mean_diff >= 0
-            return should_select, {
-                'method': 'constant_diff',
-                'mean_diff': float(mean_diff),
-                'threshold': float(decline_threshold),
-            }
-
-        # t-test
-        t_stat = mean_diff / se
-
-        # 計算 CI
-        t_critical = stats.t.ppf(1 - alpha, n - 1)
-        ci_upper = mean_diff + t_critical * se
-        ci_lower = mean_diff - t_critical * se
-
-        # 雙重條件（關鍵改進）：
-        # 1. CI 上界 > 閾值：非劣性檢驗（統計上不顯著下降）
-        # 2. mean_diff >= 0：正向貢獻要求（實際上沒有下降）
-        # 注意：之前錯誤地用 mean_diff > threshold（負數），導致負貢獻的因子也被選中
-        should_select = (ci_upper > decline_threshold) and (mean_diff >= 0)
-
-        # 計算單尾 p-value
-        t_stat_decline = (mean_diff - decline_threshold) / se
-        p_value_decline = stats.t.cdf(t_stat_decline, n - 1)
-
-        return should_select, {
-            'method': 't_test_composite',
-            'mean_diff': float(mean_diff),
-            'ci_lower': float(ci_lower),
-            'ci_upper': float(ci_upper),
-            't_stat': float(t_stat),
-            'p_decline': float(p_value_decline),
-            'threshold': float(decline_threshold),
-            'current_ic': float(current_ic),
-            'ic_std': float(ic_std),
-            'relative_threshold': float(relative_threshold),
-            'std_threshold': float(std_threshold),
-            'n_days': n,
-            'pass_ci': ci_upper > decline_threshold,
-            'pass_mean': mean_diff >= 0,
-        }
-
     def train(
         self,
         session: Session,
@@ -786,7 +614,6 @@ class ModelTrainer:
         week_id: str | None = None,
         factor_pool_hash: str | None = None,
         on_progress: Callable[[float, str], None] | None = None,
-        selection_method: str = "ic_incremental",
     ) -> TrainingResult:
         """
         執行 LightGBM 訓練（週訓練架構）
@@ -806,7 +633,6 @@ class ModelTrainer:
             week_id: 週 ID（如 "2026W05"）
             factor_pool_hash: 因子池 hash
             on_progress: 進度回調 (progress: 0-100, message: str)
-            selection_method: 因子選擇方法 ("robust" | "ic_incremental")
 
         Returns:
             TrainingResult
@@ -881,30 +707,16 @@ class ModelTrainer:
                 if on_progress:
                     on_progress(10.0, "No cultivated params, using conservative defaults")
 
-            # 執行因子選擇（根據選擇方法）
-            if selection_method == FactorSelectionMethod.ROBUST.value:
-                # 三階段穩健選擇（Elastic Net + CPCV + Permutation）
-                selected_factors, all_results, best_model, selection_stats = self._robust_factor_selection(
-                    factors=enabled_factors,
-                    all_data=all_data,
-                    train_start=train_start,
-                    train_end=train_end,
-                    valid_start=valid_start,
-                    valid_end=valid_end,
-                    on_progress=on_progress,
-                )
-            else:
-                # IC 增量選擇（原方法）
-                selected_factors, all_results, best_model, selection_stats = self._incremental_ic_selection(
-                    factors=enabled_factors,
-                    all_data=all_data,
-                    train_start=train_start,
-                    train_end=train_end,
-                    valid_start=valid_start,
-                    valid_end=valid_end,
-                    on_progress=on_progress,
-                    base_factor_count=len(enabled_factors),
-                )
+            # 執行 CPCV 因子選擇
+            selected_factors, all_results, best_model, selection_stats = self._robust_factor_selection(
+                factors=enabled_factors,
+                all_data=all_data,
+                train_start=train_start,
+                train_end=train_end,
+                valid_start=valid_start,
+                valid_end=valid_end,
+                on_progress=on_progress,
+            )
 
             # 計算最終模型 IC（使用最佳模型的 IC）
             # 注意：必須使用 selected_factors 的原始順序，因為 LightGBM 按位置識別特徵
@@ -1007,25 +819,13 @@ class ModelTrainer:
             run.name = model_name
             run.selected_factor_ids = json.dumps([f.id for f in selected_factors])
 
-            # 記錄因子選擇策略（用於追踪改動效果）
-            if selection_method == FactorSelectionMethod.ROBUST.value:
-                selection_config = {
-                    "method": "robust",
-                    "stages": ["elastic_net", "cpcv", "permutation"],
-                    "incremental_update": True,
-                }
-                run.selection_method = "robust"
-            else:
-                selection_config = {
-                    "relative_pct": 0.10,
-                    "std_multiplier": 0.2,
-                    "threshold_min": -0.02,
-                    "threshold_max": -0.005,
-                    "require_positive_contribution": True,
-                    "require_positive_single_ic": True,
-                    "incremental_update": True,
-                }
-                run.selection_method = "composite_threshold_v3"
+            # 記錄因子選擇策略
+            selection_config = {
+                "method": "robust",
+                "stages": ["cpcv"],
+                "incremental_update": True,
+            }
+            run.selection_method = "robust"
             run.selection_config = json.dumps(selection_config)
             run.selection_stats = json.dumps(selection_stats)
 
@@ -1257,213 +1057,6 @@ class ModelTrainer:
         if on_progress:
             on_progress(95.0, "Robust selection completed")
 
-        return selected_factors, all_results, best_model, selection_stats
-
-    def _incremental_ic_selection(
-        self,
-        factors: list[Factor],
-        all_data: pd.DataFrame,
-        train_start: date,
-        train_end: date,
-        valid_start: date,
-        valid_end: date,
-        on_progress: Callable[[float, str], None] | None = None,
-        base_factor_count: int | None = None,
-    ) -> tuple[list[Factor], list[FactorEvalResult], Any, dict]:
-        """
-        LightGBM IC 增量選擇法（含因子數量自適應參數）
-
-        1. 先計算每個因子的單獨 IC
-        2. 按 IC 絕對值降序排列（高預測力因子優先）
-        3. 依序測試加入，若模型 IC 提升則納入
-        4. 超參數會根據當前因子數量動態調整
-
-        Args:
-            base_factor_count: 培養超參數時使用的因子數（用於縮放）
-
-        Returns:
-            (selected_factors, all_results, best_model, selection_stats)
-            注意：selected_factors 保持選擇順序，這對模型預測至關重要
-        """
-        # 確定基準因子數（培養時的因子數）
-        if base_factor_count is None:
-            base_factor_count = len(factors)
-        if on_progress:
-            on_progress(11.0, "Calculating single-factor ICs...")
-
-        # 計算每個因子的單獨 IC（只用訓練期，避免資料洩漏）
-        factor_ics: list[tuple[Factor, float]] = []
-        for factor in factors:
-            ic = self._calculate_single_factor_ic(factor, all_data, train_start, train_end)
-            factor_ics.append((factor, ic))
-
-        # 過濾 IC <= 0 的因子（無損優化：這些因子本來就不會被選中）
-        positive_ic_factors = [(f, ic) for f, ic in factor_ics if ic > 0]
-        filtered_factors = [(f, ic) for f, ic in factor_ics if ic <= 0]
-        filtered_count = len(filtered_factors)
-
-        if on_progress:
-            on_progress(12.0, f"Filtered {filtered_count} factors with IC <= 0, {len(positive_ic_factors)} remaining")
-
-        # 按 IC 降序排列（只處理正 IC 因子）
-        sorted_factors = sorted(positive_ic_factors, key=lambda x: x[1], reverse=True)
-
-        if on_progress:
-            on_progress(13.0, f"Sorted {len(sorted_factors)} factors by IC")
-
-        selected_factors: list[Factor] = []
-        all_results: list[FactorEvalResult] = []
-
-        # 先記錄被過濾掉的因子（IC <= 0，不會被選中）
-        for factor, ic in filtered_factors:
-            all_results.append(
-                FactorEvalResult(
-                    factor_id=factor.id,
-                    factor_name=factor.name,
-                    ic_value=ic,
-                    selected=False,
-                )
-            )
-        current_ic = 0.0
-        best_model = None
-
-        # 收集選擇統計
-        thresholds_used: list[float] = []
-        mean_diffs: list[float] = []
-
-        total = len(sorted_factors)
-        for i, (factor, single_ic) in enumerate(sorted_factors):
-            # 進度：13% 初始化 + 82% 因子挑選（10% Optuna + 3% 單因子 IC）
-            if on_progress:
-                progress = round(13.0 + (i / total) * 82.0, 1)
-                on_progress(progress, f"Evaluating ({i+1}/{total}): {factor.name} (single IC: {single_ic:.4f})")
-
-            # 測試加入此因子
-            test_factors = selected_factors + [factor]
-            test_factor_names = [f.name for f in test_factors]
-
-            # 準備資料
-            X = all_data[test_factor_names]
-            y = all_data["label"]
-
-            X_train, X_valid, y_train, y_valid = self._prepare_train_valid_data(
-                pd.concat([X, y], axis=1),
-                train_start, train_end, valid_start, valid_end,
-            )
-
-            if X_train.empty or X_valid.empty:
-                # 資料不足，跳過此因子
-                all_results.append(
-                    FactorEvalResult(
-                        factor_id=factor.id,
-                        factor_name=factor.name,
-                        ic_value=0.0,
-                        selected=False,
-                    )
-                )
-                continue
-
-            # 根據當前因子數量調整超參數
-            current_factor_count = len(test_factors)
-            base_params = self._optimized_params or get_conservative_default_params(current_factor_count)
-            adapted_params = scale_params_for_factor_count(
-                base_params,
-                base_factor_count=base_factor_count,
-                actual_factor_count=current_factor_count,
-            )
-
-            # 訓練 LightGBM（使用調整後的參數）
-            try:
-                model = self._train_lgbm(X_train, y_train, X_valid, y_valid, params=adapted_params)
-                new_ic = self._calculate_prediction_ic(model, X_valid, y_valid)
-                new_daily_ic = self._calculate_daily_ic(model, X_valid, y_valid)
-            except Exception as e:
-                # 訓練失敗，跳過此因子
-                all_results.append(
-                    FactorEvalResult(
-                        factor_id=factor.id,
-                        factor_name=factor.name,
-                        ic_value=0.0,
-                        selected=False,
-                    )
-                )
-                continue
-
-            # 使用統計檢驗判斷是否選擇（解決假性低 IC 問題）
-            if best_model is None:
-                # 第一個因子：只要 IC > 0 就入選
-                should_select = new_ic > 0
-                test_result = {'method': 'first_factor'}
-            else:
-                # 計算當前最佳模型的每日 IC
-                # 注意：需要使用相同的驗證資料（已選因子）
-                prev_factor_names = [f.name for f in selected_factors]
-                X_valid_prev = all_data[prev_factor_names]
-                valid_mask = (all_data.index.get_level_values("datetime").date >= valid_start) & \
-                             (all_data.index.get_level_values("datetime").date <= valid_end)
-                X_valid_prev = X_valid_prev[valid_mask].dropna()
-                y_valid_prev = all_data["label"][valid_mask].dropna()
-                common_idx_prev = X_valid_prev.index.intersection(y_valid_prev.index)
-                X_valid_prev = X_valid_prev.loc[common_idx_prev]
-                y_valid_prev = y_valid_prev.loc[common_idx_prev]
-
-                prev_daily_ic = self._calculate_daily_ic(best_model, X_valid_prev, y_valid_prev)
-
-                # 統計檢驗
-                should_select, test_result = self._should_select_factor_with_test(
-                    new_daily_ic, prev_daily_ic, alpha=0.10
-                )
-
-                # 收集統計
-                if 'threshold' in test_result:
-                    thresholds_used.append(test_result['threshold'])
-                if 'mean_diff' in test_result:
-                    mean_diffs.append(test_result['mean_diff'])
-
-            # 額外條件：單因子 IC 必須為正
-            # 文獻建議：確保每個因子本身有預測能力，避免噪音因子
-            if should_select and single_ic <= 0:
-                should_select = False
-
-            if should_select:
-                selected_factors.append(factor)
-                current_ic = new_ic
-                best_model = model
-                selected = True
-            else:
-                selected = False
-
-            # 記錄結果（使用單因子 IC，更能反映因子品質）
-            all_results.append(
-                FactorEvalResult(
-                    factor_id=factor.id,
-                    factor_name=factor.name,
-                    ic_value=single_ic,
-                    selected=selected,
-                )
-            )
-
-            # 評估完成後更新進度
-            if on_progress:
-                progress = round(13.0 + ((i + 1) / total) * 82.0, 1)
-                status = "selected" if selected else "skipped"
-                p_info = f", p={test_result.get('p_value', 'N/A'):.3f}" if 'p_value' in test_result else ""
-                on_progress(progress, f"Factor {factor.name}: {status} (IC: {new_ic:.4f}{p_info})")
-
-        # 計算選擇統計
-        n_selected = len(selected_factors)
-        n_rejected = total - n_selected
-        selection_stats = {
-            "candidates_evaluated": total,
-            "factors_selected": n_selected,
-            "factors_rejected": n_rejected,
-            "selection_rate": round(n_selected / total, 4) if total > 0 else 0,
-            "avg_threshold": round(np.mean(thresholds_used), 6) if thresholds_used else None,
-            "avg_mean_diff": round(np.mean(mean_diffs), 6) if mean_diffs else None,
-        }
-
-        # 返回 selected_factors 列表（保持順序），不是 set
-        # 順序對 LightGBM 預測至關重要，因為模型用 .values 訓練，只認位置不認名稱
         return selected_factors, all_results, best_model, selection_stats
 
     def _calculate_icir(self, ic: float, factor_count: int) -> float | None:

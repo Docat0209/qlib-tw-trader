@@ -160,14 +160,12 @@ class TrainRequest(BaseModel):
     """訓練請求"""
 
     week_id: str  # "2026W05"
-    selection_method: str = "ic_incremental"  # "robust" | "ic_incremental"
 
 
 class TrainBatchRequest(BaseModel):
     """批量訓練請求"""
 
     year: str  # "2025"
-    selection_method: str = "ic_incremental"  # "robust" | "ic_incremental"
 
 
 class TrainResponse(BaseModel):

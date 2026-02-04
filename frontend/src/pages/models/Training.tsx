@@ -33,8 +33,6 @@ export function Training() {
   const [hyperparamsList, setHyperparamsList] = useState<HyperparamsSummary[]>([])
   // 批量訓練年份標記
   const [queueYear, setQueueYear] = useState<string | null>(null)
-  // 因子選擇方法
-  const [selectionMethod, setSelectionMethod] = useState<'robust' | 'ic_incremental'>('ic_incremental')
 
   // WebSocket 訓練進度追蹤
   const { activeJob, clearJob, cancelJob } = useJobs()
@@ -148,7 +146,7 @@ export function Training() {
     if (isTraining || !selectedWeekId) return
     setActionLoading(true)
     try {
-      await modelApi.train({ week_id: selectedWeekId, selection_method: selectionMethod })
+      await modelApi.train({ week_id: selectedWeekId })
       await fetchData(false)
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to start training')
@@ -173,7 +171,7 @@ export function Training() {
 
     try {
       // 使用後端批量訓練 API
-      await modelApi.trainBatch({ year, selection_method: selectionMethod })
+      await modelApi.trainBatch({ year })
       await fetchData(false)
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to start batch training')
@@ -501,24 +499,6 @@ export function Training() {
                     </div>
                     <p className="text-xs text-blue-600 mt-1">
                       Using hyperparams: {hyperparamsList[0]?.name}
-                    </p>
-                  </div>
-                  {/* 因子選擇方法 */}
-                  <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">Factor Selection</label>
-                    <select
-                      className="w-full px-3 py-2 text-sm rounded border border-border bg-background"
-                      value={selectionMethod}
-                      onChange={(e) => setSelectionMethod(e.target.value as 'robust' | 'ic_incremental')}
-                      disabled={actionLoading || isTraining}
-                    >
-                      <option value="ic_incremental">IC Incremental (Fast)</option>
-                      <option value="robust">Robust 3-Stage (Recommended)</option>
-                    </select>
-                    <p className="text-[10px] text-muted-foreground">
-                      {selectionMethod === 'robust'
-                        ? 'Elastic Net + CPCV + Permutation (slower, less overfitting)'
-                        : 'Forward stepwise selection (fast, may overfit)'}
                     </p>
                   </div>
                   <button
