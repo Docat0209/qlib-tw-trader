@@ -1,12 +1,12 @@
 {
-  "train_start": "2024-10-21",
-  "train_end": "2025-10-31",
-  "valid_start": "2025-11-10",
+  "train_start": "2024-09-25",
+  "train_end": "2025-10-08",
+  "valid_start": "2025-10-17",
   "valid_end": "2025-11-14",
   "week_id": "2025W46",
   "factor_pool_hash": "96402f",
-  "model_ic": 0.24018762474733155,
-  "icir": 2.1349158591358925,
+  "model_ic": 0.029533583896397445,
+  "icir": 0.3425798340569556,
   "incremental_updated": true,
   "hyperparameters": {
     "num_leaves": 31,

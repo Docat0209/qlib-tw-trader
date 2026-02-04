@@ -1,47 +1,12 @@
 [
   {
-    "id": 173,
-    "name": "margin_vol_ratio",
-    "expression": "($margin_buy + $margin_sell) / ($volume + 1e-8)"
+    "id": 7,
+    "name": "kbar_klow2",
+    "expression": "(Less($open, $close) - $low) / ($high - $low + 1e-8)"
   },
   {
-    "id": 224,
-    "name": "vol_weighted_ret",
-    "expression": "Sum(($close / Ref($close, 1) - 1) * $volume, 20) / (Sum($volume, 20) + 1e-8)"
-  },
-  {
-    "id": 180,
-    "name": "foreign_ratio_chg_1d",
-    "expression": "$foreign_ratio - Ref($foreign_ratio, 1)"
-  },
-  {
-    "id": 20,
-    "name": "std_5",
-    "expression": "Std($close, 5) / $close"
-  },
-  {
-    "id": 21,
-    "name": "std_10",
-    "expression": "Std($close, 10) / $close"
-  },
-  {
-    "id": 241,
-    "name": "margin_price_corr",
-    "expression": "Corr($margin_balance, $close, 20)"
-  },
-  {
-    "id": 83,
-    "name": "sump_30",
-    "expression": "Sum(Greater($close - Ref($close, 1), 0), 30) / (Sum(Abs($close - Ref($close, 1)), 30) + 1e-8)"
-  },
-  {
-    "id": 148,
-    "name": "foreign_net_vol_20d",
-    "expression": "Sum($foreign_buy - $foreign_sell, 20) / (Sum($volume, 20) + 1e-8)"
-  },
-  {
-    "id": 260,
-    "name": "pb_chg_5d",
-    "expression": "$pb_ratio - Ref($pb_ratio, 5)"
+    "id": 41,
+    "name": "max_10",
+    "expression": "Max($high, 10) / $close"
   }
 ]
