@@ -4,6 +4,7 @@
 
 import hashlib
 import json
+import logging
 import pickle
 import statistics
 from dataclasses import dataclass, field
@@ -15,6 +16,8 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from src.repositories.factor import FactorRepository
 from src.repositories.models import Factor, TrainingRun
