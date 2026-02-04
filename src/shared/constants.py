@@ -36,7 +36,13 @@ CPCV_FALLBACK_POSITIVE_RATIO = 0.4  # Fallback positive ratio 門檻
 CPCV_FALLBACK_MAX_FACTORS = 30  # Fallback 最多選擇的因子數
 CPCV_MIN_FACTORS_BEFORE_FALLBACK = 5  # 低於此數量時觸發 Fallback 補充
 
-# === Bootstrap 穩定性過濾 ===
+# === IC Deduplication (RD-Agent) ===
+# 參考：https://arxiv.org/html/2505.15155v2
+# "New factors with IC_max(n) ≥ 0.99 are deemed redundant and excluded."
+
+IC_DEDUP_THRESHOLD = 0.99  # RD-Agent 使用 0.99
+
+# === Bootstrap 穩定性過濾（備用）===
 
 BOOTSTRAP_N_ITERATIONS = 30  # 迭代次數（精簡版）
 BOOTSTRAP_STABILITY_THRESHOLD = 0.75  # 穩定性閾值（≥75% 被選中才保留）
