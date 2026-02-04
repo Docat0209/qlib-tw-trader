@@ -21,7 +21,8 @@ from sqlalchemy.orm import Session
 from src.repositories.factor import FactorRepository
 from src.repositories.models import Factor, TrainingRun
 from src.repositories.training import TrainingRepository
-from src.shared.constants import TRAIN_DAYS, VALID_DAYS
+from src.services.factor_selection import RobustFactorSelector
+from src.shared.constants import TRAIN_DAYS, VALID_DAYS, FactorSelectionMethod
 
 TZ_TAIPEI = ZoneInfo("Asia/Taipei")
 
@@ -785,9 +786,10 @@ class ModelTrainer:
         week_id: str | None = None,
         factor_pool_hash: str | None = None,
         on_progress: Callable[[float, str], None] | None = None,
+        selection_method: str = "ic_incremental",
     ) -> TrainingResult:
         """
-        執行 LightGBM IC 增量選擇訓練（週訓練架構）
+        執行 LightGBM 訓練（週訓練架構）
 
         流程：
         1. 訓練模型 A（train_start ~ train_end）
@@ -804,6 +806,7 @@ class ModelTrainer:
             week_id: 週 ID（如 "2026W05"）
             factor_pool_hash: 因子池 hash
             on_progress: 進度回調 (progress: 0-100, message: str)
+            selection_method: 因子選擇方法 ("robust" | "ic_incremental")
 
         Returns:
             TrainingResult
@@ -878,17 +881,30 @@ class ModelTrainer:
                 if on_progress:
                     on_progress(10.0, "No cultivated params, using conservative defaults")
 
-            # 執行 IC 增量選擇（使用優化後的參數，並根據因子數動態調整）
-            selected_factors, all_results, best_model, selection_stats = self._incremental_ic_selection(
-                factors=enabled_factors,
-                all_data=all_data,
-                train_start=train_start,
-                train_end=train_end,
-                valid_start=valid_start,
-                valid_end=valid_end,
-                on_progress=on_progress,
-                base_factor_count=len(enabled_factors),  # 培養時使用的因子數
-            )
+            # 執行因子選擇（根據選擇方法）
+            if selection_method == FactorSelectionMethod.ROBUST.value:
+                # 三階段穩健選擇（Elastic Net + CPCV + Permutation）
+                selected_factors, all_results, best_model, selection_stats = self._robust_factor_selection(
+                    factors=enabled_factors,
+                    all_data=all_data,
+                    train_start=train_start,
+                    train_end=train_end,
+                    valid_start=valid_start,
+                    valid_end=valid_end,
+                    on_progress=on_progress,
+                )
+            else:
+                # IC 增量選擇（原方法）
+                selected_factors, all_results, best_model, selection_stats = self._incremental_ic_selection(
+                    factors=enabled_factors,
+                    all_data=all_data,
+                    train_start=train_start,
+                    train_end=train_end,
+                    valid_start=valid_start,
+                    valid_end=valid_end,
+                    on_progress=on_progress,
+                    base_factor_count=len(enabled_factors),
+                )
 
             # 計算最終模型 IC（使用最佳模型的 IC）
             # 注意：必須使用 selected_factors 的原始順序，因為 LightGBM 按位置識別特徵
@@ -992,16 +1008,24 @@ class ModelTrainer:
             run.selected_factor_ids = json.dumps([f.id for f in selected_factors])
 
             # 記錄因子選擇策略（用於追踪改動效果）
-            selection_config = {
-                "relative_pct": 0.10,
-                "std_multiplier": 0.2,
-                "threshold_min": -0.02,
-                "threshold_max": -0.005,
-                "require_positive_contribution": True,
-                "require_positive_single_ic": True,
-                "incremental_update": True,  # 標記有做增量更新
-            }
-            run.selection_method = "composite_threshold_v3"
+            if selection_method == FactorSelectionMethod.ROBUST.value:
+                selection_config = {
+                    "method": "robust",
+                    "stages": ["elastic_net", "cpcv", "permutation"],
+                    "incremental_update": True,
+                }
+                run.selection_method = "robust"
+            else:
+                selection_config = {
+                    "relative_pct": 0.10,
+                    "std_multiplier": 0.2,
+                    "threshold_min": -0.02,
+                    "threshold_max": -0.005,
+                    "require_positive_contribution": True,
+                    "require_positive_single_ic": True,
+                    "incremental_update": True,
+                }
+                run.selection_method = "composite_threshold_v3"
             run.selection_config = json.dumps(selection_config)
             run.selection_stats = json.dumps(selection_stats)
 
@@ -1087,6 +1111,153 @@ class ModelTrainer:
             return float(mean_ic) if not np.isnan(mean_ic) else 0.0
         except Exception:
             return 0.0
+
+    def _robust_factor_selection(
+        self,
+        factors: list[Factor],
+        all_data: pd.DataFrame,
+        train_start: date,
+        train_end: date,
+        valid_start: date,
+        valid_end: date,
+        on_progress: Callable[[float, str], None] | None = None,
+    ) -> tuple[list[Factor], list[FactorEvalResult], Any, dict]:
+        """
+        三階段穩健因子選擇（Elastic Net + CPCV + Permutation Importance）
+
+        解決 IC Decay 過擬合問題：
+        1. Elastic Net 預篩選：過濾噪音因子
+        2. CPCV 多路徑驗證：解決單一驗證期過擬合
+        3. Permutation Importance：確認因子被模型使用
+
+        Returns:
+            (selected_factors, all_results, best_model, selection_stats)
+        """
+        import lightgbm as lgb
+
+        if on_progress:
+            on_progress(11.0, "Robust selection: Preparing data...")
+
+        # 準備因子資料
+        factor_names = [f.name for f in factors]
+        X = all_data[factor_names]
+        y = all_data["label"]
+
+        # 使用訓練期資料進行因子選擇
+        train_mask = (all_data.index.get_level_values("datetime").date >= train_start) & \
+                     (all_data.index.get_level_values("datetime").date <= train_end)
+        X_train = X[train_mask]
+        y_train = y[train_mask]
+
+        # 準備 LightGBM 參數
+        lgbm_params = self._optimized_params or {
+            "objective": "regression",
+            "metric": "mse",
+            "boosting_type": "gbdt",
+            "num_leaves": 31,
+            "max_depth": 5,
+            "learning_rate": 0.05,
+            "n_estimators": 100,
+            "verbose": -1,
+            "device": "gpu",
+            "gpu_use_dp": False,
+        }
+
+        # 執行三階段選擇
+        def robust_progress(p: float, msg: str) -> None:
+            if on_progress:
+                # 11% ~ 90% 給三階段選擇
+                progress = 11.0 + p * 0.79
+                on_progress(progress, msg)
+
+        robust_selector = RobustFactorSelector(lgbm_params=lgbm_params)
+        result = robust_selector.select(
+            factors=factors,
+            X=X_train,
+            y=y_train,
+            on_progress=robust_progress,
+        )
+
+        selected_factors = result.selected_factors
+
+        if on_progress:
+            on_progress(90.0, f"Robust selection: {len(selected_factors)} factors selected")
+
+        # 構建 all_results（與舊方法兼容）
+        all_results: list[FactorEvalResult] = []
+        selected_names = {f.name for f in selected_factors}
+        for factor in factors:
+            # 計算單因子 IC
+            ic = self._calculate_single_factor_ic(factor, all_data, train_start, train_end)
+            all_results.append(
+                FactorEvalResult(
+                    factor_id=factor.id,
+                    factor_name=factor.name,
+                    ic_value=ic,
+                    selected=factor.name in selected_names,
+                )
+            )
+
+        # 訓練最終模型
+        best_model = None
+        if selected_factors:
+            if on_progress:
+                on_progress(92.0, "Training final model...")
+
+            selected_factor_names = [f.name for f in selected_factors]
+            X_train_selected = X_train[selected_factor_names]
+
+            # 驗證資料
+            valid_mask = (all_data.index.get_level_values("datetime").date >= valid_start) & \
+                         (all_data.index.get_level_values("datetime").date <= valid_end)
+            X_valid = X[valid_mask][selected_factor_names]
+            y_valid = y[valid_mask]
+
+            # 處理缺失值
+            train_valid = ~(X_train_selected.isna().any(axis=1) | y_train.isna())
+            valid_valid = ~(X_valid.isna().any(axis=1) | y_valid.isna())
+
+            X_train_clean = X_train_selected[train_valid]
+            y_train_clean = y_train[train_valid]
+            X_valid_clean = X_valid[valid_valid]
+            y_valid_clean = y_valid[valid_valid]
+
+            # 標準化
+            X_train_processed = self._process_inf(X_train_clean)
+            X_train_norm = self._zscore_by_date(X_train_processed).fillna(0)
+            y_train_zscore = self._zscore_by_date(y_train_clean.to_frame()).squeeze()
+
+            X_valid_processed = self._process_inf(X_valid_clean)
+            X_valid_norm = self._zscore_by_date(X_valid_processed).fillna(0)
+
+            try:
+                train_data = lgb.Dataset(X_train_norm.values, label=y_train_zscore.values)
+                valid_data = lgb.Dataset(X_valid_norm.values, label=y_valid_clean.values)
+
+                best_model = lgb.train(
+                    lgbm_params,
+                    train_data,
+                    num_boost_round=500,
+                    valid_sets=[valid_data],
+                    callbacks=[lgb.early_stopping(50, verbose=False)],
+                )
+            except Exception as e:
+                if on_progress:
+                    on_progress(95.0, f"Model training failed: {e}")
+
+        # 構建選擇統計
+        selection_stats = {
+            "method": "robust",
+            "initial_factors": len(factors),
+            "final_factors": len(selected_factors),
+            **result.selection_stats,
+            "stage_results": result.stage_results,
+        }
+
+        if on_progress:
+            on_progress(95.0, "Robust selection completed")
+
+        return selected_factors, all_results, best_model, selection_stats
 
     def _incremental_ic_selection(
         self,

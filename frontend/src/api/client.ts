@@ -270,6 +270,12 @@ export interface ModelStatus {
 
 export interface TrainRequest {
   week_id: string  // "2026W05"
+  selection_method?: 'robust' | 'ic_incremental'  // 因子選擇方法
+}
+
+export interface TrainBatchRequest {
+  year: string  // "2025"
+  selection_method?: 'robust' | 'ic_incremental'  // 因子選擇方法
 }
 
 // Week Types
@@ -335,7 +341,7 @@ export const modelApi = {
   // 週訓練
   weeks: () => api.get<WeeksResponse>('/models/weeks'),
   train: (data: TrainRequest) => api.post<TrainResponse>('/models/train', data),
-  trainBatch: (data: { year: string }) => api.post<TrainResponse>('/models/train-batch', data),
+  trainBatch: (data: TrainBatchRequest) => api.post<TrainResponse>('/models/train-batch', data),
 
   // 現有方法（向後兼容）
   current: () => api.get<Model>('/models/current'),

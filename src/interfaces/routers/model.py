@@ -595,6 +595,7 @@ async def trigger_training(
                 valid_end=valid_end,
                 factor_pool_hash=factor_pool_hash,
                 on_progress=sync_progress,
+                selection_method=data.selection_method,
             )
 
             return {
@@ -603,21 +604,23 @@ async def trigger_training(
                 "model_ic": result.model_ic,
                 "icir": result.icir,
                 "selected_factor_count": len(result.selected_factor_ids),
+                "selection_method": data.selection_method,
             }
         finally:
             task_session.close()
 
     # 建立非同步訓練任務
+    method_label = "robust" if data.selection_method == "robust" else "IC incremental"
     job_id = await job_manager.create_job(
         job_type="train",
         task_fn=training_task,
-        message=f"Training model: {week_id}",
+        message=f"Training model: {week_id} ({method_label})",
     )
 
     return TrainResponse(
         job_id=job_id,
         status="queued",
-        message=f"訓練任務已排入佇列 ({week_id})",
+        message=f"訓練任務已排入佇列 ({week_id}, {method_label})",
     )
 
 
@@ -757,6 +760,7 @@ async def trigger_batch_training(
                     valid_end=valid_end,
                     factor_pool_hash=factor_pool_hash,
                     on_progress=sync_progress,
+                    selection_method=data.selection_method,
                 )
 
                 results.append({
@@ -768,21 +772,23 @@ async def trigger_batch_training(
             return {
                 "total_trained": len(results),
                 "results": results,
+                "selection_method": data.selection_method,
             }
         finally:
             task_session.close()
 
     # 建立批量訓練任務
+    method_label = "robust" if data.selection_method == "robust" else "IC incremental"
     job_id = await job_manager.create_job(
         job_type="train_batch",
         task_fn=batch_training_task,
-        message=f"Batch training {year}: {len(week_ids)} weeks",
+        message=f"Batch training {year}: {len(week_ids)} weeks ({method_label})",
     )
 
     return TrainResponse(
         job_id=job_id,
         status="queued",
-        message=f"批量訓練已排入佇列 ({year} 年 {len(week_ids)} 週)",
+        message=f"批量訓練已排入佇列 ({year} 年 {len(week_ids)} 週, {method_label})",
     )
 
 
