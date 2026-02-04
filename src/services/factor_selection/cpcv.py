@@ -38,6 +38,7 @@ from src.shared.constants import (
     CPCV_FALLBACK_MAX_FACTORS,
     CPCV_FALLBACK_POSITIVE_RATIO,
     CPCV_FALLBACK_T_STATISTIC,
+    CPCV_MIN_FACTORS_BEFORE_FALLBACK,
     CPCV_N_FOLDS,
     CPCV_N_TEST_FOLDS,
     CPCV_PURGE_DAYS,
@@ -470,26 +471,38 @@ class CPCVSelector(FactorSelector):
             f"BH-FDR path: {sum(1 for n in selected_names if factor_stats[n].get('selection_path') == 'bh_fdr')})"
         )
 
-        # 備用：如果嚴格標準選不出，使用較嚴格的 fallback 條件
-        # 使用 constants.py 中定義的 fallback 參數
-        if len(selected_names) == 0:
+        # 備用：如果嚴格標準選出的因子太少，使用 fallback 補充
+        # 原因：只有 1-2 個因子的模型太不穩定
+        if len(selected_names) < CPCV_MIN_FACTORS_BEFORE_FALLBACK:
             logger.warning(
-                f"CPCV: No factors passed strict criteria, using relaxed selection "
+                f"CPCV: Only {len(selected_names)} factors passed strict criteria (< {CPCV_MIN_FACTORS_BEFORE_FALLBACK}), "
+                f"using fallback to supplement "
                 f"(t>={CPCV_FALLBACK_T_STATISTIC}, positive_ratio>={CPCV_FALLBACK_POSITIVE_RATIO})"
             )
+            # 找出符合 fallback 條件但尚未被選中的因子
+            already_selected = set(selected_names)
             relaxed_candidates = [
                 (name, factor_stats[name]["t_stat"])
                 for name in factor_p_values.keys()
-                if factor_stats[name]["t_stat"] >= CPCV_FALLBACK_T_STATISTIC
+                if name not in already_selected
+                and factor_stats[name]["t_stat"] >= CPCV_FALLBACK_T_STATISTIC
                 and factor_stats[name]["positive_ratio"] >= CPCV_FALLBACK_POSITIVE_RATIO
             ]
             relaxed_candidates.sort(key=lambda x: x[1], reverse=True)
-            # 選擇 t-statistic 最高的前 N 個（最多 CPCV_FALLBACK_MAX_FACTORS 個）
-            max_relaxed = min(CPCV_FALLBACK_MAX_FACTORS, max(3, int(n_factors * 0.1)))
-            selected_names = [name for name, _ in relaxed_candidates[:max_relaxed]]
-            for name in selected_names:
+
+            # 補充到至少 CPCV_MIN_FACTORS_BEFORE_FALLBACK 個，但不超過 CPCV_FALLBACK_MAX_FACTORS
+            need_count = CPCV_MIN_FACTORS_BEFORE_FALLBACK - len(selected_names)
+            max_supplement = min(CPCV_FALLBACK_MAX_FACTORS - len(selected_names), need_count + 5)
+            supplement_names = [name for name, _ in relaxed_candidates[:max_supplement]]
+
+            for name in supplement_names:
                 factor_stats[name]["relaxed_selected"] = True
-            logger.info(f"CPCV: Fallback selected {len(selected_names)} factors (max={max_relaxed})")
+                selected_names.append(name)
+
+            logger.info(
+                f"CPCV: Fallback added {len(supplement_names)} factors, "
+                f"total now {len(selected_names)} factors"
+            )
 
         # 打印統計摘要
         all_t_stats = [s["t_stat"] for s in factor_stats.values()]

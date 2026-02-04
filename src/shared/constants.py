@@ -34,6 +34,7 @@ CPCV_CONSISTENCY_LOOKBACK = 4  # 一致性獎勵參考週數
 CPCV_FALLBACK_T_STATISTIC = 2.0  # Fallback t 門檻（比主門檻低）
 CPCV_FALLBACK_POSITIVE_RATIO = 0.55  # Fallback positive ratio 門檻
 CPCV_FALLBACK_MAX_FACTORS = 15  # Fallback 最多選擇的因子數
+CPCV_MIN_FACTORS_BEFORE_FALLBACK = 5  # 低於此數量時觸發 Fallback 補充
 
 # === Bootstrap 穩定性過濾 ===
 
