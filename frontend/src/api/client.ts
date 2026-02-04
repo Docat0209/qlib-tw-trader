@@ -328,6 +328,30 @@ export interface SetCurrentResponse {
   id: string
 }
 
+// Quality Types
+export interface QualityMetricsItem {
+  training_run_id: number
+  week_id: string | null
+  factor_jaccard_sim: number | null
+  factor_overlap_count: number | null
+  ic_moving_avg_5w: number | null
+  ic_moving_std_5w: number | null
+  icir_5w: number | null
+  has_warning: boolean
+  warning_type: string | null
+  warning_message: string | null
+  created_at: string | null
+}
+
+export interface QualityResponse {
+  items: QualityMetricsItem[]
+  thresholds: {
+    jaccard_min: number
+    ic_std_max: number
+    icir_min: number
+  }
+}
+
 export const modelApi = {
   // 新增的方法
   list: () => api.get<ModelListResponse>('/models'),
@@ -352,6 +376,12 @@ export const modelApi = {
     return api.get<ModelComparisonResponse>(`/models/comparison${query}`)
   },
   status: () => api.get<ModelStatus>('/models/status'),
+
+  // 品質監控
+  quality: (limit?: number) => {
+    const query = limit ? `?limit=${limit}` : ''
+    return api.get<QualityResponse>(`/models/quality${query}`)
+  },
 }
 
 // Hyperparams Types
