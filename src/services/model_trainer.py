@@ -304,11 +304,13 @@ class ModelTrainer:
         X = df[feature_cols]
         y = df["label"]
 
-        # 不對 Label 做標準化！
+        # Label 截面排名標準化（CSRankNorm）
         # 原因：
-        # 1. 訓練時用標準化 label（純排序）會導致 IC 虛高
-        # 2. 實盤時用原始收益率計算 IC，導致嚴重衰減
-        # 3. 保持 label 原始值確保訓練和實盤的一致性
+        # 1. 模型預測「排名」而非「收益率」更穩定（Learning to Rank 論文）
+        # 2. Live IC 使用 Spearman（排名相關），與排名預測一致
+        # 3. CSRankNorm 比 CSZScoreNorm 更穩健（對離群值不敏感）
+        # 參考：qlib GRU/LSTM/AdaRNN 配置都使用 CSRankNorm
+        y = self._rank_by_date(y)
 
         # 按日期分割
         train_mask = (df.index.get_level_values("datetime").date >= train_start) & \
@@ -351,6 +353,24 @@ class ModelTrainer:
         return df.groupby(level="datetime", group_keys=False).apply(
             lambda x: (x - x.mean()) / (x.std() + 1e-8)
         )
+
+    def _rank_by_date(self, series: pd.Series) -> pd.Series:
+        """
+        每日截面排名標準化（仿 qlib CSRankNorm）
+
+        將每日截面的值轉換成排名百分位 [0, 1]
+        這比 ZScore 更穩健，且與 Spearman IC 計算一致
+
+        參考：
+        - qlib CSRankNorm: https://qlib.readthedocs.io/en/stable/component/data.html
+        - Learning to Rank 論文: https://arxiv.org/abs/2012.07149
+        """
+        def rank_pct(x: pd.Series) -> pd.Series:
+            # 排名後轉換成百分位 [0, 1]
+            # 使用 average 方法處理相同值
+            return x.rank(pct=True, method="average")
+
+        return series.groupby(level="datetime", group_keys=False).apply(rank_pct)
 
     def _optimize_hyperparameters(
         self,
