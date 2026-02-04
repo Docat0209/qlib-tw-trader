@@ -10,11 +10,12 @@ Stage 2: 多路徑驗證，解決單一驗證期過擬合問題
 關鍵機制：
 - Purging: 移除測試集前後的訓練樣本（避免 label 洩漏）
 - Embargo: 移除測試集後一段時間的訓練樣本（避免序列相關）
-- MDI: Mean Decrease Impurity（importance > 0 即保留）
+- cMDA: Clustered Mean Decrease Accuracy（importance > avg 才保留）
 
 參考文獻：
 - López de Prado, M. (2018). "Advances in Financial Machine Learning"
-  - "Features with no gain should be excluded"
+- López de Prado, M. (2020). "Clustered Feature Importance" (SSRN)
+  - "selecting all clustered features with above-average importance scores"
 """
 
 import logging
@@ -414,12 +415,25 @@ class CPCVSelector(FactorSelector):
             }
             factor_p_values[factor_name] = p_value
 
-        # === MDI 選擇標準（López de Prado）===
-        # "Features with no gain should be excluded"
-        # 選擇標準：mean_importance > 0 + positive_ratio >= 門檻
+        # === cMDA 選擇標準（López de Prado）===
+        # "selecting all clustered features with above-average importance scores"
+        # 選擇標準：mean_importance > avg(all_importance) + positive_ratio >= 門檻
+
+        # 計算所有因子的平均 importance
+        all_importances = [s["mean_importance"] for s in factor_stats.values()]
+        avg_importance = sum(all_importances) / len(all_importances) if all_importances else 0
+
+        # 只考慮正向 importance 的平均（更合理的基準）
+        positive_importances = [imp for imp in all_importances if imp > 0]
+        avg_positive_importance = (
+            sum(positive_importances) / len(positive_importances)
+            if positive_importances else 0
+        )
 
         logger.info(
-            f"CPCV: Using MDI method (importance > 0), "
+            f"CPCV: Using cMDA method (importance > avg), "
+            f"avg_importance={avg_importance:.4f}, "
+            f"avg_positive_importance={avg_positive_importance:.4f}, "
             f"min_positive_ratio={self.min_positive_ratio}"
         )
 
@@ -430,14 +444,15 @@ class CPCVSelector(FactorSelector):
             mean_imp = stats_dict["mean_importance"]
             positive_ratio = stats_dict["positive_ratio"]
 
-            # 條件檢查
-            pass_importance = mean_imp > 0  # López de Prado: importance > 0
-            pass_stability = positive_ratio >= self.min_positive_ratio  # 穩定性
+            # 條件檢查：importance > 正向平均（更嚴格）
+            pass_importance = mean_imp > avg_positive_importance
+            pass_stability = positive_ratio >= self.min_positive_ratio
 
             stats_dict["pass_importance"] = pass_importance
+            stats_dict["importance_threshold"] = avg_positive_importance
             stats_dict["pass_stability"] = pass_stability
 
-            # 選擇邏輯：importance > 0 + 穩定性
+            # 選擇邏輯：importance > avg + 穩定性
             if pass_importance and pass_stability:
                 selected_names.append(factor_name)
                 stats_dict["selected"] = True
@@ -447,9 +462,9 @@ class CPCVSelector(FactorSelector):
         # 按 mean_importance 排序
         selected_names.sort(key=lambda x: factor_stats[x]["mean_importance"], reverse=True)
 
-        logger.info(f"CPCV: Primary selection: {len(selected_names)} factors (MDI path)")
+        logger.info(f"CPCV: Primary selection: {len(selected_names)} factors (cMDA path)")
 
-        # 備用：如果主選擇的因子太少，放寬 positive_ratio 門檻
+        # 備用：如果主選擇的因子太少，放寬到 importance > 0
         if len(selected_names) < CPCV_MIN_FACTORS_BEFORE_FALLBACK:
             logger.warning(
                 f"CPCV: Only {len(selected_names)} factors passed primary criteria "
@@ -510,9 +525,10 @@ class CPCVSelector(FactorSelector):
                 "n_paths": n_paths,
                 "purge_days": self.purge_days,
                 "embargo_days": self.embargo_days,
+                "importance_threshold": avg_positive_importance,
                 "min_positive_ratio": self.min_positive_ratio,
                 "fallback_positive_ratio": CPCV_FALLBACK_POSITIVE_RATIO,
-                "selection_method": "MDI (importance > 0)",
+                "selection_method": "cMDA (importance > avg)",
                 "time_decay_rate": CPCV_TIME_DECAY_RATE,
             },
             method="cpcv",
