@@ -23,19 +23,17 @@ CPCV_N_TEST_FOLDS = 2  # 測試 fold 數 → C(6,2)=15 條路徑
 CPCV_PURGE_DAYS = 5  # Purging 天數（避免 label 洩漏）
 CPCV_EMBARGO_DAYS = 5  # Embargo 天數（避免序列相關）
 
-# === CPCV 選擇參數（CVPFI 方法）===
-# 參考：ACS Omega (2023) "Interpretation of Machine Learning Models Using Feature Importance"
-# 方法：計算 P(importance > 0)，假設 importance ~ N(μ, σ)
+# === CPCV 選擇參數（MDI 方法）===
+# 參考：López de Prado (2018) "Advances in Financial Machine Learning"
+# 方法："Features with no gain should be excluded" → importance > 0
 
-CPCV_CVPFI_THRESHOLD = 0.95  # P(importance > 0) 門檻（對應 ~1.64σ）
-CPCV_CVPFI_FALLBACK_THRESHOLD = 0.90  # Fallback 門檻（對應 ~1.28σ）
 CPCV_TIME_DECAY_RATE = 0.95  # 時間衰減率（每 fold 衰減 5%）
 
-# === CPCV Fallback 參數 ===
+# === CPCV 選擇門檻 ===
 
-CPCV_MIN_POSITIVE_RATIO = 0.6  # 最低正向路徑比例（穩定性要求）
-CPCV_FALLBACK_POSITIVE_RATIO = 0.5  # Fallback positive ratio 門檻
-CPCV_FALLBACK_MAX_FACTORS = 20  # Fallback 最多選擇的因子數
+CPCV_MIN_POSITIVE_RATIO = 0.5  # 最低正向路徑比例（至少 50% 路徑有正向貢獻）
+CPCV_FALLBACK_POSITIVE_RATIO = 0.4  # Fallback positive ratio 門檻
+CPCV_FALLBACK_MAX_FACTORS = 30  # Fallback 最多選擇的因子數
 CPCV_MIN_FACTORS_BEFORE_FALLBACK = 5  # 低於此數量時觸發 Fallback 補充
 
 # === Bootstrap 穩定性過濾 ===

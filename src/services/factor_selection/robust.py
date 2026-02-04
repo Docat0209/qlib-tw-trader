@@ -42,13 +42,12 @@ class RobustFactorSelector(FactorSelector):
         bootstrap_stability_threshold: float = 0.75,
         bootstrap_sample_ratio: float = 0.8,
         bootstrap_min_ic: float = 0.02,
-        # CPCV 參數 (López de Prado, 2018; ACS Omega, 2023)
+        # CPCV 參數 (López de Prado, 2018)
         cpcv_n_folds: int = 6,
         cpcv_n_test_folds: int = 2,
         cpcv_purge_days: int = 5,
         cpcv_embargo_days: int = 5,
-        cpcv_cvpfi_threshold: float = 0.95,  # CVPFI P(importance > 0) 門檻
-        cpcv_min_positive_ratio: float = 0.6,  # 穩定性要求
+        cpcv_min_positive_ratio: float = 0.5,  # 穩定性要求
         # LightGBM 參數
         lgbm_params: dict[str, Any] | None = None,
     ):
@@ -62,7 +61,7 @@ class RobustFactorSelector(FactorSelector):
             lgbm_params: LightGBM 參數
 
         Note:
-            使用 CVPFI 方法選擇因子，計算 P(importance > 0)。
+            使用 López de Prado 的 MDI 方法：importance > 0 + positive_ratio
         """
         self.enable_bootstrap = enable_bootstrap
 
@@ -74,13 +73,12 @@ class RobustFactorSelector(FactorSelector):
             min_ic=bootstrap_min_ic,
         )
 
-        # CPCV 選擇器（使用 CVPFI 方法）
+        # CPCV 選擇器（使用 MDI 方法）
         self.cpcv_selector = CPCVSelector(
             n_folds=cpcv_n_folds,
             n_test_folds=cpcv_n_test_folds,
             purge_days=cpcv_purge_days,
             embargo_days=cpcv_embargo_days,
-            cvpfi_threshold=cpcv_cvpfi_threshold,
             min_positive_ratio=cpcv_min_positive_ratio,
             lgbm_params=lgbm_params,
         )

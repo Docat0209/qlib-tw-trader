@@ -10,11 +10,11 @@ Stage 2: 多路徑驗證，解決單一驗證期過擬合問題
 關鍵機制：
 - Purging: 移除測試集前後的訓練樣本（避免 label 洩漏）
 - Embargo: 移除測試集後一段時間的訓練樣本（避免序列相關）
-- CVPFI: Cross-Validated Permutation Feature Importance（計算 P(importance > 0)）
+- MDI: Mean Decrease Impurity（importance > 0 即保留）
 
 參考文獻：
 - López de Prado, M. (2018). "Advances in Financial Machine Learning"
-- ACS Omega (2023). "Interpretation of Machine Learning Models Using Feature Importance"
+  - "Features with no gain should be excluded"
 """
 
 import logging
@@ -32,8 +32,6 @@ from scipy import stats
 from src.repositories.models import Factor
 from src.services.factor_selection.base import FactorSelectionResult, FactorSelector
 from src.shared.constants import (
-    CPCV_CVPFI_FALLBACK_THRESHOLD,
-    CPCV_CVPFI_THRESHOLD,
     CPCV_EMBARGO_DAYS,
     CPCV_FALLBACK_MAX_FACTORS,
     CPCV_FALLBACK_POSITIVE_RATIO,
@@ -46,43 +44,6 @@ from src.shared.constants import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def calculate_cvpfi_probability(mean_importance: float, std_importance: float) -> float:
-    """
-    計算 CVPFI (Cross-Validated Permutation Feature Importance) 概率
-
-    假設 importance 服從正態分佈 N(μ, σ)，計算 P(importance > 0)。
-
-    原理：
-    - 如果一個因子真正有用，其 importance 應該穩定地大於 0
-    - P(importance > 0) 同時考慮了效果大小（mean）和穩定性（std）
-    - 高 mean + 低 std = 高概率 = 可靠的因子
-
-    Args:
-        mean_importance: importance 的平均值（跨多個 CV fold）
-        std_importance: importance 的標準差（跨多個 CV fold）
-
-    Returns:
-        P(importance > 0)，範圍 [0, 1]
-
-    References:
-        - ACS Omega (2023). "Interpretation of Machine Learning Models for Data Sets
-          with Many Features Using Feature Importance"
-        - 論文使用 P > 0.997（三西格瑪），我們使用較寬鬆的 P > 0.95
-    """
-    if std_importance <= 0:
-        # 如果沒有變異，直接根據 mean 判斷
-        return 1.0 if mean_importance > 0 else 0.0
-
-    # P(X > 0) where X ~ N(mean, std)
-    # = 1 - Φ((0 - mean) / std)
-    # = 1 - Φ(-mean / std)
-    # = Φ(mean / std)
-    z_score = mean_importance / std_importance
-    probability = stats.norm.cdf(z_score)
-
-    return float(probability)
 
 
 @dataclass
@@ -108,8 +69,7 @@ class CPCVSelector(FactorSelector):
         n_test_folds: int = CPCV_N_TEST_FOLDS,
         purge_days: int = CPCV_PURGE_DAYS,
         embargo_days: int = CPCV_EMBARGO_DAYS,
-        cvpfi_threshold: float = CPCV_CVPFI_THRESHOLD,  # P(importance > 0) 門檻
-        min_positive_ratio: float = CPCV_MIN_POSITIVE_RATIO,  # 至少 60% 路徑有正向貢獻
+        min_positive_ratio: float = CPCV_MIN_POSITIVE_RATIO,
         lgbm_params: dict[str, Any] | None = None,
     ):
         """
@@ -120,24 +80,18 @@ class CPCVSelector(FactorSelector):
             n_test_folds: 每次組合中的測試 fold 數（López de Prado 示例用 2）
             purge_days: Purging 天數（label lookahead 防護）
             embargo_days: Embargo 天數（序列相關防護）
-            cvpfi_threshold: CVPFI 概率門檻，P(importance > 0) > threshold
             min_positive_ratio: 最低正向路徑比例（穩定性要求）
             lgbm_params: LightGBM 參數
 
         Note:
-            使用 CVPFI 方法選擇因子：
-            - 假設 importance ~ N(μ, σ)
-            - 計算 P(importance > 0)
-            - 只保留概率高於門檻的因子
-
-        References:
-            - ACS Omega (2023). "Interpretation of ML Models Using Feature Importance"
+            使用 López de Prado 的 MDI 方法：
+            - "Features with no gain should be excluded"
+            - 選擇標準：mean_importance > 0 + positive_ratio >= 門檻
         """
         self.n_folds = n_folds
         self.n_test_folds = n_test_folds
         self.purge_days = purge_days
         self.embargo_days = embargo_days
-        self.cvpfi_threshold = cvpfi_threshold
         self.min_positive_ratio = min_positive_ratio
         self.lgbm_params = lgbm_params or self._get_default_lgbm_params()
 
@@ -460,68 +414,56 @@ class CPCVSelector(FactorSelector):
             }
             factor_p_values[factor_name] = p_value
 
-        # === CVPFI 選擇標準 ===
-        # 基於 ACS Omega (2023) 的 CVPFI 方法：
-        # - 假設 importance ~ N(μ, σ)
-        # - 計算 P(importance > 0)
-        # - 只保留概率高於門檻的因子
-        #
-        # 優點：同時考慮效果大小（mean）和穩定性（std）
-
-        # 計算每個因子的 CVPFI 概率
-        for factor_name in factor_stats:
-            mean_imp = factor_stats[factor_name]["mean_importance"]
-            std_imp = factor_stats[factor_name]["std_importance"]
-            cvpfi_prob = calculate_cvpfi_probability(mean_imp, std_imp)
-            factor_stats[factor_name]["cvpfi_probability"] = cvpfi_prob
+        # === MDI 選擇標準（López de Prado）===
+        # "Features with no gain should be excluded"
+        # 選擇標準：mean_importance > 0 + positive_ratio >= 門檻
 
         logger.info(
-            f"CPCV: Using CVPFI method with threshold={self.cvpfi_threshold}, "
-            f"fallback_threshold={CPCV_CVPFI_FALLBACK_THRESHOLD}"
+            f"CPCV: Using MDI method (importance > 0), "
+            f"min_positive_ratio={self.min_positive_ratio}"
         )
 
         # 選擇通過條件的因子
         selected_names = []
         for factor_name in factor_stats:
             stats_dict = factor_stats[factor_name]
-            cvpfi_prob = stats_dict["cvpfi_probability"]
+            mean_imp = stats_dict["mean_importance"]
             positive_ratio = stats_dict["positive_ratio"]
 
             # 條件檢查
-            pass_cvpfi = cvpfi_prob >= self.cvpfi_threshold  # CVPFI 概率門檻
+            pass_importance = mean_imp > 0  # López de Prado: importance > 0
             pass_stability = positive_ratio >= self.min_positive_ratio  # 穩定性
 
-            stats_dict["pass_cvpfi"] = pass_cvpfi
-            stats_dict["cvpfi_threshold"] = self.cvpfi_threshold
+            stats_dict["pass_importance"] = pass_importance
             stats_dict["pass_stability"] = pass_stability
 
-            # 選擇邏輯：P(importance > 0) >= 門檻 + 穩定性
-            if pass_cvpfi and pass_stability:
+            # 選擇邏輯：importance > 0 + 穩定性
+            if pass_importance and pass_stability:
                 selected_names.append(factor_name)
                 stats_dict["selected"] = True
             else:
                 stats_dict["selected"] = False
 
-        # 按 CVPFI 概率排序
-        selected_names.sort(key=lambda x: factor_stats[x]["cvpfi_probability"], reverse=True)
+        # 按 mean_importance 排序
+        selected_names.sort(key=lambda x: factor_stats[x]["mean_importance"], reverse=True)
 
-        logger.info(f"CPCV: Primary selection: {len(selected_names)} factors (CVPFI path)")
+        logger.info(f"CPCV: Primary selection: {len(selected_names)} factors (MDI path)")
 
-        # 備用：如果主選擇的因子太少，使用較寬鬆的 CVPFI 門檻補充
+        # 備用：如果主選擇的因子太少，放寬 positive_ratio 門檻
         if len(selected_names) < CPCV_MIN_FACTORS_BEFORE_FALLBACK:
             logger.warning(
                 f"CPCV: Only {len(selected_names)} factors passed primary criteria "
                 f"(< {CPCV_MIN_FACTORS_BEFORE_FALLBACK}), "
                 f"using fallback with relaxed threshold "
-                f"(CVPFI>={CPCV_CVPFI_FALLBACK_THRESHOLD}, positive_ratio>={CPCV_FALLBACK_POSITIVE_RATIO})"
+                f"(importance>0, positive_ratio>={CPCV_FALLBACK_POSITIVE_RATIO})"
             )
             # 找出符合 fallback 條件但尚未被選中的因子
             already_selected = set(selected_names)
             relaxed_candidates = [
-                (name, factor_stats[name]["cvpfi_probability"])
+                (name, factor_stats[name]["mean_importance"])
                 for name in factor_stats.keys()
                 if name not in already_selected
-                and factor_stats[name]["cvpfi_probability"] >= CPCV_CVPFI_FALLBACK_THRESHOLD
+                and factor_stats[name]["mean_importance"] > 0
                 and factor_stats[name]["positive_ratio"] >= CPCV_FALLBACK_POSITIVE_RATIO
             ]
             relaxed_candidates.sort(key=lambda x: x[1], reverse=True)
@@ -541,10 +483,16 @@ class CPCVSelector(FactorSelector):
             )
 
         # 打印統計摘要
-        all_cvpfi = [s["cvpfi_probability"] for s in factor_stats.values()]
-        if all_cvpfi:
+        all_importance = [s["mean_importance"] for s in factor_stats.values()]
+        all_positive_ratio = [s["positive_ratio"] for s in factor_stats.values()]
+        if all_importance:
+            positive_count = sum(1 for imp in all_importance if imp > 0)
             logger.info(
-                f"CPCV: CVPFI probability range=[{min(all_cvpfi):.3f}, {max(all_cvpfi):.3f}]"
+                f"CPCV: importance range=[{min(all_importance):.4f}, {max(all_importance):.4f}], "
+                f"positive={positive_count}/{len(all_importance)}"
+            )
+            logger.info(
+                f"CPCV: positive_ratio range=[{min(all_positive_ratio):.2f}, {max(all_positive_ratio):.2f}]"
             )
             logger.info(f"CPCV: Selected {len(selected_names)} factors")
 
@@ -562,10 +510,9 @@ class CPCVSelector(FactorSelector):
                 "n_paths": n_paths,
                 "purge_days": self.purge_days,
                 "embargo_days": self.embargo_days,
-                "cvpfi_threshold": self.cvpfi_threshold,
-                "cvpfi_fallback_threshold": CPCV_CVPFI_FALLBACK_THRESHOLD,
                 "min_positive_ratio": self.min_positive_ratio,
-                "selection_method": "CVPFI (Cross-Validated Permutation Feature Importance)",
+                "fallback_positive_ratio": CPCV_FALLBACK_POSITIVE_RATIO,
+                "selection_method": "MDI (importance > 0)",
                 "time_decay_rate": CPCV_TIME_DECAY_RATE,
             },
             method="cpcv",
