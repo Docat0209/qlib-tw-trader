@@ -4,12 +4,12 @@
 
 流程：
 1. Bootstrap 穩定性過濾：使用輕量單因子 IC，過濾不穩定因子
-2. CPCV：對穩定因子進行嚴格的多路徑交叉驗證
+2. CPCV：使用 CVPFI 方法進行多路徑交叉驗證
 
 參考文獻：
 - Meinshausen & Bühlmann (2010). "Stability Selection"
 - López de Prado, M. (2018). "Advances in Financial Machine Learning"
-- Harvey, C., Liu, Y. & Zhu, H. (2016). "...and the Cross-Section of Expected Returns"
+- ACS Omega (2023). "Interpretation of ML Models Using Feature Importance"
 """
 
 import logging
@@ -42,12 +42,12 @@ class RobustFactorSelector(FactorSelector):
         bootstrap_stability_threshold: float = 0.75,
         bootstrap_sample_ratio: float = 0.8,
         bootstrap_min_ic: float = 0.02,
-        # CPCV 參數 (López de Prado, 2018; Harvey et al., 2016)
+        # CPCV 參數 (López de Prado, 2018; ACS Omega, 2023)
         cpcv_n_folds: int = 6,
         cpcv_n_test_folds: int = 2,
         cpcv_purge_days: int = 5,
         cpcv_embargo_days: int = 5,
-        cpcv_significance: float = 0.05,  # 用於動態 t 閾值計算
+        cpcv_cvpfi_threshold: float = 0.95,  # CVPFI P(importance > 0) 門檻
         cpcv_min_positive_ratio: float = 0.6,  # 穩定性要求
         # LightGBM 參數
         lgbm_params: dict[str, Any] | None = None,
@@ -58,11 +58,11 @@ class RobustFactorSelector(FactorSelector):
         Args:
             enable_bootstrap: 是否啟用 Bootstrap 前置過濾
             bootstrap_*: Bootstrap 參數
-            cpcv_*: CPCV 參數 (基於 López de Prado 和 Harvey 等人的論文)
+            cpcv_*: CPCV 參數
             lgbm_params: LightGBM 參數
 
         Note:
-            t 閾值不再硬編碼，而是由 CPCVSelector 根據因子數量和路徑數量動態計算。
+            使用 CVPFI 方法選擇因子，計算 P(importance > 0)。
         """
         self.enable_bootstrap = enable_bootstrap
 
@@ -74,13 +74,13 @@ class RobustFactorSelector(FactorSelector):
             min_ic=bootstrap_min_ic,
         )
 
-        # CPCV 選擇器（t 閾值動態計算）
+        # CPCV 選擇器（使用 CVPFI 方法）
         self.cpcv_selector = CPCVSelector(
             n_folds=cpcv_n_folds,
             n_test_folds=cpcv_n_test_folds,
             purge_days=cpcv_purge_days,
             embargo_days=cpcv_embargo_days,
-            significance_level=cpcv_significance,
+            cvpfi_threshold=cpcv_cvpfi_threshold,
             min_positive_ratio=cpcv_min_positive_ratio,
             lgbm_params=lgbm_params,
         )

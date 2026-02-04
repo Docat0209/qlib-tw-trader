@@ -160,51 +160,50 @@ CPCV_N_FOLDS = 6              # 分割數
 CPCV_N_TEST_FOLDS = 2         # 測試 fold 數 → C(6,2)=15 條路徑
 CPCV_PURGE_DAYS = 5           # Purging 天數
 CPCV_EMBARGO_DAYS = 5         # Embargo 天數
-CPCV_SIGNIFICANCE_ALPHA = 0.05 # 動態 t 閾值的顯著水準
+CPCV_CVPFI_THRESHOLD = 0.95   # P(importance > 0) 門檻
 CPCV_TIME_DECAY_RATE = 0.95   # 時間衰減率
 ```
 
-**動態 t 閾值**（`cpcv.py`）：
+**CVPFI 方法**（`cpcv.py`）：
 
-不使用硬編碼的 t ≥ 3.0，而是根據 Bonferroni 校正動態計算：
+使用 Cross-Validated Permutation Feature Importance (CVPFI) 方法選擇因子：
 
 ```python
 from scipy import stats
 
-def calculate_dynamic_t_threshold(n_factors, n_paths, alpha=0.05):
+def calculate_cvpfi_probability(mean_importance, std_importance):
     """
-    動態計算 t 閾值
+    計算 CVPFI 概率
 
-    基於 Harvey et al. (2016) 的多重比較校正原理：
-    - Bonferroni 校正：α_adjusted = α / n_factors
-    - 小樣本使用 t 分佈：df = n_paths - 1
+    假設 importance ~ N(μ, σ)，計算 P(importance > 0)。
+    同時考慮效果大小（mean）和穩定性（std）。
     """
-    alpha_adjusted = alpha / max(1, n_factors)
-    df = max(1, n_paths - 1)
-    return stats.t.ppf(1 - alpha_adjusted / 2, df)
+    if std_importance <= 0:
+        return 1.0 if mean_importance > 0 else 0.0
+    z_score = mean_importance / std_importance
+    return stats.norm.cdf(z_score)
 ```
 
-**範例閾值**：
+**範例**：
 
-| n_factors | n_paths | t_threshold |
-|-----------|---------|-------------|
-| 10        | 15      | 3.33        |
-| 36        | 15      | 3.97        |
-| 36        | 45      | 3.41        |
-| 100       | 15      | 4.50        |
+| mean | std | P(imp > 0) | 結果 |
+|------|-----|------------|------|
+| 0.02 | 0.01 | 0.977 | ✓ 通過 |
+| 0.015 | 0.005 | 0.999 | ✓ 通過 |
+| 0.01 | 0.02 | 0.691 | ✗ 不通過 |
+| 0.005 | 0.02 | 0.599 | ✗ 不通過 |
 
-**為什麼不硬編碼 t ≥ 3.0？**
-- Harvey et al. (2016) 的 t ≥ 3.0 假設大樣本（df → ∞）和 ~300 個因子
-- 我們只有 15 條 CPCV 路徑（df = 14），t 分佈的尾部更厚
-- 動態閾值根據實際情況調整，更符合統計原理
+**為什麼用 CVPFI 而非 t ≥ 3.0？**
+- Harvey et al. (2016) 的 t ≥ 3.0 是用於**學術發表**的假發現率控制
+- López de Prado 的 MDI/MDA 方法推薦 `importance > 0`
+- CVPFI 來自 ACS Omega (2023) 論文，同時考慮效果大小和穩定性
+- 更適合實際因子選擇場景
 
 **選擇邏輯**：
-1. **Bonferroni 路徑**：t ≥ 動態閾值 + positive_ratio ≥ 0.6 → 直接選擇
-2. **BH-FDR 路徑**：BH 校正顯著 + 穩定性 → 選擇
-3. **Fallback**（如果主選擇 < 5 個因子）：
-   - 使用較寬鬆的閾值（α = 0.10）
-   - 從通過 fallback 閾值 + positive_ratio ≥ 0.55 的因子中補充
-   - 補充到至少 5 個，最多 15 個因子
+1. **主選擇**：P(importance > 0) ≥ 0.95 + positive_ratio ≥ 0.6
+2. **Fallback**（如果主選擇 < 5 個因子）：
+   - P(importance > 0) ≥ 0.90 + positive_ratio ≥ 0.5
+   - 補充到至少 5 個，最多 20 個因子
 
 **時間衰減權重**：
 - 近期路徑權重更高：`weight = 0.95^i`
@@ -408,13 +407,14 @@ CPCV_N_FOLDS = 6
 CPCV_N_TEST_FOLDS = 2
 CPCV_PURGE_DAYS = 5
 CPCV_EMBARGO_DAYS = 5
-CPCV_SIGNIFICANCE_ALPHA = 0.05  # 用於動態 t 閾值計算
+CPCV_CVPFI_THRESHOLD = 0.95        # P(importance > 0) 門檻
+CPCV_CVPFI_FALLBACK_THRESHOLD = 0.90  # Fallback 門檻
 CPCV_TIME_DECAY_RATE = 0.95
 
 # === CPCV 選擇參數 ===
 CPCV_MIN_POSITIVE_RATIO = 0.6      # 主選擇穩定性門檻
-CPCV_FALLBACK_POSITIVE_RATIO = 0.55  # Fallback 穩定性門檻
-CPCV_FALLBACK_MAX_FACTORS = 15
+CPCV_FALLBACK_POSITIVE_RATIO = 0.5   # Fallback 穩定性門檻
+CPCV_FALLBACK_MAX_FACTORS = 20
 CPCV_MIN_FACTORS_BEFORE_FALLBACK = 5
 
 # === Bootstrap 穩定性 ===
@@ -439,10 +439,10 @@ QUALITY_ICIR_MIN = 0.5
    - [arXiv:2012.07149](https://arxiv.org/abs/2012.07149)
    - 核心觀點：排名預測比收益預測更有效，Sharpe Ratio 提升 3 倍
 
-2. **Harvey Multiple Testing**
-   - Harvey, C., Liu, Y., & Zhu, H. (2016). "...and the Cross-Section of Expected Returns"
-   - 核心觀點：使用 Bonferroni 校正控制假發現率
-   - 注意：原論文的 t ≥ 3.0 假設大樣本和 ~300 個因子，需根據實際情況動態調整
+2. **CVPFI (Cross-Validated Permutation Feature Importance)**
+   - ACS Omega (2023). "Interpretation of Machine Learning Models for Data Sets with Many Features Using Feature Importance"
+   - 核心觀點：計算 P(importance > 0)，同時考慮效果大小和穩定性
+   - 論文使用 P > 0.997（三西格瑪），我們使用 P > 0.95
 
 3. **CPCV**
    - López de Prado, M. (2018). "Advances in Financial Machine Learning"
@@ -464,5 +464,5 @@ QUALITY_ICIR_MIN = 0.5
 
 | 日期 | 變更 |
 |------|------|
-| 2026-02-04 | 動態 t 閾值：移除硬編碼 t≥3.0，改用 Bonferroni 校正動態計算 |
+| 2026-02-04 | CVPFI 方法：使用 P(importance > 0) 替代 t 統計量 |
 | 2026-02-04 | 初版：統一 IC 計算（Spearman）、Label 使用 CSRankNorm |

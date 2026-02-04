@@ -4,19 +4,17 @@ Stage 2: 多路徑驗證，解決單一驗證期過擬合問題
 
 原理：
 - 產生 C(n_folds, n_test_folds) 種 train/test 組合
-- 每個組合訓練模型、計算測試集 IC
+- 每個組合訓練模型、計算測試集 permutation importance
 - 只保留在多數組合都穩定有效的因子
 
 關鍵機制：
 - Purging: 移除測試集前後的訓練樣本（避免 label 洩漏）
 - Embargo: 移除測試集後一段時間的訓練樣本（避免序列相關）
-- BH-FDR: Benjamini-Hochberg 多重檢驗校正（比 Bonferroni 更適合探索性分析）
-- t-statistic 門檻: 確保效果大小具統計意義
+- CVPFI: Cross-Validated Permutation Feature Importance（計算 P(importance > 0)）
 
 參考文獻：
 - López de Prado, M. (2018). "Advances in Financial Machine Learning"
-- Benjamini, Y. & Hochberg, Y. (1995). "Controlling the False Discovery Rate"
-- Harvey, C., Liu, Y. & Zhu, H. (2016). "...and the Cross-Section of Expected Returns"
+- ACS Omega (2023). "Interpretation of Machine Learning Models Using Feature Importance"
 """
 
 import logging
@@ -34,6 +32,8 @@ from scipy import stats
 from src.repositories.models import Factor
 from src.services.factor_selection.base import FactorSelectionResult, FactorSelector
 from src.shared.constants import (
+    CPCV_CVPFI_FALLBACK_THRESHOLD,
+    CPCV_CVPFI_THRESHOLD,
     CPCV_EMBARGO_DAYS,
     CPCV_FALLBACK_MAX_FACTORS,
     CPCV_FALLBACK_POSITIVE_RATIO,
@@ -42,47 +42,47 @@ from src.shared.constants import (
     CPCV_N_FOLDS,
     CPCV_N_TEST_FOLDS,
     CPCV_PURGE_DAYS,
-    CPCV_SIGNIFICANCE_ALPHA,
     CPCV_TIME_DECAY_RATE,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def calculate_dynamic_t_threshold(
-    n_factors: int, n_paths: int, alpha: float = 0.05
-) -> float:
+def calculate_cvpfi_probability(mean_importance: float, std_importance: float) -> float:
     """
-    計算動態 t 閾值
+    計算 CVPFI (Cross-Validated Permutation Feature Importance) 概率
 
-    基於 Bonferroni 校正 + 小樣本 t 分佈。
+    假設 importance 服從正態分佈 N(μ, σ)，計算 P(importance > 0)。
 
     原理：
-    - Harvey et al. (2016) 的 t >= 3.0 假設大樣本 (df → ∞) 和 ~300 個因子
-    - 我們需要根據實際的因子數量和路徑數量動態調整
-    - 小樣本 (n_paths=15) 下，t 分佈的尾部更厚，臨界值更大
+    - 如果一個因子真正有用，其 importance 應該穩定地大於 0
+    - P(importance > 0) 同時考慮了效果大小（mean）和穩定性（std）
+    - 高 mean + 低 std = 高概率 = 可靠的因子
 
     Args:
-        n_factors: 測試的因子數量（用於多重比較校正）
-        n_paths: CPCV 路徑數量（決定自由度）
-        alpha: 顯著水準（預設 0.05）
+        mean_importance: importance 的平均值（跨多個 CV fold）
+        std_importance: importance 的標準差（跨多個 CV fold）
 
     Returns:
-        動態計算的 t 閾值
+        P(importance > 0)，範圍 [0, 1]
 
     References:
-        - Harvey, C., Liu, Y. & Zhu, H. (2016). "...and the Cross-Section of Expected Returns"
-        - Bonferroni correction: α_adjusted = α / n_factors
-        - t-distribution critical value with df = n_paths - 1
+        - ACS Omega (2023). "Interpretation of Machine Learning Models for Data Sets
+          with Many Features Using Feature Importance"
+        - 論文使用 P > 0.997（三西格瑪），我們使用較寬鬆的 P > 0.95
     """
-    # Bonferroni 校正：調整顯著水準
-    alpha_adjusted = alpha / max(1, n_factors)
+    if std_importance <= 0:
+        # 如果沒有變異，直接根據 mean 判斷
+        return 1.0 if mean_importance > 0 else 0.0
 
-    # 小樣本使用 t 分佈（雙尾檢驗）
-    df = max(1, n_paths - 1)
-    t_threshold = stats.t.ppf(1 - alpha_adjusted / 2, df)
+    # P(X > 0) where X ~ N(mean, std)
+    # = 1 - Φ((0 - mean) / std)
+    # = 1 - Φ(-mean / std)
+    # = Φ(mean / std)
+    z_score = mean_importance / std_importance
+    probability = stats.norm.cdf(z_score)
 
-    return float(t_threshold)
+    return float(probability)
 
 
 @dataclass
@@ -108,7 +108,7 @@ class CPCVSelector(FactorSelector):
         n_test_folds: int = CPCV_N_TEST_FOLDS,
         purge_days: int = CPCV_PURGE_DAYS,
         embargo_days: int = CPCV_EMBARGO_DAYS,
-        significance_level: float = CPCV_SIGNIFICANCE_ALPHA,  # BH-FDR + 動態 t 閾值
+        cvpfi_threshold: float = CPCV_CVPFI_THRESHOLD,  # P(importance > 0) 門檻
         min_positive_ratio: float = CPCV_MIN_POSITIVE_RATIO,  # 至少 60% 路徑有正向貢獻
         lgbm_params: dict[str, Any] | None = None,
     ):
@@ -120,20 +120,24 @@ class CPCVSelector(FactorSelector):
             n_test_folds: 每次組合中的測試 fold 數（López de Prado 示例用 2）
             purge_days: Purging 天數（label lookahead 防護）
             embargo_days: Embargo 天數（序列相關防護）
-            significance_level: 顯著水準，用於 BH-FDR 和動態 t 閾值計算
+            cvpfi_threshold: CVPFI 概率門檻，P(importance > 0) > threshold
             min_positive_ratio: 最低正向路徑比例（穩定性要求）
             lgbm_params: LightGBM 參數
 
         Note:
-            t 閾值不再硬編碼為 3.0，而是根據因子數量和路徑數量動態計算。
-            這遵循 Harvey et al. (2016) 的 Bonferroni 校正原理，同時考慮
-            小樣本的 t 分佈特性。
+            使用 CVPFI 方法選擇因子：
+            - 假設 importance ~ N(μ, σ)
+            - 計算 P(importance > 0)
+            - 只保留概率高於門檻的因子
+
+        References:
+            - ACS Omega (2023). "Interpretation of ML Models Using Feature Importance"
         """
         self.n_folds = n_folds
         self.n_test_folds = n_test_folds
         self.purge_days = purge_days
         self.embargo_days = embargo_days
-        self.significance_level = significance_level
+        self.cvpfi_threshold = cvpfi_threshold
         self.min_positive_ratio = min_positive_ratio
         self.lgbm_params = lgbm_params or self._get_default_lgbm_params()
 
@@ -456,107 +460,79 @@ class CPCVSelector(FactorSelector):
             }
             factor_p_values[factor_name] = p_value
 
-        # === 動態 t 閾值選擇標準 ===
-        # 基於 Harvey et al. (2016) 的多重比較校正原理，但動態調整：
-        # - 根據實際測試的因子數量計算 Bonferroni 校正
-        # - 根據 CPCV 路徑數量（小樣本）使用 t 分佈而非正態分佈
+        # === CVPFI 選擇標準 ===
+        # 基於 ACS Omega (2023) 的 CVPFI 方法：
+        # - 假設 importance ~ N(μ, σ)
+        # - 計算 P(importance > 0)
+        # - 只保留概率高於門檻的因子
         #
-        # 同時使用 BH-FDR 作為備選路徑（對於邊緣情況更有統計功效）
-        # 兩者都要求: 正向路徑比例 >= 門檻 (穩定性要求)
+        # 優點：同時考慮效果大小（mean）和穩定性（std）
 
-        # 動態計算 t 閾值
-        dynamic_t_threshold = calculate_dynamic_t_threshold(
-            n_factors=n_factors,
-            n_paths=n_paths,
-            alpha=self.significance_level,
-        )
-
-        # Fallback t 閾值：使用較寬鬆的校正（10% 顯著水準）
-        fallback_t_threshold = calculate_dynamic_t_threshold(
-            n_factors=n_factors,
-            n_paths=n_paths,
-            alpha=0.10,  # 較寬鬆的顯著水準
-        )
+        # 計算每個因子的 CVPFI 概率
+        for factor_name in factor_stats:
+            mean_imp = factor_stats[factor_name]["mean_importance"]
+            std_imp = factor_stats[factor_name]["std_importance"]
+            cvpfi_prob = calculate_cvpfi_probability(mean_imp, std_imp)
+            factor_stats[factor_name]["cvpfi_probability"] = cvpfi_prob
 
         logger.info(
-            f"CPCV: Dynamic t-thresholds calculated: "
-            f"primary={dynamic_t_threshold:.3f} (α={self.significance_level}), "
-            f"fallback={fallback_t_threshold:.3f} (α=0.10), "
-            f"n_factors={n_factors}, n_paths={n_paths}"
+            f"CPCV: Using CVPFI method with threshold={self.cvpfi_threshold}, "
+            f"fallback_threshold={CPCV_CVPFI_FALLBACK_THRESHOLD}"
         )
-
-        sorted_factors = sorted(factor_p_values.items(), key=lambda x: x[1])
-        n_tested = len(sorted_factors)
-
-        # 找出 BH-FDR 校正後顯著的最大 rank
-        bh_cutoff_rank = 0
-        for rank, (factor_name, p_value) in enumerate(sorted_factors, 1):
-            bh_threshold = (rank / n_tested) * self.significance_level
-            if p_value <= bh_threshold:
-                bh_cutoff_rank = rank
-            factor_stats[factor_name]["bh_threshold"] = float(bh_threshold)
 
         # 選擇通過條件的因子
         selected_names = []
-        for rank, (factor_name, p_value) in enumerate(sorted_factors, 1):
+        for factor_name in factor_stats:
             stats_dict = factor_stats[factor_name]
-            t_stat = stats_dict["t_stat"]
+            cvpfi_prob = stats_dict["cvpfi_probability"]
             positive_ratio = stats_dict["positive_ratio"]
 
-            # 條件檢查（使用動態閾值）
-            pass_dynamic_t = t_stat >= dynamic_t_threshold  # 動態 Bonferroni 校正
-            pass_bh = rank <= bh_cutoff_rank  # BH-FDR 校正
+            # 條件檢查
+            pass_cvpfi = cvpfi_prob >= self.cvpfi_threshold  # CVPFI 概率門檻
             pass_stability = positive_ratio >= self.min_positive_ratio  # 穩定性
 
-            stats_dict["pass_dynamic_t"] = pass_dynamic_t
-            stats_dict["dynamic_t_threshold"] = dynamic_t_threshold
-            stats_dict["pass_bh"] = pass_bh
+            stats_dict["pass_cvpfi"] = pass_cvpfi
+            stats_dict["cvpfi_threshold"] = self.cvpfi_threshold
             stats_dict["pass_stability"] = pass_stability
 
-            # 選擇邏輯：
-            # 路徑 A: t >= 動態閾值 (Bonferroni) + 穩定性 → 直接選擇
-            # 路徑 B: BH-FDR + 穩定性 → 選擇
-            if (pass_dynamic_t and pass_stability) or (pass_bh and pass_stability):
+            # 選擇邏輯：P(importance > 0) >= 門檻 + 穩定性
+            if pass_cvpfi and pass_stability:
                 selected_names.append(factor_name)
                 stats_dict["selected"] = True
-                stats_dict["selection_path"] = "bonferroni" if pass_dynamic_t else "bh_fdr"
             else:
                 stats_dict["selected"] = False
 
-        logger.info(
-            f"CPCV: Primary selection: {len(selected_names)} factors "
-            f"(Bonferroni path: {sum(1 for n in selected_names if factor_stats[n].get('selection_path') == 'bonferroni')}, "
-            f"BH-FDR path: {sum(1 for n in selected_names if factor_stats[n].get('selection_path') == 'bh_fdr')})"
-        )
+        # 按 CVPFI 概率排序
+        selected_names.sort(key=lambda x: factor_stats[x]["cvpfi_probability"], reverse=True)
 
-        # 備用：如果主選擇的因子太少，使用較寬鬆的動態閾值補充
-        # 原因：只有 1-2 個因子的模型太不穩定
+        logger.info(f"CPCV: Primary selection: {len(selected_names)} factors (CVPFI path)")
+
+        # 備用：如果主選擇的因子太少，使用較寬鬆的 CVPFI 門檻補充
         if len(selected_names) < CPCV_MIN_FACTORS_BEFORE_FALLBACK:
             logger.warning(
                 f"CPCV: Only {len(selected_names)} factors passed primary criteria "
                 f"(< {CPCV_MIN_FACTORS_BEFORE_FALLBACK}), "
                 f"using fallback with relaxed threshold "
-                f"(t>={fallback_t_threshold:.3f}, positive_ratio>={CPCV_FALLBACK_POSITIVE_RATIO})"
+                f"(CVPFI>={CPCV_CVPFI_FALLBACK_THRESHOLD}, positive_ratio>={CPCV_FALLBACK_POSITIVE_RATIO})"
             )
             # 找出符合 fallback 條件但尚未被選中的因子
             already_selected = set(selected_names)
             relaxed_candidates = [
-                (name, factor_stats[name]["t_stat"])
-                for name in factor_p_values.keys()
+                (name, factor_stats[name]["cvpfi_probability"])
+                for name in factor_stats.keys()
                 if name not in already_selected
-                and factor_stats[name]["t_stat"] >= fallback_t_threshold
+                and factor_stats[name]["cvpfi_probability"] >= CPCV_CVPFI_FALLBACK_THRESHOLD
                 and factor_stats[name]["positive_ratio"] >= CPCV_FALLBACK_POSITIVE_RATIO
             ]
             relaxed_candidates.sort(key=lambda x: x[1], reverse=True)
 
             # 補充到至少 CPCV_MIN_FACTORS_BEFORE_FALLBACK 個，但不超過 CPCV_FALLBACK_MAX_FACTORS
             need_count = CPCV_MIN_FACTORS_BEFORE_FALLBACK - len(selected_names)
-            max_supplement = min(CPCV_FALLBACK_MAX_FACTORS - len(selected_names), need_count + 5)
+            max_supplement = min(CPCV_FALLBACK_MAX_FACTORS - len(selected_names), need_count + 10)
             supplement_names = [name for name, _ in relaxed_candidates[:max_supplement]]
 
             for name in supplement_names:
                 factor_stats[name]["fallback_selected"] = True
-                factor_stats[name]["fallback_t_threshold"] = fallback_t_threshold
                 selected_names.append(name)
 
             logger.info(
@@ -565,12 +541,10 @@ class CPCVSelector(FactorSelector):
             )
 
         # 打印統計摘要
-        all_t_stats = [s["t_stat"] for s in factor_stats.values()]
-        all_p_values = [s["p_value"] for s in factor_stats.values()]
-        if all_t_stats:
+        all_cvpfi = [s["cvpfi_probability"] for s in factor_stats.values()]
+        if all_cvpfi:
             logger.info(
-                f"CPCV: t_stat range=[{min(all_t_stats):.3f}, {max(all_t_stats):.3f}], "
-                f"BH cutoff rank={bh_cutoff_rank}/{n_tested}"
+                f"CPCV: CVPFI probability range=[{min(all_cvpfi):.3f}, {max(all_cvpfi):.3f}]"
             )
             logger.info(f"CPCV: Selected {len(selected_names)} factors")
 
@@ -588,12 +562,10 @@ class CPCVSelector(FactorSelector):
                 "n_paths": n_paths,
                 "purge_days": self.purge_days,
                 "embargo_days": self.embargo_days,
-                "significance_level": self.significance_level,
-                "dynamic_t_threshold": dynamic_t_threshold,
-                "fallback_t_threshold": fallback_t_threshold,
+                "cvpfi_threshold": self.cvpfi_threshold,
+                "cvpfi_fallback_threshold": CPCV_CVPFI_FALLBACK_THRESHOLD,
                 "min_positive_ratio": self.min_positive_ratio,
-                "correction_method": "dynamic-bonferroni + benjamini-hochberg",
-                "bh_cutoff_rank": bh_cutoff_rank,
+                "selection_method": "CVPFI (Cross-Validated Permutation Feature Importance)",
                 "time_decay_rate": CPCV_TIME_DECAY_RATE,
             },
             method="cpcv",
