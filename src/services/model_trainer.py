@@ -865,11 +865,10 @@ class ModelTrainer:
 
             # 記錄因子選擇策略
             selection_config = {
-                "method": "robust",
-                "stages": ["cpcv"],
+                "method": selection_stats["method"],
                 "incremental_update": True,
             }
-            run.selection_method = "robust"
+            run.selection_method = selection_stats["method"]
             run.selection_config = json.dumps(selection_config)
             run.selection_stats = json.dumps(selection_stats)
 
@@ -1035,7 +1034,7 @@ class ModelTrainer:
         selected_factors = result.selected_factors
 
         if on_progress:
-            on_progress(90.0, f"Robust selection: {len(selected_factors)} factors selected")
+            on_progress(90.0, f"Factor selection ({result.method}): {len(selected_factors)} factors selected")
 
         # 構建 all_results（與舊方法兼容）
         all_results: list[FactorEvalResult] = []
@@ -1101,7 +1100,7 @@ class ModelTrainer:
 
         # 構建選擇統計
         selection_stats = {
-            "method": "robust",
+            "method": result.method,
             "initial_factors": len(factors),
             "final_factors": len(selected_factors),
             **result.selection_stats,
@@ -1109,7 +1108,7 @@ class ModelTrainer:
         }
 
         if on_progress:
-            on_progress(95.0, "Robust selection completed")
+            on_progress(95.0, f"Factor selection ({result.method}) completed")
 
         return selected_factors, all_results, best_model, selection_stats
 
