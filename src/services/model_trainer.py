@@ -229,6 +229,10 @@ class ModelTrainer:
         """
         載入因子資料和標籤
 
+        注意：Label 定義為 Ref($close, -2) / Ref($close, -1) - 1
+        即 T 日的 label = close[T+2] / close[T+1] - 1
+        因此需要多取 5 天的資料以確保 end_date 日的 label 完整
+
         Returns:
             DataFrame with columns: [factor1, factor2, ..., label]
             Index: MultiIndex (datetime, instrument)
@@ -236,6 +240,7 @@ class ModelTrainer:
         # 強制重新初始化 qlib，確保使用最新導出的資料
         self._init_qlib(force=True)
         from qlib.data import D
+        from datetime import timedelta
 
         instruments = self._get_instruments()
         if not instruments:
@@ -245,17 +250,22 @@ class ModelTrainer:
         fields = [f.expression for f in factors]
         names = [f.name for f in factors]
 
-        # 標籤：未來 1 日收益率
+        # 標籤：T+1→T+2 收益率
+        # Ref($close, -2) = close at T+2, Ref($close, -1) = close at T+1
         label_expr = "Ref($close, -2) / Ref($close, -1) - 1"
         all_fields = fields + [label_expr]
         all_names = names + ["label"]
+
+        # 延伸 end_date 以確保 label 完整（需要 T+2 的價格）
+        # 多取 5 天以應對週末和假日
+        extended_end = end_date + timedelta(days=7)
 
         # 讀取資料
         df = D.features(
             instruments=instruments,
             fields=all_fields,
             start_time=start_date.strftime("%Y-%m-%d"),
-            end_time=end_date.strftime("%Y-%m-%d"),
+            end_time=extended_end.strftime("%Y-%m-%d"),
         )
 
         if df.empty:
@@ -263,6 +273,15 @@ class ModelTrainer:
 
         # 重命名欄位
         df.columns = all_names
+
+        # 只返回 end_date 前的資料（但 label 已經正確計算）
+        # 這確保特徵只使用 end_date 前的資訊
+        dates = df.index.get_level_values("datetime")
+        if hasattr(dates[0], "date"):
+            mask = pd.Series([d.date() <= end_date for d in dates], index=df.index)
+        else:
+            mask = dates.date <= end_date
+        df = df[mask]
 
         return df
 
@@ -285,9 +304,11 @@ class ModelTrainer:
         X = df[feature_cols]
         y = df["label"]
 
-        # 標籤截面標準化（仿 qlib CSZScoreNorm for label）
-        # 讓模型學習相對排序而非絕對值
-        y = self._zscore_by_date(y.to_frame()).squeeze()
+        # 不對 Label 做標準化！
+        # 原因：
+        # 1. 訓練時用標準化 label（純排序）會導致 IC 虛高
+        # 2. 實盤時用原始收益率計算 IC，導致嚴重衰減
+        # 3. 保持 label 原始值確保訓練和實盤的一致性
 
         # 按日期分割
         train_mask = (df.index.get_level_values("datetime").date >= train_start) & \
@@ -557,13 +578,13 @@ class ModelTrainer:
             "label": y_valid.values,
         }, index=y_valid.index)
 
-        # 計算每日截面 IC
-        def calc_corr(group: pd.DataFrame) -> float:
-            if len(group) < 2:
+        # 計算每日截面 IC（使用 Spearman，與 Live IC 保持一致）
+        def calc_spearman_ic(group: pd.DataFrame) -> float:
+            if len(group) < 10:  # 至少需要 10 個股票
                 return np.nan
-            return group["pred"].corr(group["label"])
+            return group["pred"].corr(group["label"], method="spearman")
 
-        daily_ic = pred_df.groupby(level="datetime").apply(calc_corr)
+        daily_ic = pred_df.groupby(level="datetime").apply(calc_spearman_ic)
 
         # 保存 IC 標準差
         self._last_ic_std = float(daily_ic.std()) if len(daily_ic) > 1 else None
@@ -597,13 +618,13 @@ class ModelTrainer:
             "label": y_valid.values,
         }, index=y_valid.index)
 
-        # 計算每日截面 IC
-        def calc_corr(group: pd.DataFrame) -> float:
-            if len(group) < 2:
+        # 計算每日截面 IC（使用 Spearman，與 Live IC 保持一致）
+        def calc_spearman_ic(group: pd.DataFrame) -> float:
+            if len(group) < 10:  # 至少需要 10 個股票
                 return np.nan
-            return group["pred"].corr(group["label"])
+            return group["pred"].corr(group["label"], method="spearman")
 
-        daily_ic = pred_df.groupby(level="datetime").apply(calc_corr)
+        daily_ic = pred_df.groupby(level="datetime").apply(calc_spearman_ic)
 
         return daily_ic.dropna().values
 
@@ -913,13 +934,13 @@ class ModelTrainer:
             if len(factor_data) < 100:
                 return 0.0
 
-            # 計算每日截面 IC（因子值與標籤的相關性）
-            def calc_corr(group: pd.DataFrame) -> float:
-                if len(group) < 5:
+            # 計算每日截面 IC（使用 Spearman，與 Live IC 保持一致）
+            def calc_spearman_ic(group: pd.DataFrame) -> float:
+                if len(group) < 10:  # 至少需要 10 個股票
                     return np.nan
-                return group[factor.name].corr(group["label"])
+                return group[factor.name].corr(group["label"], method="spearman")
 
-            daily_ic = factor_data.groupby(level="datetime").apply(calc_corr)
+            daily_ic = factor_data.groupby(level="datetime").apply(calc_spearman_ic)
             mean_ic = daily_ic.mean()
             return float(mean_ic) if not np.isnan(mean_ic) else 0.0
         except Exception:

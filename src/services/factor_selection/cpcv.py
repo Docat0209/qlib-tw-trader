@@ -316,8 +316,9 @@ class CPCVSelector(FactorSelector):
                 continue
 
             # 計算每個因子的貢獻（使用 permutation importance）
+            # 使用 Spearman 相關係數以與其他 IC 計算保持一致
             base_pred = model.predict(X_test)
-            base_ic = np.corrcoef(base_pred, y_test.values)[0, 1]
+            base_ic, _ = stats.spearmanr(base_pred, y_test.values)
 
             for factor_name in factor_names:
                 # 打亂單一因子
@@ -327,7 +328,7 @@ class CPCVSelector(FactorSelector):
                 )
 
                 permuted_pred = model.predict(X_permuted)
-                permuted_ic = np.corrcoef(permuted_pred, y_test.values)[0, 1]
+                permuted_ic, _ = stats.spearmanr(permuted_pred, y_test.values)
 
                 # 因子重要性 = IC 下降幅度
                 importance = base_ic - permuted_ic
