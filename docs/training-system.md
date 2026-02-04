@@ -5,13 +5,16 @@
 ## 目錄
 
 1. [系統架構概覽](#系統架構概覽)
-2. [Label 定義與處理](#label-定義與處理)
-3. [因子選擇流程](#因子選擇流程)
-4. [模型訓練流程](#模型訓練流程)
-5. [回測流程](#回測流程)
-6. [IC 計算方法](#ic-計算方法)
-7. [關鍵參數配置](#關鍵參數配置)
-8. [參考文獻](#參考文獻)
+2. [API 端點](#api-端點)
+3. [Label 定義與處理](#label-定義與處理)
+4. [因子選擇流程](#因子選擇流程)
+5. [模型訓練流程](#模型訓練流程)
+6. [增量學習](#增量學習)
+7. [回測流程](#回測流程)
+8. [IC 計算方法](#ic-計算方法)
+9. [超參數培養](#超參數培養)
+10. [關鍵參數配置](#關鍵參數配置)
+11. [參考文獻](#參考文獻)
 
 ---
 
@@ -29,12 +32,20 @@
 │                                    │                            │
 │                                    ▼                            │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │                   因子選擇流程                            │   │
-│  │  Bootstrap 穩定性過濾 ──→ CPCV 多路徑驗證                  │   │
+│  │              因子選擇（三種模式）                          │   │
+│  │  "dedup": RD-Agent IC 去重複（預設）                      │   │
+│  │  "none": Qlib 標準（不選擇）                              │   │
+│  │  "cpcv": CPCV + permutation importance（備用）            │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                                    │                            │
 │                                    ▼                            │
 │                           LightGBM 訓練                         │
+│                                    │                            │
+│                                    ▼                            │
+│                           驗證期 IC 計算                         │
+│                                    │                            │
+│                                    ▼                            │
+│                    增量學習（驗證期微調）                         │
 │                                    │                            │
 │                                    ▼                            │
 │                     模型 + 因子清單 + 配置                       │
@@ -55,6 +66,36 @@
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## API 端點
+
+### 模型訓練 API
+
+| 端點 | 方法 | 功能 |
+|------|------|------|
+| `/api/v1/models/train` | POST | 觸發單週訓練（week_id） |
+| `/api/v1/models/train-batch` | POST | 批量訓練整年模型 |
+| `/api/v1/models/weeks` | GET | 取得可訓練週狀態 |
+| `/api/v1/models/status` | GET | 取得訓練狀態 |
+| `/api/v1/models/data-range` | GET | 取得資料庫日期範圍 |
+
+### 超參數管理 API
+
+| 端點 | 方法 | 功能 |
+|------|------|------|
+| `/api/v1/hyperparams` | POST | 建立並培養超參數 |
+| `/api/v1/hyperparams` | GET | 列出所有超參數組 |
+| `/api/v1/hyperparams/{hp_id}` | GET | 取得超參數詳情 |
+| `/api/v1/hyperparams/{hp_id}` | DELETE | 刪除超參數組 |
+
+### 回測 API
+
+| 端點 | 方法 | 功能 |
+|------|------|------|
+| `/api/v1/backtests/walk-forward` | POST | Walk-Forward 回測 |
+| `/api/v1/backtests` | GET | 列出回測記錄 |
 
 ---
 
@@ -95,123 +136,190 @@ def _rank_by_date(self, series: pd.Series) -> pd.Series:
 - [Learning to Rank 論文](https://arxiv.org/abs/2012.07149)：預測排名比預測收益更容易，Sharpe Ratio 提升 3 倍
 - [Qlib 官方配置](https://github.com/microsoft/qlib/blob/main/examples/benchmarks/GRU/workflow_config_gru_Alpha158.yaml)：GRU/LSTM/AdaRNN 都使用 CSRankNorm
 
-### 訓練與回測的一致性
-
-| 階段 | Label 處理 | IC 計算方法 |
-|------|-----------|------------|
-| 訓練 | CSRankNorm（排名百分位） | Spearman（排名相關） |
-| 回測 | 原始收益率 | Spearman（排名相關） |
-
-**關鍵**：雖然 Label 處理不同，但 **Spearman 相關係數本身就是排名相關**，因此兩者計算的 IC 具有可比性。
-
 ---
 
 ## 因子選擇流程
 
-### 兩階段選擇
+### 三種選擇模式
+
+系統支援三種文獻支持的因子選擇方法：
+
+| 模式 | 來源 | 說明 | 預設 |
+|------|------|------|------|
+| `dedup` | RD-Agent (Microsoft Research, 2025) | IC 去重複，移除高相關因子 | ✓ |
+| `none` | Qlib (Microsoft) | 不做選擇，依賴 LightGBM 內建機制 | |
+| `cpcv` | López de Prado (2018) | CPCV + permutation importance | 備用 |
+
+### RD-Agent IC 去重複（預設方法）
+
+**來源**：[R&D-Agent-Quant](https://arxiv.org/html/2505.15155v2) (Microsoft Research, 2025)
+
+**原理**：
+> "New factors with IC_max(n) ≥ 0.99 are deemed redundant and excluded."
+> 結果：減少 70% 因子，ARR 提升 2 倍
+
+**算法**：
 
 ```
 266 個候選因子
        │
        ▼
-┌─────────────────────┐
-│ Bootstrap 穩定性過濾 │  ← 輕量：單因子 IC
-│ (30 次迭代, ≥75%)   │
-└─────────────────────┘
+┌─────────────────────────────┐
+│ 1. 計算因子間相關係數矩陣     │
+│    corr_matrix = X.corr()   │
+└─────────────────────────────┘
        │
        ▼
-   ~50-80 個穩定因子
+┌─────────────────────────────┐
+│ 2. 計算每個因子對 label 的 IC │
+│    single_ic = X[f].corr(y) │
+└─────────────────────────────┘
        │
        ▼
-┌─────────────────────┐
-│   CPCV 多路徑驗證    │  ← 嚴格：15 條路徑
-│ (t≥3.0, 時間衰減)   │
-└─────────────────────┘
+┌─────────────────────────────┐
+│ 3. 按 IC 降序排列            │
+│    優先保留高 IC 因子         │
+└─────────────────────────────┘
        │
        ▼
-   5-20 個最終因子
+┌─────────────────────────────┐
+│ 4. 貪婪去重複                │
+│    若 corr >= 0.99 則移除    │
+└─────────────────────────────┘
+       │
+       ▼
+   ~150-200 個非冗餘因子
 ```
 
-### Bootstrap 穩定性過濾
+**實作**（`src/services/factor_selection/ic_dedup.py`）：
 
-**目的**：過濾因隨機變異而表現好的不穩定因子
-
-**參數**（`constants.py`）：
 ```python
-BOOTSTRAP_N_ITERATIONS = 30      # 迭代次數
-BOOTSTRAP_STABILITY_THRESHOLD = 0.75  # 穩定性閾值
-BOOTSTRAP_SAMPLE_RATIO = 0.8     # 每次抽樣比例
+class ICDeduplicator:
+    def __init__(self, correlation_threshold: float = 0.99):
+        self.threshold = correlation_threshold
+
+    def deduplicate(self, factors, X, y):
+        # 1. 計算相關矩陣
+        corr_matrix = X[factor_names].corr(method="spearman")
+
+        # 2. 計算單因子 IC
+        single_ics = {f.name: X[f.name].corr(y, method="spearman") for f in factors}
+
+        # 3. 按 IC 降序排列
+        sorted_factors = sorted(factors, key=lambda f: abs(single_ics[f.name]), reverse=True)
+
+        # 4. 貪婪去重複
+        kept = []
+        for factor in sorted_factors:
+            is_redundant = False
+            for kept_factor in kept:
+                if abs(corr_matrix.loc[factor.name, kept_factor.name]) >= self.threshold:
+                    is_redundant = True
+                    break
+            if not is_redundant:
+                kept.append(factor)
+
+        return kept, stats
 ```
 
-**演算法**：
-1. 重複 30 次：
-   - 隨機抽樣 80% 資料
-   - 計算每個因子的單因子 IC（Spearman）
-   - 如果 |IC| > 0.02，該因子計數 +1
-2. 只保留在 ≥75% 迭代中達標的因子
+**使用**：
 
-### CPCV (Combinatorial Purged Cross-Validation)
+```python
+from src.services.factor_selection import RobustFactorSelector
 
-**目的**：透過多路徑驗證避免單一驗證期過擬合
+# 預設使用 IC 去重複
+selector = RobustFactorSelector()  # method="dedup"
+result = selector.select(factors, X, y)
 
-**參數**（`constants.py`）：
+# 或明確指定
+selector = RobustFactorSelector(method="dedup", dedup_threshold=0.99)
+```
+
+### Qlib 標準（無選擇）
+
+**來源**：[Microsoft Qlib](https://github.com/microsoft/qlib)
+
+**原理**：
+- 使用全部因子，依賴 LightGBM 內建機制
+- LightGBM 會自動處理無用因子（feature_fraction、正則化）
+
+```python
+selector = RobustFactorSelector(method="none")
+```
+
+### CPCV（備用）
+
+**來源**：López de Prado, M. (2018). "Advances in Financial Machine Learning"
+
+**參數**：
 ```python
 CPCV_N_FOLDS = 6              # 分割數
 CPCV_N_TEST_FOLDS = 2         # 測試 fold 數 → C(6,2)=15 條路徑
 CPCV_PURGE_DAYS = 5           # Purging 天數
 CPCV_EMBARGO_DAYS = 5         # Embargo 天數
-CPCV_CVPFI_THRESHOLD = 0.95   # P(importance > 0) 門檻
-CPCV_TIME_DECAY_RATE = 0.95   # 時間衰減率
+CPCV_MIN_POSITIVE_RATIO = 0.5 # 最低正向路徑比例
 ```
-
-**CVPFI 方法**（`cpcv.py`）：
-
-使用 Cross-Validated Permutation Feature Importance (CVPFI) 方法選擇因子：
 
 ```python
-from scipy import stats
-
-def calculate_cvpfi_probability(mean_importance, std_importance):
-    """
-    計算 CVPFI 概率
-
-    假設 importance ~ N(μ, σ)，計算 P(importance > 0)。
-    同時考慮效果大小（mean）和穩定性（std）。
-    """
-    if std_importance <= 0:
-        return 1.0 if mean_importance > 0 else 0.0
-    z_score = mean_importance / std_importance
-    return stats.norm.cdf(z_score)
+selector = RobustFactorSelector(method="cpcv")
 ```
-
-**範例**：
-
-| mean | std | P(imp > 0) | 結果 |
-|------|-----|------------|------|
-| 0.02 | 0.01 | 0.977 | ✓ 通過 |
-| 0.015 | 0.005 | 0.999 | ✓ 通過 |
-| 0.01 | 0.02 | 0.691 | ✗ 不通過 |
-| 0.005 | 0.02 | 0.599 | ✗ 不通過 |
-
-**為什麼用 CVPFI 而非 t ≥ 3.0？**
-- Harvey et al. (2016) 的 t ≥ 3.0 是用於**學術發表**的假發現率控制
-- López de Prado 的 MDI/MDA 方法推薦 `importance > 0`
-- CVPFI 來自 ACS Omega (2023) 論文，同時考慮效果大小和穩定性
-- 更適合實際因子選擇場景
-
-**選擇邏輯**：
-1. **主選擇**：P(importance > 0) ≥ 0.95 + positive_ratio ≥ 0.6
-2. **Fallback**（如果主選擇 < 5 個因子）：
-   - P(importance > 0) ≥ 0.90 + positive_ratio ≥ 0.5
-   - 補充到至少 5 個，最多 20 個因子
-
-**時間衰減權重**：
-- 近期路徑權重更高：`weight = 0.95^i`
-- 有效樣本量使用 Kish's formula
 
 ---
 
 ## 模型訓練流程
+
+### 完整訓練步驟
+
+```
+POST /api/v1/models/train { "week_id": "2026W05" }
+                │
+                ▼
+        ┌───────────────┐
+        │ 1. 導出 Qlib  │  export_start = train_start - 90 days
+        │    資料       │  （因子計算緩衝）
+        └───────────────┘
+                │
+                ▼
+        ┌───────────────┐
+        │ 2. 載入資料   │  D.features() 讀取
+        │              │  Label: Ref($close,-2)/Ref($close,-1)-1
+        └───────────────┘
+                │
+                ▼
+        ┌───────────────┐
+        │ 3. 資料處理   │  process_inf → zscore_by_date → fillna
+        │              │  Label: rank_by_date (CSRankNorm)
+        └───────────────┘
+                │
+                ▼
+        ┌───────────────┐
+        │ 4. 因子選擇   │  RobustFactorSelector(method="dedup")
+        │              │  IC 去重複：266 → ~150-200 因子
+        └───────────────┘
+                │
+                ▼
+        ┌───────────────┐
+        │ 5. LightGBM   │  使用培養或預設超參數
+        │    訓練       │  early_stopping=50
+        └───────────────┘
+                │
+                ▼
+        ┌───────────────┐
+        │ 6. 計算       │  Spearman IC（驗證期）
+        │    Valid IC   │  報告此 IC
+        └───────────────┘
+                │
+                ▼
+        ┌───────────────┐
+        │ 7. 增量更新   │  使用驗證期資料微調
+        │              │  num_boost_round=50
+        └───────────────┘
+                │
+                ▼
+        ┌───────────────┐
+        │ 8. 保存模型   │  model.pkl, factors.json, config.json
+        └───────────────┘
+```
 
 ### 訓練期配置
 
@@ -221,32 +329,27 @@ VALID_DAYS = 5     # 驗證期：5 個交易日
 EMBARGO_DAYS = 7   # Embargo：7 天（防止 label 洩漏）
 ```
 
-### 資料處理流程
+### 資料處理
 
 ```python
 # 1. 載入資料（擴展 end_date 確保 label 完整）
 df = D.features(instruments, fields, start_time, end_time + 7days)
 
 # 2. 特徵處理
-X = process_inf(X)           # 處理無窮大值
+X = process_inf(X)           # 處理無窮大值（用均值替換）
 X = zscore_by_date(X)        # 截面標準化
 X = fillna(X, 0)             # 填補 NaN
 
 # 3. Label 處理
-y = rank_by_date(y)          # CSRankNorm（排名百分位）
+y = rank_by_date(y)          # CSRankNorm（排名百分位 [0, 1]）
 
-# 4. 分割訓練/驗證集
-X_train, X_valid = split_by_date(X, train_end, valid_start)
-y_train, y_valid = split_by_date(y, train_end, valid_start)
+# 4. 分割訓練/驗證集（按日期）
+train_mask = (dates >= train_start) & (dates <= train_end)
+valid_mask = (dates >= valid_start) & (dates <= valid_end)
 ```
 
-### LightGBM 模型
+### LightGBM 預設參數
 
-**超參數來源**：
-1. 從資料庫載入已培養的超參數
-2. 如果沒有，使用保守預設值
-
-**預設參數**：
 ```python
 {
     "objective": "regression",
@@ -265,23 +368,63 @@ y_train, y_valid = split_by_date(y, train_end, valid_start)
 }
 ```
 
-**訓練**：
-```python
-model = lgb.train(
-    params,
-    train_data,
-    num_boost_round=500,
-    valid_sets=[valid_data],
-    callbacks=[lgb.early_stopping(stopping_rounds=50)],
-)
-```
-
 ### 模型輸出
 
 儲存於 `data/models/{model_name}/`：
-- `model.pkl`：訓練好的 LightGBM 模型
-- `factors.json`：選出的因子清單
-- `config.json`：訓練配置（日期、參數、IC 等）
+
+| 檔案 | 內容 |
+|------|------|
+| `model.pkl` | LightGBM Booster（增量更新後） |
+| `factors.json` | 選出的因子清單 |
+| `config.json` | 訓練配置、日期、IC、超參數 |
+
+---
+
+## 增量學習
+
+### 設計原則
+
+| 層級 | 決定什麼 | 更新頻率 | 方法 |
+|------|---------|---------|------|
+| **因子選擇** | 用哪些因子 | 每週 | IC 去重複 |
+| **模型權重** | 因子怎麼組合 | 每日/每週 | `init_model` 增量學習 |
+
+**核心原理**：
+- 因子結構變化慢（週/月級）→ 每週重訓選擇
+- 因子權重變化快（日級）→ 增量微調
+
+### 訓練後增量更新
+
+訓練完成後，自動使用驗證期資料進行增量更新：
+
+```python
+# 使用驗證期資料微調
+valid_data = lgb.Dataset(X_valid_norm.values, label=y_valid_zscore.values)
+
+incremented_model = lgb.train(
+    incr_params,
+    valid_data,
+    num_boost_round=50,      # 少量更新
+    init_model=best_model,   # 從訓練的模型開始
+    keep_training_booster=True,
+)
+
+# 保存增量更新後的模型 A'
+# 但報告的 IC 是模型 A 的驗證期 IC（未增量前）
+```
+
+### Walk-Forward 回測中的增量學習
+
+```python
+POST /api/v1/backtests/walk-forward
+{
+    "enable_incremental": true,   # 啟用每日增量
+    "start_week_id": "2026W01",
+    "end_week_id": "2026W10"
+}
+```
+
+詳見 [增量學習設計文檔](incremental-learning-design.md)。
 
 ---
 
@@ -293,6 +436,13 @@ model = lgb.train(
 週 N 模型 ──→ 預測週 N+1 ──→ 計算 Live IC
 週 N+1 模型 ──→ 預測週 N+2 ──→ 計算 Live IC
 ...
+                │
+                ▼
+          聚合統計
+     ├─ 平均 Valid IC
+     ├─ 平均 Live IC
+     ├─ IC Decay %
+     └─ 績效指標
 ```
 
 ### 預測流程
@@ -327,22 +477,17 @@ for date in common_dates:
 live_ic = mean(daily_ics)
 ```
 
-**關鍵**：收益率計算與 Label 定義對齊（T+1 → T+2）
-
 ### IC Decay 計算
 
 ```python
 ic_decay = (valid_ic - live_ic) / valid_ic * 100
 ```
 
-**預期範圍**：-30% ~ +30%（超過此範圍可能有問題）
+**預期範圍**：-30% ~ +30%
 
 ### Top-K 選股
 
 ```python
-# 使用第一天的預測分數
-scores = predictions.loc[first_date]
-
 # 排序選股（分數降序、代碼升序 tie-breaking）
 topk_stocks = scores.sort_values(
     by=["score", "symbol"],
@@ -356,13 +501,11 @@ topk_stocks = scores.sort_values(
 
 ### 統一使用 Spearman
 
-| 位置 | 方法 | 說明 |
+| 位置 | 方法 | 檔案 |
 |------|------|------|
 | 訓練驗證 IC | `corr(method="spearman")` | model_trainer.py |
-| 單因子 IC | `corr(method="spearman")` | model_trainer.py |
-| CPCV IC | `stats.spearmanr()` | cpcv.py |
+| 單因子 IC | `corr(method="spearman")` | ic_dedup.py |
 | Live IC | `stats.spearmanr()` | walk_forward_backtester.py |
-| Bootstrap IC | `corr(method="spearman")` | bootstrap_filter.py |
 
 ### 為什麼用 Spearman？
 
@@ -380,7 +523,7 @@ class TrainingQualityMetrics:
     icir_5w: float             # 5 週 ICIR
 ```
 
-**警報閾值**（`constants.py`）：
+**警報閾值**：
 ```python
 QUALITY_JACCARD_MIN = 0.3  # Jaccard < 0.3 警報
 QUALITY_IC_STD_MAX = 0.1   # IC 標準差 > 0.1 警報
@@ -389,9 +532,46 @@ QUALITY_ICIR_MIN = 0.5     # ICIR < 0.5 警報
 
 ---
 
+## 超參數培養
+
+### Walk-Forward Optimization
+
+**方法**：多窗口優化 + 中位數聚合
+
+```
+1. 生成 N 個歷史窗口（預設 5）
+        │
+        ▼
+2. 每個窗口獨立 Optuna 優化
+   ├─ n_trials_per_period: 20
+   ├─ 搜索：num_leaves, max_depth, learning_rate 等
+   └─ 計算該窗口最佳 IC
+        │
+        ▼
+3. 聚合中位數
+   ├─ 取各窗口最佳參數的中位數
+   └─ 計算穩定性（變異係數 CV）
+        │
+        ▼
+4. 保存到資料庫
+```
+
+**API**：
+
+```python
+POST /api/v1/hyperparams
+{
+    "name": "hp_2026_02_v1",
+    "n_periods": 5,
+    "n_trials_per_period": 20
+}
+```
+
+---
+
 ## 關鍵參數配置
 
-### constants.py 完整參數
+### constants.py
 
 ```python
 # === 時區 ===
@@ -402,25 +582,16 @@ TRAIN_DAYS = 252      # 訓練期：1 年
 VALID_DAYS = 5        # 驗證期：5 個交易日
 EMBARGO_DAYS = 7      # Embargo：7 天
 
-# === CPCV 參數 ===
+# === IC Deduplication (RD-Agent) ===
+IC_DEDUP_THRESHOLD = 0.99  # 去重複閾值
+
+# === CPCV 參數（備用）===
 CPCV_N_FOLDS = 6
 CPCV_N_TEST_FOLDS = 2
 CPCV_PURGE_DAYS = 5
 CPCV_EMBARGO_DAYS = 5
-CPCV_CVPFI_THRESHOLD = 0.95        # P(importance > 0) 門檻
-CPCV_CVPFI_FALLBACK_THRESHOLD = 0.90  # Fallback 門檻
+CPCV_MIN_POSITIVE_RATIO = 0.5
 CPCV_TIME_DECAY_RATE = 0.95
-
-# === CPCV 選擇參數 ===
-CPCV_MIN_POSITIVE_RATIO = 0.6      # 主選擇穩定性門檻
-CPCV_FALLBACK_POSITIVE_RATIO = 0.5   # Fallback 穩定性門檻
-CPCV_FALLBACK_MAX_FACTORS = 20
-CPCV_MIN_FACTORS_BEFORE_FALLBACK = 5
-
-# === Bootstrap 穩定性 ===
-BOOTSTRAP_N_ITERATIONS = 30
-BOOTSTRAP_STABILITY_THRESHOLD = 0.75
-BOOTSTRAP_SAMPLE_RATIO = 0.8
 
 # === 品質監控 ===
 QUALITY_JACCARD_MIN = 0.3
@@ -432,30 +603,31 @@ QUALITY_ICIR_MIN = 0.5
 
 ## 參考文獻
 
-### 學術論文
+### 因子選擇
 
-1. **Learning to Rank**
-   - Poh, D., Lim, B., Zohren, S., & Roberts, S. (2021). "Building Cross-Sectional Systematic Strategies By Learning to Rank"
+1. **RD-Agent** (Microsoft Research, 2025)
+   - [arXiv:2505.15155](https://arxiv.org/html/2505.15155v2)
+   - IC 去重複：IC_max >= 0.99 視為冗餘
+   - 減少 70% 因子，ARR 提升 2 倍
+
+2. **Qlib** (Microsoft)
+   - [GitHub](https://github.com/microsoft/qlib)
+   - 標準流程：無因子選擇，依賴 LightGBM
+
+3. **López de Prado** (2018)
+   - "Advances in Financial Machine Learning"
+   - CPCV、MDI/MDA 方法
+
+### 排名預測
+
+4. **Learning to Rank**
+   - Poh et al. (2021). "Building Cross-Sectional Systematic Strategies By Learning to Rank"
    - [arXiv:2012.07149](https://arxiv.org/abs/2012.07149)
-   - 核心觀點：排名預測比收益預測更有效，Sharpe Ratio 提升 3 倍
-
-2. **CVPFI (Cross-Validated Permutation Feature Importance)**
-   - ACS Omega (2023). "Interpretation of Machine Learning Models for Data Sets with Many Features Using Feature Importance"
-   - 核心觀點：計算 P(importance > 0)，同時考慮效果大小和穩定性
-   - 論文使用 P > 0.997（三西格瑪），我們使用 P > 0.95
-
-3. **CPCV**
-   - López de Prado, M. (2018). "Advances in Financial Machine Learning"
-   - 核心觀點：Combinatorial Purged Cross-Validation 避免過擬合
-
-4. **Bootstrap Stability Selection**
-   - Meinshausen, N. & Bühlmann, P. (2010). "Stability Selection"
-   - 核心觀點：穩定性 ≥ 75% 的特徵才可靠
+   - 排名預測比收益預測更有效，Sharpe Ratio 提升 3 倍
 
 ### Qlib 參考
 
 - [Qlib Data Documentation](https://qlib.readthedocs.io/en/stable/component/data.html)
-- [Qlib GRU Configuration](https://github.com/microsoft/qlib/blob/main/examples/benchmarks/GRU/workflow_config_gru_Alpha158.yaml)
 - [Qlib LightGBM Configuration](https://github.com/microsoft/qlib/blob/main/examples/benchmarks/LightGBM/workflow_config_lightgbm_Alpha158.yaml)
 
 ---
@@ -464,5 +636,8 @@ QUALITY_ICIR_MIN = 0.5
 
 | 日期 | 變更 |
 |------|------|
-| 2026-02-04 | CVPFI 方法：使用 P(importance > 0) 替代 t 統計量 |
+| 2026-02-04 | 重構：使用 RD-Agent IC 去重複替代 Bootstrap + CPCV |
+| 2026-02-04 | 新增：三種因子選擇模式（dedup、none、cpcv） |
+| 2026-02-04 | 新增：增量學習章節 |
+| 2026-02-04 | 新增：API 端點章節 |
 | 2026-02-04 | 初版：統一 IC 計算（Spearman）、Label 使用 CSRankNorm |
