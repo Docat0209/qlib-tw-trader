@@ -252,8 +252,42 @@ export function Training() {
 
   return (
     <div className="flex gap-6 h-[calc(100vh-100px)]">
-      {/* 左側：週曆 */}
-      <div className="w-80 shrink-0 flex flex-col">
+      {/* 左側：超參數 + 週曆 */}
+      <div className="w-80 shrink-0 flex flex-col gap-4">
+        {/* Hyperparameters Selection */}
+        <Card className="shrink-0">
+          <CardHeader className="py-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <SlidersHorizontal className="h-4 w-4 text-purple" />
+              Hyperparameters
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 pb-3">
+            <select
+              className="input w-full text-sm"
+              value={selectedHyperparamsId || ''}
+              onChange={(e) => setSelectedHyperparamsId(e.target.value ? Number(e.target.value) : null)}
+              disabled={hyperparamsList.length === 0}
+            >
+              {hyperparamsList.length === 0 ? (
+                <option value="">No hyperparameters available</option>
+              ) : (
+                hyperparamsList.map((hp) => (
+                  <option key={hp.id} value={hp.id}>
+                    {hp.name}
+                  </option>
+                ))
+              )}
+            </select>
+            {selectedHyperparams && (
+              <p className="text-[10px] text-muted-foreground mt-2 font-mono">
+                leaves={selectedHyperparams.num_leaves}, L1={selectedHyperparams.lambda_l1?.toFixed(0)}, L2={selectedHyperparams.lambda_l2?.toFixed(0)}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Week Calendar */}
         <Card className="flex-1 flex flex-col overflow-hidden">
           <CardHeader className="shrink-0 flex flex-row items-center justify-between py-3">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -485,35 +519,6 @@ export function Training() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 pt-4">
-              {/* Hyperparameters Selection */}
-              <div>
-                <label className="text-xs text-muted-foreground block mb-1 flex items-center gap-1">
-                  <SlidersHorizontal className="h-3 w-3" />
-                  Hyperparameters
-                </label>
-                <select
-                  className="input w-full text-sm"
-                  value={selectedHyperparamsId || ''}
-                  onChange={(e) => setSelectedHyperparamsId(e.target.value ? Number(e.target.value) : null)}
-                  disabled={hyperparamsList.length === 0}
-                >
-                  {hyperparamsList.length === 0 ? (
-                    <option value="">No hyperparameters available</option>
-                  ) : (
-                    hyperparamsList.map((hp) => (
-                      <option key={hp.id} value={hp.id}>
-                        {hp.name}
-                      </option>
-                    ))
-                  )}
-                </select>
-                {selectedHyperparams && (
-                  <p className="text-[10px] text-muted-foreground mt-1 font-mono">
-                    leaves={selectedHyperparams.num_leaves}, L1={selectedHyperparams.lambda_l1?.toFixed(0)}, L2={selectedHyperparams.lambda_l2?.toFixed(0)}
-                  </p>
-                )}
-              </div>
-
               {hyperparamsList.length === 0 ? (
                 <div className="text-center py-4">
                   <p className="text-sm text-muted-foreground mb-2">
