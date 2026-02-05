@@ -13,10 +13,8 @@ import {
   Trash2,
   XCircle,
   Calendar,
-  SlidersHorizontal,
 } from 'lucide-react'
-import { modelApi, WeeksResponse, Model, FactorSummary, hyperparamsApi, HyperparamsSummary } from '@/api/client'
-import { Link } from 'react-router-dom'
+import { modelApi, WeeksResponse, Model, FactorSummary } from '@/api/client'
 import { useJobs } from '@/hooks/useJobs'
 import { useFetchOnChange } from '@/hooks/useFetchOnChange'
 import { cn } from '@/lib/utils'
@@ -31,8 +29,6 @@ export function Training() {
   const [, setLoadingDetail] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
-  const [hyperparamsList, setHyperparamsList] = useState<HyperparamsSummary[]>([])
-  const [selectedHyperparamsId, setSelectedHyperparamsId] = useState<number | null>(null)
   // 刪除所有模型
   const [deleteAllConfirm, setDeleteAllConfirm] = useState(false)
   const [deletingModels, setDeletingModels] = useState(false)
@@ -62,16 +58,8 @@ export function Training() {
     if (showLoading) setLoading(true)
     setError(null)
     try {
-      const [weeksRes, hpRes] = await Promise.all([
-        modelApi.weeks(),
-        hyperparamsApi.list().catch(() => ({ items: [] })),
-      ])
+      const weeksRes = await modelApi.weeks()
       setWeeksData(weeksRes)
-      setHyperparamsList(hpRes.items)
-      // 預設選擇第一個超參數
-      if (hpRes.items.length > 0 && !selectedHyperparamsId) {
-        setSelectedHyperparamsId(hpRes.items[0].id)
-      }
 
       // 預設選擇最新可訓練的週（僅首次載入）
       if (showLoading && weeksRes.slots.length > 0) {
@@ -86,7 +74,7 @@ export function Training() {
     } finally {
       if (showLoading) setLoading(false)
     }
-  }, [selectedHyperparamsId])
+  }, [])
 
   // 選中週變更時，載入對應模型
   useEffect(() => {
@@ -114,7 +102,6 @@ export function Training() {
   // 自動刷新（靜默刷新，不顯示 loading）
   const silentRefresh = useCallback(() => fetchData(false), [fetchData])
   useFetchOnChange('models', silentRefresh)
-  useFetchOnChange('hyperparams', silentRefresh)
 
   // 監聽訓練完成
   useEffect(() => {
@@ -152,10 +139,11 @@ export function Training() {
   }
 
   const handleStartTraining = async () => {
-    if (isTraining || !selectedWeekId || !selectedHyperparamsId) return
+    if (isTraining || !selectedWeekId) return
     setActionLoading(true)
     try {
-      await modelApi.train({ week_id: selectedWeekId, hyperparams_id: selectedHyperparamsId })
+      // 不傳 hyperparams_id，系統會自動使用 Optuna 調參
+      await modelApi.train({ week_id: selectedWeekId })
       await fetchData(false)
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to start training')
@@ -165,7 +153,7 @@ export function Training() {
   }
 
   const handleTrainYear = async (year: string) => {
-    if (isTraining || !weeksData || !selectedHyperparamsId) return
+    if (isTraining || !weeksData) return
 
     // 找出該年所有可訓練的週（未訓練）
     const trainableWeeks = weeksData.slots.filter(
@@ -179,8 +167,8 @@ export function Training() {
     setQueueYear(year)
 
     try {
-      // 使用後端批量訓練 API
-      await modelApi.trainBatch({ year, hyperparams_id: selectedHyperparamsId })
+      // 使用後端批量訓練 API（不傳 hyperparams_id）
+      await modelApi.trainBatch({ year })
       await fetchData(false)
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to start batch training')
@@ -214,8 +202,6 @@ export function Training() {
       setDeletingModels(false)
     }
   }
-
-  const selectedHyperparams = hyperparamsList.find(hp => hp.id === selectedHyperparamsId)
 
   const formatDate = (dateStr: string) => {
     return dateStr.slice(5) // MM-DD
@@ -252,41 +238,8 @@ export function Training() {
 
   return (
     <div className="flex gap-6 h-[calc(100vh-100px)]">
-      {/* 左側：超參數 + 週曆 */}
+      {/* 左側：週曆 */}
       <div className="w-80 shrink-0 flex flex-col gap-4">
-        {/* Hyperparameters Selection */}
-        <Card className="shrink-0">
-          <CardHeader className="py-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <SlidersHorizontal className="h-4 w-4 text-purple" />
-              Hyperparameters
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0 pb-3">
-            <select
-              className="input w-full text-sm"
-              value={selectedHyperparamsId || ''}
-              onChange={(e) => setSelectedHyperparamsId(e.target.value ? Number(e.target.value) : null)}
-              disabled={hyperparamsList.length === 0}
-            >
-              {hyperparamsList.length === 0 ? (
-                <option value="">No hyperparameters available</option>
-              ) : (
-                hyperparamsList.map((hp) => (
-                  <option key={hp.id} value={hp.id}>
-                    {hp.name}
-                  </option>
-                ))
-              )}
-            </select>
-            {selectedHyperparams && (
-              <p className="text-[10px] text-muted-foreground mt-2 font-mono">
-                leaves={selectedHyperparams.num_leaves}, L1={selectedHyperparams.lambda_l1?.toFixed(0)}, L2={selectedHyperparams.lambda_l2?.toFixed(0)}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
         {/* Week Calendar */}
         <Card className="flex-1 flex flex-col overflow-hidden">
           <CardHeader className="shrink-0 flex flex-row items-center justify-between py-3">
@@ -519,19 +472,7 @@ export function Training() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 pt-4">
-              {hyperparamsList.length === 0 ? (
-                <div className="text-center py-4">
-                  <p className="text-sm text-muted-foreground mb-2">
-                    No hyperparameters available
-                  </p>
-                  <Link
-                    to="/models/hyperparams"
-                    className="btn btn-secondary text-sm"
-                  >
-                    View Hyperparams
-                  </Link>
-                </div>
-              ) : selectedSlot?.status === 'trained' ? (
+              {selectedSlot?.status === 'trained' ? (
                 <div className="space-y-3">
                   <div className="p-3 rounded bg-green-50 border border-green-200">
                     <div className="flex items-center gap-2 text-green-700">
@@ -568,7 +509,7 @@ export function Training() {
                       <span className="font-medium">Ready to Train</span>
                     </div>
                     <p className="text-xs text-blue-600 mt-1">
-                      Using: {selectedHyperparams?.name || 'No hyperparams selected'}
+                      Using Optuna auto-tuning
                     </p>
                   </div>
                   <button

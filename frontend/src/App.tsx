@@ -2,7 +2,6 @@ import { Routes, Route } from 'react-router-dom'
 import { Layout } from '@/components/layout/Layout'
 import { Dashboard } from '@/pages/Dashboard'
 import { Factors } from '@/pages/models/Factors'
-import { Hyperparams } from '@/pages/models/Hyperparams'
 import { Quality } from '@/pages/models/Quality'
 import { Training } from '@/pages/models/Training'
 import { WalkForwardBacktest } from '@/pages/models/WalkForwardBacktest'
@@ -19,7 +18,6 @@ function App() {
         <Route index element={<Dashboard />} />
         <Route path="models">
           <Route path="factors" element={<Factors />} />
-          <Route path="hyperparams" element={<Hyperparams />} />
           <Route path="training" element={<Training />} />
           <Route path="quality" element={<Quality />} />
           <Route path="backtest" element={<WalkForwardBacktest />} />

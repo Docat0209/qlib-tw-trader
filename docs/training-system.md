@@ -7,14 +7,13 @@
 1. [系統架構概覽](#系統架構概覽)
 2. [API 端點](#api-端點)
 3. [Label 定義與處理](#label-定義與處理)
-4. [因子選擇流程](#因子選擇流程)
+4. [因子去重複](#因子去重複)
 5. [模型訓練流程](#模型訓練流程)
 6. [增量學習](#增量學習)
 7. [回測流程](#回測流程)
 8. [IC 計算方法](#ic-計算方法)
-9. [超參數培養](#超參數培養)
-10. [關鍵參數配置](#關鍵參數配置)
-11. [參考文獻](#參考文獻)
+9. [關鍵參數配置](#關鍵參數配置)
+10. [參考文獻](#參考文獻)
 
 ---
 
@@ -32,10 +31,9 @@
 │                                    │                            │
 │                                    ▼                            │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │              因子選擇（三種模式）                          │   │
-│  │  "dedup": RD-Agent IC 去重複（預設）                      │   │
-│  │  "none": Qlib 標準（不選擇）                              │   │
-│  │  "cpcv": CPCV + permutation importance（備用）            │   │
+│  │           Optuna 自動調參（每次訓練）                      │   │
+│  │  - 動態搜索 num_leaves, max_depth, learning_rate 等       │   │
+│  │  - 搜索範圍根據樣本數自動縮放                              │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                                    │                            │
 │                                    ▼                            │
@@ -75,27 +73,26 @@
 
 | 端點 | 方法 | 功能 |
 |------|------|------|
-| `/api/v1/models/train` | POST | 觸發單週訓練（week_id） |
+| `/api/v1/models/train` | POST | 觸發單週訓練（week_id），自動 Optuna 調參 |
 | `/api/v1/models/train-batch` | POST | 批量訓練整年模型 |
 | `/api/v1/models/weeks` | GET | 取得可訓練週狀態 |
 | `/api/v1/models/status` | GET | 取得訓練狀態 |
 | `/api/v1/models/data-range` | GET | 取得資料庫日期範圍 |
 
-### 超參數管理 API
+### 因子管理 API
 
 | 端點 | 方法 | 功能 |
 |------|------|------|
-| `/api/v1/hyperparams` | POST | 建立並培養超參數 |
-| `/api/v1/hyperparams` | GET | 列出所有超參數組 |
-| `/api/v1/hyperparams/{hp_id}` | GET | 取得超參數詳情 |
-| `/api/v1/hyperparams/{hp_id}` | DELETE | 刪除超參數組 |
+| `/api/v1/factors` | GET | 列出所有因子 |
+| `/api/v1/factors/dedup` | POST | **一次性因子去重複**（threshold 參數） |
+| `/api/v1/factors/{id}/toggle` | PATCH | 啟用/禁用因子 |
 
 ### 回測 API
 
 | 端點 | 方法 | 功能 |
 |------|------|------|
-| `/api/v1/backtests/walk-forward` | POST | Walk-Forward 回測 |
-| `/api/v1/backtests` | GET | 列出回測記錄 |
+| `/api/v1/backtest/walk-forward` | POST | Walk-Forward 回測 |
+| `/api/v1/backtest` | GET | 列出回測記錄 |
 
 ---
 
@@ -136,18 +133,7 @@ def _rank_by_date(self, series: pd.Series) -> pd.Series:
 - [Learning to Rank 論文](https://arxiv.org/abs/2012.07149)：預測排名比預測收益更容易，Sharpe Ratio 提升 3 倍
 - [Qlib 官方配置](https://github.com/microsoft/qlib/blob/main/examples/benchmarks/GRU/workflow_config_gru_Alpha158.yaml)：GRU/LSTM/AdaRNN 都使用 CSRankNorm
 
-### Qlib 官方配置差異
-
-| 模型 | Qlib 官方 Label 標準化 | 我們的配置 |
-|------|----------------------|-----------|
-| **LightGBM** | CSZScoreNorm | CSRankNorm |
-| **LSTM/GRU** | CSRankNorm | - |
-
-**為什麼我們選擇 CSRankNorm（而非官方 LightGBM 的 CSZScoreNorm）？**
-
-1. **與評估指標一致**：我們使用 Spearman IC（排名相關），CSRankNorm 讓模型學習預測排名
-2. **更穩健**：CSRankNorm 對離群值不敏感，台股小型股常有極端收益
-3. **訓練-評估對齊**：模型學習排名 → IC 評估排名相關 → 選股基於排名
+### 資料處理一致性
 
 **重要**：無論選擇哪種方法，**訓練、增量更新、預測必須使用相同的標準化**：
 
@@ -160,19 +146,23 @@ def _rank_by_date(self, series: pd.Series) -> pd.Series:
 
 ---
 
-## 因子選擇流程
+## 因子去重複
 
-### 三種選擇模式
+### 一次性去重複（推薦）
 
-系統支援三種文獻支持的因子選擇方法：
+因子去重複現在是**一次性操作**，在 Factor Management 頁面執行，而非每次訓練時執行。
 
-| 模式 | 來源 | 說明 | 預設 |
-|------|------|------|------|
-| `dedup` | RD-Agent (Microsoft Research, 2025) | IC 去重複，移除高相關因子 | ✓ |
-| `none` | Qlib (Microsoft) | 不做選擇，依賴 LightGBM 內建機制 | |
-| `cpcv` | López de Prado (2018) | CPCV + permutation importance | 備用 |
+**操作方式**：
+1. 前往 `/models/factors` 頁面
+2. 點擊 **Dedup** 按鈕
+3. 系統計算因子間相關性，禁用高度相關的冗餘因子
 
-### RD-Agent IC 去重複（預設方法）
+**優點**：
+- 訓練速度大幅提升（從 ~6 分鐘降至 ~2 分鐘）
+- 去重複結果持久化，不需每次重算
+- 可隨時調整閾值重新執行
+
+### RD-Agent IC 去重複算法
 
 **來源**：[R&D-Agent-Quant](https://arxiv.org/html/2505.15155v2) (Microsoft Research, 2025)
 
@@ -206,84 +196,30 @@ def _rank_by_date(self, series: pd.Series) -> pd.Series:
        ▼
 ┌─────────────────────────────┐
 │ 4. 貪婪去重複                │
-│    若 corr >= 0.99 則移除    │
+│    若 corr >= 0.99 則禁用    │
 └─────────────────────────────┘
        │
        ▼
-   ~150-200 個非冗餘因子
+   ~150-200 個非冗餘因子（enabled）
 ```
 
-**實作**（`src/services/factor_selection/ic_dedup.py`）：
+**API 呼叫**：
 
-```python
-class ICDeduplicator:
-    def __init__(self, correlation_threshold: float = 0.99):
-        self.threshold = correlation_threshold
-
-    def deduplicate(self, factors, X, y):
-        # 1. 計算相關矩陣
-        corr_matrix = X[factor_names].corr(method="spearman")
-
-        # 2. 計算單因子 IC
-        single_ics = {f.name: X[f.name].corr(y, method="spearman") for f in factors}
-
-        # 3. 按 IC 降序排列
-        sorted_factors = sorted(factors, key=lambda f: abs(single_ics[f.name]), reverse=True)
-
-        # 4. 貪婪去重複
-        kept = []
-        for factor in sorted_factors:
-            is_redundant = False
-            for kept_factor in kept:
-                if abs(corr_matrix.loc[factor.name, kept_factor.name]) >= self.threshold:
-                    is_redundant = True
-                    break
-            if not is_redundant:
-                kept.append(factor)
-
-        return kept, stats
+```bash
+curl -X POST "http://localhost:8000/api/v1/factors/dedup?threshold=0.99"
 ```
 
-**使用**：
+**回應**：
 
-```python
-from src.services.factor_selection import RobustFactorSelector
-
-# 預設使用 IC 去重複
-selector = RobustFactorSelector()  # method="dedup"
-result = selector.select(factors, X, y)
-
-# 或明確指定
-selector = RobustFactorSelector(method="dedup", dedup_threshold=0.99)
-```
-
-### Qlib 標準（無選擇）
-
-**來源**：[Microsoft Qlib](https://github.com/microsoft/qlib)
-
-**原理**：
-- 使用全部因子，依賴 LightGBM 內建機制
-- LightGBM 會自動處理無用因子（feature_fraction、正則化）
-
-```python
-selector = RobustFactorSelector(method="none")
-```
-
-### CPCV（備用）
-
-**來源**：López de Prado, M. (2018). "Advances in Financial Machine Learning"
-
-**參數**：
-```python
-CPCV_N_FOLDS = 6              # 分割數
-CPCV_N_TEST_FOLDS = 2         # 測試 fold 數 → C(6,2)=15 條路徑
-CPCV_PURGE_DAYS = 5           # Purging 天數
-CPCV_EMBARGO_DAYS = 5         # Embargo 天數
-CPCV_MIN_POSITIVE_RATIO = 0.5 # 最低正向路徑比例
-```
-
-```python
-selector = RobustFactorSelector(method="cpcv")
+```json
+{
+  "success": true,
+  "total_factors": 266,
+  "kept_factors": 180,
+  "disabled_factors": 86,
+  "disabled_names": ["factor_1", "factor_2", ...],
+  "message": "Disabled 86 redundant factors (correlation >= 0.99)."
+}
 ```
 
 ---
@@ -315,13 +251,13 @@ POST /api/v1/models/train { "week_id": "2026W05" }
                 │
                 ▼
         ┌───────────────┐
-        │ 4. 因子選擇   │  RobustFactorSelector(method="dedup")
-        │              │  IC 去重複：266 → ~150-200 因子
+        │ 4. Optuna     │  自動搜索最佳超參數
+        │    自動調參   │  n_trials=20, 根據樣本數縮放範圍
         └───────────────┘
                 │
                 ▼
         ┌───────────────┐
-        │ 5. LightGBM   │  使用培養或預設超參數
+        │ 5. LightGBM   │  使用 Optuna 找到的最佳參數
         │    訓練       │  early_stopping=50
         └───────────────┘
                 │
@@ -342,6 +278,39 @@ POST /api/v1/models/train { "week_id": "2026W05" }
         │ 8. 保存模型   │  model.pkl, factors.json, config.json
         └───────────────┘
 ```
+
+### Optuna 自動調參
+
+每次訓練時，系統自動使用 Optuna 搜索最佳超參數：
+
+**搜索空間**（根據樣本數動態縮放）：
+
+```python
+# 基於樣本數計算正則化上限
+n_samples = len(X_train)
+lambda_max = max(1.0, 50.0 * (n_samples / 100000))  # TW100 約 25000 樣本 → lambda_max ≈ 12.5
+
+# Optuna 搜索範圍
+{
+    "num_leaves": [8, 64],           # 樹葉數量
+    "max_depth": [3, 8],             # 最大深度
+    "learning_rate": [0.01, 0.2],    # 學習率（log scale）
+    "min_child_samples": [10, 100],  # 葉節點最小樣本數
+    "lambda_l1": [0, lambda_max],    # L1 正則化
+    "lambda_l2": [0, lambda_max],    # L2 正則化
+    "feature_fraction": [0.5, 1.0],  # 特徵採樣比例
+    "bagging_fraction": [0.5, 1.0],  # 樣本採樣比例
+}
+```
+
+**為什麼動態縮放？**
+
+| 數據規模 | 樣本數 | lambda_max | 說明 |
+|----------|--------|------------|------|
+| A-Share | ~300,000 | 150 | 大樣本需要強正則化 |
+| TW100 | ~25,000 | 12.5 | 小樣本只需輕度正則化 |
+
+**之前的問題**：使用固定的 `lambda_l1=300, lambda_l2=800` 對 TW100 過強，導致 IC=0。
 
 ### 訓練期配置
 
@@ -370,26 +339,6 @@ train_mask = (dates >= train_start) & (dates <= train_end)
 valid_mask = (dates >= valid_start) & (dates <= valid_end)
 ```
 
-### LightGBM 預設參數
-
-```python
-{
-    "objective": "regression",
-    "metric": "mse",
-    "boosting_type": "gbdt",
-    "num_leaves": 31,
-    "max_depth": 5,
-    "learning_rate": 0.05,
-    "n_estimators": 100,
-    "min_child_samples": 20,
-    "subsample": 0.8,
-    "colsample_bytree": 0.8,
-    "reg_alpha": 0.1,
-    "reg_lambda": 0.1,
-    "device": "gpu",
-}
-```
-
 ### 模型輸出
 
 儲存於 `data/models/{model_name}/`：
@@ -397,7 +346,7 @@ valid_mask = (dates >= valid_start) & (dates <= valid_end)
 | 檔案 | 內容 |
 |------|------|
 | `model.pkl` | LightGBM Booster（增量更新後） |
-| `factors.json` | 選出的因子清單 |
+| `factors.json` | 使用的因子清單 |
 | `config.json` | 訓練配置、日期、IC、超參數 |
 
 ---
@@ -408,11 +357,11 @@ valid_mask = (dates >= valid_start) & (dates <= valid_end)
 
 | 層級 | 決定什麼 | 更新頻率 | 方法 |
 |------|---------|---------|------|
-| **因子選擇** | 用哪些因子 | 每週 | IC 去重複 |
+| **因子選擇** | 用哪些因子 | 一次性 | IC 去重複（Dedup 按鈕） |
 | **模型權重** | 因子怎麼組合 | 每日/每週 | `init_model` 增量學習 |
 
 **核心原理**：
-- 因子結構變化慢（週/月級）→ 每週重訓選擇
+- 因子結構變化慢（週/月級）→ 一次性去重複
 - 因子權重變化快（日級）→ 增量微調
 
 ### 訓練後增量更新
@@ -440,7 +389,7 @@ incremented_model = lgb.train(
 ### Walk-Forward 回測中的增量學習
 
 ```python
-POST /api/v1/backtests/walk-forward
+POST /api/v1/backtest/walk-forward
 {
     "enable_incremental": true,   # 啟用每日增量
     "start_week_id": "2026W01",
@@ -556,43 +505,6 @@ QUALITY_ICIR_MIN = 0.5     # ICIR < 0.5 警報
 
 ---
 
-## 超參數培養
-
-### Walk-Forward Optimization
-
-**方法**：多窗口優化 + 中位數聚合
-
-```
-1. 生成 N 個歷史窗口（預設 5）
-        │
-        ▼
-2. 每個窗口獨立 Optuna 優化
-   ├─ n_trials_per_period: 20
-   ├─ 搜索：num_leaves, max_depth, learning_rate 等
-   └─ 計算該窗口最佳 IC
-        │
-        ▼
-3. 聚合中位數
-   ├─ 取各窗口最佳參數的中位數
-   └─ 計算穩定性（變異係數 CV）
-        │
-        ▼
-4. 保存到資料庫
-```
-
-**API**：
-
-```python
-POST /api/v1/hyperparams
-{
-    "name": "hp_2026_02_v1",
-    "n_periods": 5,
-    "n_trials_per_period": 20
-}
-```
-
----
-
 ## 關鍵參數配置
 
 ### constants.py
@@ -607,15 +519,11 @@ VALID_DAYS = 5        # 驗證期：5 個交易日
 EMBARGO_DAYS = 7      # Embargo：7 天
 
 # === IC Deduplication (RD-Agent) ===
-IC_DEDUP_THRESHOLD = 0.99  # 去重複閾值
+IC_DEDUP_THRESHOLD = 0.99  # 去重複閾值（一次性去重時使用）
 
-# === CPCV 參數（備用）===
-CPCV_N_FOLDS = 6
-CPCV_N_TEST_FOLDS = 2
-CPCV_PURGE_DAYS = 5
-CPCV_EMBARGO_DAYS = 5
-CPCV_MIN_POSITIVE_RATIO = 0.5
-CPCV_TIME_DECAY_RATE = 0.95
+# === Optuna 調參 ===
+OPTUNA_N_TRIALS = 20       # 每次訓練的搜索次數
+OPTUNA_TIMEOUT = 300       # 超時秒數
 
 # === 品質監控 ===
 QUALITY_JACCARD_MIN = 0.3
@@ -627,7 +535,7 @@ QUALITY_ICIR_MIN = 0.5
 
 ## 參考文獻
 
-### 因子選擇
+### 因子去重複
 
 1. **RD-Agent** (Microsoft Research, 2025)
    - [arXiv:2505.15155](https://arxiv.org/html/2505.15155v2)
@@ -638,9 +546,11 @@ QUALITY_ICIR_MIN = 0.5
    - [GitHub](https://github.com/microsoft/qlib)
    - 標準流程：無因子選擇，依賴 LightGBM
 
-3. **López de Prado** (2018)
-   - "Advances in Financial Machine Learning"
-   - CPCV、MDI/MDA 方法
+### 超參數調優
+
+3. **Optuna** (Preferred Networks)
+   - [官方文檔](https://optuna.org/)
+   - TPE (Tree-structured Parzen Estimator) 貝葉斯優化
 
 ### 排名預測
 
@@ -658,43 +568,36 @@ QUALITY_ICIR_MIN = 0.5
 
 ## 已知問題與修復
 
+### 2026-02-05 發現：正則化過強導致 IC = 0
+
+**症狀**：
+- 使用預培養超參數（lambda_l1=300, lambda_l2=800）訓練 TW100
+- 模型 IC = 0
+- LightGBM 樹只有 1 個葉節點（常數預測）
+
+**根本原因**：
+- 預培養超參數是為 A-Share（~300k 樣本）設計
+- TW100 只有 ~25k 樣本，需要較輕的正則化
+
+**修復**：
+- 移除預培養超參數 UI
+- 改用 Optuna 自動調參
+- 正則化搜索範圍根據樣本數動態縮放：`lambda_max = 50 * (n_samples / 100000)`
+
 ### 2026-02-05 發現：標籤二次標準化導致 IC = 0
 
 **症狀**：
 - 模型 IC = 0（精確值）
 - Feature Importance 全為 0
-- LightGBM 樹只有 1 個葉節點（常數預測）
 
 **根本原因**：
-
 ```
 標籤處理流程（錯誤）：
 1. _prepare_train_valid_data: y = _rank_by_date(y)  → 排名 [0, 1]
 2. _robust_factor_selection: y = _zscore_by_date(y)  → 二次標準化 ❌
-
-問題：對已排名的標籤再做 z-score，信號完全丟失
 ```
 
-**修復**：
-
-```python
-# 修復前（錯誤）
-y_train_zscore = self._zscore_by_date(y_train_clean.to_frame()).squeeze()
-
-# 修復後（正確）
-y_train_final = y_train_clean  # 直接使用排名後的標籤
-```
-
-**位置**：`src/services/model_trainer.py` 第 1084-1091 行
-
-### 其他潛在問題（待驗證）
-
-| 問題 | 影響 | 優先級 |
-|------|------|--------|
-| NaN 填補為 0 | 污染訓練數據 | P1 |
-| 因子平均 IC 極低（~0.000024） | 基礎信號不足 | P1 |
-| 超參數與因子數不匹配 | 模型性能 | P2 |
-| qlib 日期延伸邏輯 | 標籤計算誤差 | P2 |
+**修復**：直接使用排名後的標籤，不再做 z-score。
 
 ### 診斷工具
 
@@ -729,10 +632,10 @@ print('non-zero importances:', (imp > 0).sum(), '/', len(imp))
 
 | 日期 | 變更 |
 |------|------|
+| 2026-02-05 | 重構：移除超參數 UI，改用 Optuna 自動調參 |
+| 2026-02-05 | 重構：因子去重複改為一次性操作（Dedup 按鈕） |
+| 2026-02-05 | 修復：正則化範圍根據樣本數動態縮放 |
 | 2026-02-05 | 修復：移除標籤二次標準化（IC = 0 問題） |
-| 2026-02-05 | 新增：已知問題與修復章節 |
 | 2026-02-04 | 重構：使用 RD-Agent IC 去重複替代 Bootstrap + CPCV |
-| 2026-02-04 | 新增：三種因子選擇模式（dedup、none、cpcv） |
 | 2026-02-04 | 新增：增量學習章節 |
-| 2026-02-04 | 新增：API 端點章節 |
 | 2026-02-04 | 初版：統一 IC 計算（Spearman）、Label 使用 CSRankNorm |
