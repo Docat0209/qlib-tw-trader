@@ -417,9 +417,17 @@ class ModelTrainer:
         n_features = X_train.shape[1]
 
         # 動態計算搜索範圍
-        # num_leaves 上限提高至 300（Qlib 基準使用 210）
-        max_leaves = min(300, max(32, int(n_samples ** 0.4)))
-        max_min_data = max(100, n_samples // 100)
+        # num_leaves 上限根據樣本數調整
+        max_leaves = min(64, max(16, int(n_samples ** 0.3)))
+        max_min_data = max(50, n_samples // 200)
+
+        # 正則化範圍根據樣本數量動態調整
+        # Qlib A股: ~3000股 x 252天 = 756,000 樣本 → L1=206, L2=581
+        # 我們台股: ~100股 x 252天 = 25,200 樣本 → 需要更弱的正則化
+        # 規則：樣本越少，正則化應該越弱（避免欠擬合）
+        scale_factor = max(0.1, min(1.0, n_samples / 100000))  # 相對於 10 萬樣本
+        lambda_max = max(1.0, 50.0 * scale_factor)  # 最大 L1/L2
+        logger.info(f"Optuna search: n_samples={n_samples}, scale={scale_factor:.2f}, lambda_max={lambda_max:.1f}")
 
         best_ic = [0.0]  # 用 list 以便在閉包中修改
         trial_count = [0]
@@ -431,19 +439,18 @@ class ModelTrainer:
                 "boosting_type": "gbdt",
                 "verbosity": -1,
                 "seed": 42,
-                "feature_pre_filter": False,  # 允許動態調整 min_data_in_leaf
-                # 搜索的超參數
-                "num_leaves": trial.suggest_int("num_leaves", 16, max_leaves),
-                "max_depth": trial.suggest_int("max_depth", 4, 8),
-                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
-                "feature_fraction": trial.suggest_float("feature_fraction", 0.5, 1.0),
-                "bagging_fraction": trial.suggest_float("bagging_fraction", 0.5, 1.0),
-                "bagging_freq": trial.suggest_int("bagging_freq", 1, 7),
-                # 正則化範圍擴大（Qlib 基準：L1=206, L2=581）
-                # 我們的因子更多(266 vs 158)、樣本更少(100 vs 300)，需要更強正則化
-                "lambda_l1": trial.suggest_float("lambda_l1", 0.1, 1000.0, log=True),
-                "lambda_l2": trial.suggest_float("lambda_l2", 0.1, 2000.0, log=True),
-                "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 20, max_min_data),
+                "feature_pre_filter": False,
+                # 搜索的超參數（範圍根據資料規模調整）
+                "num_leaves": trial.suggest_int("num_leaves", 8, max_leaves),
+                "max_depth": trial.suggest_int("max_depth", 3, 6),
+                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.1, log=True),
+                "feature_fraction": trial.suggest_float("feature_fraction", 0.6, 1.0),
+                "bagging_fraction": trial.suggest_float("bagging_fraction", 0.6, 1.0),
+                "bagging_freq": trial.suggest_int("bagging_freq", 1, 5),
+                # 正則化範圍根據樣本數動態調整（小資料集用弱正則化）
+                "lambda_l1": trial.suggest_float("lambda_l1", 0.001, lambda_max, log=True),
+                "lambda_l2": trial.suggest_float("lambda_l2", 0.001, lambda_max, log=True),
+                "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 10, max_min_data),
             }
 
             # 訓練模型
