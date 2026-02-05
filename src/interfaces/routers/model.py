@@ -626,6 +626,7 @@ async def trigger_training(
                 valid_end=valid_end,
                 factor_pool_hash=factor_pool_hash,
                 on_progress=sync_progress,
+                hyperparams_id=data.hyperparams_id,
             )
 
             return {
@@ -788,6 +789,7 @@ async def trigger_batch_training(
                     valid_end=valid_end,
                     factor_pool_hash=factor_pool_hash,
                     on_progress=sync_progress,
+                    hyperparams_id=data.hyperparams_id,
                 )
 
                 results.append({
@@ -895,6 +897,33 @@ async def get_model(
                 factor_names.append(factor.name)
 
     return _run_to_response(run, factor_names, candidate_factors, selected_factors)
+
+
+@router.delete("/all")
+async def delete_all_models(
+    session: Session = Depends(get_db),
+):
+    """刪除所有模型"""
+    repo = TrainingRepository(session)
+
+    # 取得所有模型
+    runs = repo.get_all()
+    deleted_count = 0
+
+    for run in runs:
+        # 刪除模型檔案目錄
+        if run.name:
+            model_dir = MODELS_DIR / run.name
+            if model_dir.exists():
+                shutil.rmtree(model_dir)
+
+        # 刪除資料庫記錄
+        repo.delete(run.id)
+        deleted_count += 1
+
+    await broadcast_data_updated("models", "delete", "all")
+
+    return {"deleted_count": deleted_count}
 
 
 @router.delete("/{model_id}")

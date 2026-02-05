@@ -560,6 +560,7 @@ export function WalkForwardBacktest() {
           </CardContent>
         </Card>
       </div>
+
     </div>
   )
 }

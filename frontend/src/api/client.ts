@@ -270,10 +270,12 @@ export interface ModelStatus {
 
 export interface TrainRequest {
   week_id: string  // "2026W05"
+  hyperparams_id?: number  // 指定超參數組 ID
 }
 
 export interface TrainBatchRequest {
   year: string  // "2025"
+  hyperparams_id?: number  // 指定超參數組 ID
 }
 
 // Week Types
@@ -357,6 +359,7 @@ export const modelApi = {
   list: () => api.get<ModelListResponse>('/models'),
   get: (id: string) => api.get<Model>(`/models/${id}`),
   delete: (id: string) => api.delete(`/models/${id}`).then(res => res.json() as Promise<DeleteResponse>),
+  deleteAll: () => api.delete('/models/all').then(res => res.json() as Promise<{ deleted_count: number }>),
   setCurrent: (id: string) => api.patch<SetCurrentResponse>(`/models/${id}/current`),
   dataRange: () => api.get<DataRangeResponse>('/models/data-range'),
 
@@ -401,6 +404,8 @@ export interface HyperparamsSummary {
   n_periods: number
   learning_rate: number | null
   num_leaves: number | null
+  lambda_l1: number | null
+  lambda_l2: number | null
 }
 
 export interface HyperparamsDetail extends HyperparamsSummary {
@@ -1197,6 +1202,7 @@ export interface WalkForwardRequest {
   trade_price?: string
   enable_incremental?: boolean
   strategy?: string
+  hyperparams_id?: number
 }
 
 export interface WalkForwardRunResponse {

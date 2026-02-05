@@ -661,6 +661,7 @@ class ModelTrainer:
         week_id: str | None = None,
         factor_pool_hash: str | None = None,
         on_progress: Callable[[float, str], None] | None = None,
+        hyperparams_id: int | None = None,
     ) -> TrainingResult:
         """
         執行 LightGBM 訓練（週訓練架構）
@@ -680,6 +681,7 @@ class ModelTrainer:
             week_id: 週 ID（如 "2026W05"）
             factor_pool_hash: 因子池 hash
             on_progress: 進度回調 (progress: 0-100, message: str)
+            hyperparams_id: 指定超參數組 ID（None 則使用最新）
 
         Returns:
             TrainingResult
@@ -735,17 +737,18 @@ class ModelTrainer:
             from src.repositories.hyperparams import HyperparamsRepository
 
             hp_repo = HyperparamsRepository(session)
-            latest_hp = hp_repo.get_latest()
+            # 使用指定的超參數組，或取得最新
+            hp = hp_repo.get_by_id(hyperparams_id) if hyperparams_id else hp_repo.get_latest()
 
-            if latest_hp:
-                cultivated_params = json.loads(latest_hp.params_json)
+            if hp:
+                cultivated_params = json.loads(hp.params_json)
                 # 加入 GPU 設定
                 cultivated_params = cultivated_params.copy()
                 cultivated_params["device"] = "gpu"
                 cultivated_params["gpu_use_dp"] = False
                 self._optimized_params = cultivated_params
                 if on_progress:
-                    on_progress(10.0, f"Using hyperparams: {latest_hp.name}")
+                    on_progress(10.0, f"Using hyperparams: {hp.name}")
             else:
                 # 無培養超參數，使用保守預設值（不再跑 Optuna）
                 self._optimized_params = get_conservative_default_params(len(enabled_factors))

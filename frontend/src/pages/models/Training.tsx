@@ -13,6 +13,7 @@ import {
   Trash2,
   XCircle,
   Calendar,
+  SlidersHorizontal,
 } from 'lucide-react'
 import { modelApi, WeeksResponse, Model, FactorSummary, hyperparamsApi, HyperparamsSummary } from '@/api/client'
 import { Link } from 'react-router-dom'
@@ -31,6 +32,10 @@ export function Training() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
   const [hyperparamsList, setHyperparamsList] = useState<HyperparamsSummary[]>([])
+  const [selectedHyperparamsId, setSelectedHyperparamsId] = useState<number | null>(null)
+  // 刪除所有模型
+  const [deleteAllConfirm, setDeleteAllConfirm] = useState(false)
+  const [deletingModels, setDeletingModels] = useState(false)
   // 批量訓練年份標記
   const [queueYear, setQueueYear] = useState<string | null>(null)
 
@@ -63,6 +68,10 @@ export function Training() {
       ])
       setWeeksData(weeksRes)
       setHyperparamsList(hpRes.items)
+      // 預設選擇第一個超參數
+      if (hpRes.items.length > 0 && !selectedHyperparamsId) {
+        setSelectedHyperparamsId(hpRes.items[0].id)
+      }
 
       // 預設選擇最新可訓練的週（僅首次載入）
       if (showLoading && weeksRes.slots.length > 0) {
@@ -77,7 +86,7 @@ export function Training() {
     } finally {
       if (showLoading) setLoading(false)
     }
-  }, [])
+  }, [selectedHyperparamsId])
 
   // 選中週變更時，載入對應模型
   useEffect(() => {
@@ -143,10 +152,10 @@ export function Training() {
   }
 
   const handleStartTraining = async () => {
-    if (isTraining || !selectedWeekId) return
+    if (isTraining || !selectedWeekId || !selectedHyperparamsId) return
     setActionLoading(true)
     try {
-      await modelApi.train({ week_id: selectedWeekId })
+      await modelApi.train({ week_id: selectedWeekId, hyperparams_id: selectedHyperparamsId })
       await fetchData(false)
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to start training')
@@ -156,7 +165,7 @@ export function Training() {
   }
 
   const handleTrainYear = async (year: string) => {
-    if (isTraining || !weeksData) return
+    if (isTraining || !weeksData || !selectedHyperparamsId) return
 
     // 找出該年所有可訓練的週（未訓練）
     const trainableWeeks = weeksData.slots.filter(
@@ -171,7 +180,7 @@ export function Training() {
 
     try {
       // 使用後端批量訓練 API
-      await modelApi.trainBatch({ year })
+      await modelApi.trainBatch({ year, hyperparams_id: selectedHyperparamsId })
       await fetchData(false)
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to start batch training')
@@ -191,6 +200,22 @@ export function Training() {
       setActionLoading(false)
     }
   }
+
+  const handleDeleteAllModels = async () => {
+    setDeletingModels(true)
+    try {
+      const result = await modelApi.deleteAll()
+      setDeleteAllConfirm(false)
+      alert(`Deleted ${result.deleted_count} models`)
+      fetchData(false)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete models')
+    } finally {
+      setDeletingModels(false)
+    }
+  }
+
+  const selectedHyperparams = hyperparamsList.find(hp => hp.id === selectedHyperparamsId)
 
   const formatDate = (dateStr: string) => {
     return dateStr.slice(5) // MM-DD
@@ -443,22 +468,62 @@ export function Training() {
           {/* Training Action */}
           <Card>
             <CardHeader className="py-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Play className="h-4 w-4 text-green" />
-                Training
+              <CardTitle className="flex items-center justify-between text-base">
+                <div className="flex items-center gap-2">
+                  <Play className="h-4 w-4 text-green" />
+                  Training
+                </div>
+                <button
+                  onClick={() => setDeleteAllConfirm(true)}
+                  className="btn btn-sm btn-ghost text-red hover:bg-red/10"
+                  title="Delete all models"
+                  disabled={trainedSlots.length === 0}
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Clear All
+                </button>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 pt-4">
+              {/* Hyperparameters Selection */}
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1 flex items-center gap-1">
+                  <SlidersHorizontal className="h-3 w-3" />
+                  Hyperparameters
+                </label>
+                <select
+                  className="input w-full text-sm"
+                  value={selectedHyperparamsId || ''}
+                  onChange={(e) => setSelectedHyperparamsId(e.target.value ? Number(e.target.value) : null)}
+                  disabled={hyperparamsList.length === 0}
+                >
+                  {hyperparamsList.length === 0 ? (
+                    <option value="">No hyperparameters available</option>
+                  ) : (
+                    hyperparamsList.map((hp) => (
+                      <option key={hp.id} value={hp.id}>
+                        {hp.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+                {selectedHyperparams && (
+                  <p className="text-[10px] text-muted-foreground mt-1 font-mono">
+                    leaves={selectedHyperparams.num_leaves}, L1={selectedHyperparams.lambda_l1?.toFixed(0)}, L2={selectedHyperparams.lambda_l2?.toFixed(0)}
+                  </p>
+                )}
+              </div>
+
               {hyperparamsList.length === 0 ? (
                 <div className="text-center py-4">
                   <p className="text-sm text-muted-foreground mb-2">
-                    No hyperparameters cultivated yet
+                    No hyperparameters available
                   </p>
                   <Link
                     to="/models/hyperparams"
                     className="btn btn-secondary text-sm"
                   >
-                    Cultivate Hyperparams
+                    View Hyperparams
                   </Link>
                 </div>
               ) : selectedSlot?.status === 'trained' ? (
@@ -498,7 +563,7 @@ export function Training() {
                       <span className="font-medium">Ready to Train</span>
                     </div>
                     <p className="text-xs text-blue-600 mt-1">
-                      Using hyperparams: {hyperparamsList[0]?.name}
+                      Using: {selectedHyperparams?.name || 'No hyperparams selected'}
                     </p>
                   </div>
                   <button
@@ -627,6 +692,39 @@ export function Training() {
               >
                 {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete All Models Confirmation Dialog */}
+      {deleteAllConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-card p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red" />
+              Delete All Models
+            </h3>
+            <p className="text-muted-foreground mb-4">
+              Are you sure you want to delete <strong>ALL {trainedSlots.length}</strong> trained models?
+              This will remove all model files and you will need to retrain from scratch.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setDeleteAllConfirm(false)}
+                disabled={deletingModels}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary bg-red hover:bg-red/90"
+                onClick={handleDeleteAllModels}
+                disabled={deletingModels}
+              >
+                {deletingModels ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                Delete All
               </button>
             </div>
           </div>

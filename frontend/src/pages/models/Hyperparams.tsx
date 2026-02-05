@@ -6,12 +6,8 @@ import {
   RefreshCw,
   Trash2,
   CheckCircle,
-  AlertTriangle,
-  Zap,
-  X,
 } from 'lucide-react'
 import { hyperparamsApi, HyperparamsSummary, HyperparamsDetail } from '@/api/client'
-import { useJobs } from '@/hooks/useJobs'
 import { useFetchOnChange } from '@/hooks/useFetchOnChange'
 import { cn } from '@/lib/utils'
 
@@ -22,16 +18,8 @@ export function Hyperparams() {
   const [loading, setLoading] = useState(true)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showDialog, setShowDialog] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null)
-
-  // WebSocket 任務進度追蹤
-  const { activeJob, clearJob, cancelJob, isConnected } = useJobs()
-
-  // 培養狀態
-  const isCultivating = activeJob?.job_type === 'cultivate' &&
-    ['queued', 'running'].includes(activeJob.status)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -71,18 +59,6 @@ export function Hyperparams() {
   // 自動刷新
   useFetchOnChange('hyperparams', fetchData)
 
-  // 監聽培養完成
-  useEffect(() => {
-    if (activeJob?.status === 'completed' && activeJob?.job_type === 'cultivate') {
-      fetchData()
-      const timer = setTimeout(() => clearJob(activeJob.id), 5000)
-      return () => clearTimeout(timer)
-    }
-    if (activeJob?.status === 'failed' && activeJob?.job_type === 'cultivate') {
-      fetchData()
-    }
-  }, [activeJob?.status, activeJob?.job_type, activeJob?.id, clearJob, fetchData])
-
   const handleDelete = async (id: number) => {
     setActionLoading(true)
     try {
@@ -95,19 +71,6 @@ export function Hyperparams() {
       await fetchData()
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to delete')
-    } finally {
-      setActionLoading(false)
-    }
-  }
-
-  const handleCancelCultivation = async () => {
-    if (!activeJob) return
-    setActionLoading(true)
-    try {
-      await cancelJob(activeJob.id)
-      await fetchData()
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to cancel')
     } finally {
       setActionLoading(false)
     }
@@ -145,88 +108,17 @@ export function Hyperparams() {
         <div>
           <h1 className="heading text-2xl">Hyperparameters</h1>
           <p className="subheading mt-1">
-            Manage LightGBM hyperparameter sets.
-            {!isConnected && (
-              <span className="text-orange ml-2">(WebSocket disconnected)</span>
-            )}
+            View LightGBM hyperparameter sets. Select one when running walk-forward backtest.
           </p>
         </div>
         <button
-          className="btn btn-primary"
-          onClick={() => setShowDialog(true)}
-          disabled={isCultivating}
+          className="btn btn-secondary"
+          onClick={fetchData}
         >
-          {isCultivating ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Zap className="h-4 w-4" />
-          )}
-          {isCultivating ? 'Cultivating...' : 'Cultivate New'}
+          <RefreshCw className="h-4 w-4" />
+          Refresh
         </button>
       </div>
-
-      {/* Cultivation Progress */}
-      {isCultivating && activeJob && (
-        <div className="p-4 rounded-lg bg-purple/10 border border-purple/20">
-          <div className="flex items-center gap-3 mb-2">
-            <Loader2 className="h-5 w-5 animate-spin text-purple" />
-            <div className="flex-1">
-              <p className="font-semibold text-purple">Cultivation in Progress</p>
-              <p className="text-sm text-muted-foreground">
-                {activeJob.message || 'Processing...'}
-              </p>
-            </div>
-            <span className="font-mono text-lg text-purple">
-              {typeof activeJob.progress === 'number' ? activeJob.progress.toFixed(1) : activeJob.progress}%
-            </span>
-            <button
-              className="btn btn-sm btn-ghost text-red hover:bg-red/10"
-              onClick={handleCancelCultivation}
-              disabled={actionLoading}
-              title="Cancel cultivation"
-            >
-              <AlertTriangle className="h-4 w-4" />
-              Cancel
-            </button>
-          </div>
-          <div className="h-2 bg-secondary rounded-full overflow-hidden">
-            <div
-              className="h-full bg-purple transition-all duration-300"
-              style={{ width: `${activeJob.progress}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Cultivation Completed */}
-      {activeJob?.status === 'completed' && activeJob?.job_type === 'cultivate' && (
-        <div className="p-4 rounded-lg bg-green/10 border border-green/20">
-          <div className="flex items-center gap-3">
-            <CheckCircle className="h-5 w-5 text-green" />
-            <div>
-              <p className="font-semibold text-green">Cultivation Completed</p>
-              <p className="text-sm text-muted-foreground">
-                Hyperparameters cultivated successfully!
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Cultivation Failed */}
-      {activeJob?.status === 'failed' && activeJob?.job_type === 'cultivate' && (
-        <div className="p-4 rounded-lg bg-red/10 border border-red/20">
-          <div className="flex items-center gap-3">
-            <AlertTriangle className="h-5 w-5 text-red" />
-            <div>
-              <p className="font-semibold text-red">Cultivation Failed</p>
-              <p className="text-sm text-muted-foreground">
-                {activeJob.error || 'An error occurred during cultivation.'}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Main Content: Left-Right Layout */}
       <div className="flex gap-6 h-[calc(100vh-200px)]">
@@ -239,7 +131,7 @@ export function Hyperparams() {
               Hyperparameter Sets
             </CardTitle>
           </CardHeader>
-          <CardContent className="p-0">
+          <CardContent className="p-0 overflow-y-auto">
             {hyperparams.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 px-4">
                 <div className="icon-box icon-box-purple w-12 h-12 mb-4">
@@ -247,7 +139,7 @@ export function Hyperparams() {
                 </div>
                 <p className="font-semibold">No Hyperparameters</p>
                 <p className="text-sm text-muted-foreground mt-1 text-center">
-                  Click "Cultivate New" to create
+                  Add hyperparameter sets via database
                 </p>
               </div>
             ) : (
@@ -275,11 +167,16 @@ export function Hyperparams() {
                       </button>
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">
-                      {formatDate(hp.cultivated_at)} | {hp.n_periods} periods
+                      {formatDate(hp.cultivated_at)}
                     </div>
                     {hp.learning_rate && hp.num_leaves && (
                       <div className="text-xs text-muted-foreground mt-1 mono">
                         lr={hp.learning_rate.toFixed(3)}, leaves={hp.num_leaves}
+                      </div>
+                    )}
+                    {hp.lambda_l1 && hp.lambda_l2 && (
+                      <div className="text-xs text-muted-foreground mono">
+                        L1={hp.lambda_l1.toFixed(1)}, L2={hp.lambda_l2.toFixed(1)}
                       </div>
                     )}
                   </div>
@@ -305,84 +202,112 @@ export function Hyperparams() {
                 {/* Meta */}
                 <div className="flex gap-4 text-sm">
                   <div>
-                    <span className="text-muted-foreground">Cultivated:</span>{' '}
+                    <span className="text-muted-foreground">Created:</span>{' '}
                     <span className="font-medium">{formatDate(detail.cultivated_at)}</span>
                   </div>
-                  <div>
-                    <span className="text-muted-foreground">Periods:</span>{' '}
-                    <span className="font-medium">{detail.n_periods}</span>
-                  </div>
+                  {detail.n_periods > 0 && (
+                    <div>
+                      <span className="text-muted-foreground">Periods:</span>{' '}
+                      <span className="font-medium">{detail.n_periods}</span>
+                    </div>
+                  )}
                 </div>
+
+                {/* Source Info */}
+                {detail.stability.source && (
+                  <div className="p-3 rounded-lg bg-purple/10 border border-purple/20">
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">Source:</span>{' '}
+                      <span className="font-medium text-purple">{detail.stability.source}</span>
+                    </p>
+                    {detail.stability.reference && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Reference: {detail.stability.reference}
+                      </p>
+                    )}
+                    {detail.stability.factor_ratio && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Factor ratio: {detail.stability.factor_ratio}x | Stock ratio: {detail.stability.stock_ratio}x
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* Parameters Table */}
                 <div>
                   <h3 className="text-sm font-semibold mb-3">Parameters</h3>
                   <div className="grid grid-cols-4 gap-3">
                     {Object.entries(detail.params)
-                      .filter(([key]) => !['objective', 'metric', 'boosting_type', 'verbosity', 'seed', 'feature_pre_filter'].includes(key))
+                      .filter(([key]) => !['objective', 'metric', 'boosting_type', 'verbosity', 'seed', 'feature_pre_filter', 'device', 'gpu_use_dp'].includes(key))
                       .map(([key, value]) => (
                         <div key={key} className="p-3 rounded-lg bg-secondary">
                           <p className="text-xs text-muted-foreground truncate">{key}</p>
                           <p className="font-mono font-semibold">
-                            {typeof value === 'number' ? (Number.isInteger(value) ? value : value.toFixed(4)) : value}
+                            {typeof value === 'number' ? (Number.isInteger(value) ? value : value.toFixed(4)) : String(value)}
                           </p>
                         </div>
                       ))}
                   </div>
                 </div>
 
-                {/* Stability */}
-                <div>
-                  <h3 className="text-sm font-semibold mb-3">
-                    Stability (CV)
-                    <span className="font-normal text-muted-foreground ml-2">
-                      CV &lt; 0.3 = stable
-                    </span>
-                  </h3>
-                  <div className="grid grid-cols-4 gap-3">
-                    {Object.entries(detail.stability).map(([key, cv]) => (
-                      <div key={key} className="text-center p-2 rounded-lg bg-secondary">
-                        <p className="text-xs text-muted-foreground truncate">{key}</p>
-                        <p className={cn(
-                          "font-mono font-semibold",
-                          cv < 0.3 ? "text-green" : cv < 0.4 ? "text-orange" : "text-red"
-                        )}>
-                          {cv.toFixed(3)}
-                          {cv < 0.3 && <CheckCircle className="inline h-3 w-3 ml-1" />}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Period Results */}
-                <div>
-                  <h3 className="text-sm font-semibold mb-3">Period Results</h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-muted-foreground border-b border-border">
-                          <th className="text-left py-2 font-medium">#</th>
-                          <th className="text-left py-2 font-medium">Train Period</th>
-                          <th className="text-left py-2 font-medium">Valid Period</th>
-                          <th className="text-right py-2 font-medium">IC</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {detail.periods.map((p, i) => (
-                          <tr key={i} className="border-b border-border/50">
-                            <td className="py-2 text-muted-foreground">{i + 1}</td>
-                            <td className="py-2">{p.train_start} ~ {p.train_end}</td>
-                            <td className="py-2">{p.valid_start} ~ {p.valid_end}</td>
-                            <td className="py-2 text-right font-mono">
-                              {p.best_ic.toFixed(4)}
-                            </td>
-                          </tr>
+                {/* Stability (only show if it has numeric CV values) */}
+                {Object.entries(detail.stability).some(([_, v]) => typeof v === 'number') && (
+                  <div>
+                    <h3 className="text-sm font-semibold mb-3">
+                      Stability (CV)
+                      <span className="font-normal text-muted-foreground ml-2">
+                        CV &lt; 0.3 = stable
+                      </span>
+                    </h3>
+                    <div className="grid grid-cols-4 gap-3">
+                      {Object.entries(detail.stability)
+                        .filter(([_, v]) => typeof v === 'number')
+                        .map(([key, cv]) => (
+                          <div key={key} className="text-center p-2 rounded-lg bg-secondary">
+                            <p className="text-xs text-muted-foreground truncate">{key}</p>
+                            <p className={cn(
+                              "font-mono font-semibold",
+                              (cv as number) < 0.3 ? "text-green" : (cv as number) < 0.4 ? "text-orange" : "text-red"
+                            )}>
+                              {(cv as number).toFixed(3)}
+                              {(cv as number) < 0.3 && <CheckCircle className="inline h-3 w-3 ml-1" />}
+                            </p>
+                          </div>
                         ))}
-                      </tbody>
-                    </table>
+                    </div>
                   </div>
-                </div>
+                )}
+
+                {/* Period Results (only show if has periods) */}
+                {detail.periods.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold mb-3">Period Results</h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-muted-foreground border-b border-border">
+                            <th className="text-left py-2 font-medium">#</th>
+                            <th className="text-left py-2 font-medium">Train Period</th>
+                            <th className="text-left py-2 font-medium">Valid Period</th>
+                            <th className="text-right py-2 font-medium">IC</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detail.periods.map((p, i) => (
+                            <tr key={i} className="border-b border-border/50">
+                              <td className="py-2 text-muted-foreground">{i + 1}</td>
+                              <td className="py-2">{p.train_start} ~ {p.train_end}</td>
+                              <td className="py-2">{p.valid_start} ~ {p.valid_end}</td>
+                              <td className="py-2 text-right font-mono">
+                                {p.best_ic.toFixed(4)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </>
           ) : (
@@ -393,17 +318,6 @@ export function Hyperparams() {
           )}
         </Card>
       </div>
-
-      {/* Cultivate Dialog */}
-      {showDialog && (
-        <CultivateDialog
-          onClose={() => setShowDialog(false)}
-          onSubmit={() => {
-            setShowDialog(false)
-            fetchData()
-          }}
-        />
-      )}
 
       {/* Delete Confirmation Dialog */}
       {deleteConfirm && (
@@ -433,154 +347,6 @@ export function Hyperparams() {
           </div>
         </div>
       )}
-    </div>
-  )
-}
-
-// Cultivate Dialog Component
-function CultivateDialog({
-  onClose,
-  onSubmit,
-}: {
-  onClose: () => void
-  onSubmit: () => void
-}) {
-  const [name, setName] = useState('')
-  const [nPeriods, setNPeriods] = useState(5)
-  const [nTrials, setNTrials] = useState(20)
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!name.trim()) {
-      setError('Please enter a name')
-      return
-    }
-
-    setSubmitting(true)
-    setError(null)
-    try {
-      console.log('Starting cultivation:', { name: name.trim(), n_periods: nPeriods, n_trials_per_period: nTrials })
-      const result = await hyperparamsApi.cultivate({
-        name: name.trim(),
-        n_periods: nPeriods,
-        n_trials_per_period: nTrials,
-      })
-      console.log('Cultivation started:', result)
-      onSubmit()
-    } catch (err) {
-      console.error('Cultivation error:', err)
-      setError(err instanceof Error ? err.message : 'Failed to start cultivation')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-card p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold">Cultivate Hyperparameters</h3>
-          <button className="btn btn-ghost btn-sm" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Name *</label>
-            <input
-              type="text"
-              className={cn(
-                "input w-full",
-                !name.trim() && "border-orange focus:border-orange"
-              )}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Default v1"
-              autoFocus
-            />
-            {!name.trim() && (
-              <p className="text-xs text-orange mt-1">Required</p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Periods: <span className="text-primary">{nPeriods}</span>
-            </label>
-            <input
-              type="range"
-              className="w-full accent-primary"
-              value={nPeriods}
-              onChange={(e) => setNPeriods(Number(e.target.value))}
-              min={3}
-              max={24}
-              step={1}
-            />
-            <div className="flex justify-between text-xs text-muted-foreground mt-1">
-              <span>3 (fast)</span>
-              <span>24 (stable)</span>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Trials per Period: <span className="text-primary">{nTrials}</span>
-            </label>
-            <input
-              type="range"
-              className="w-full accent-primary"
-              value={nTrials}
-              onChange={(e) => setNTrials(Number(e.target.value))}
-              min={10}
-              max={50}
-              step={5}
-            />
-            <div className="flex justify-between text-xs text-muted-foreground mt-1">
-              <span>10 (fast)</span>
-              <span>50 (thorough)</span>
-            </div>
-          </div>
-
-          <div className="p-3 rounded-lg bg-secondary text-sm">
-            <p className="text-muted-foreground">
-              Estimated: <span className="font-semibold text-foreground">{nPeriods * nTrials}</span> total trials
-              {' '}(~{Math.ceil(nPeriods * nTrials * 0.25)} min)
-            </p>
-          </div>
-
-          {error && (
-            <div className="p-3 rounded-lg bg-red/10 border border-red/20 text-red text-sm">
-              {error}
-            </div>
-          )}
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={onClose}
-              disabled={submitting}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={submitting || !name.trim()}
-            >
-              {submitting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Zap className="h-4 w-4" />
-              )}
-              Start Cultivation
-            </button>
-          </div>
-        </form>
-      </div>
     </div>
   )
 }

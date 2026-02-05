@@ -26,6 +26,8 @@ class HyperparamsSummary(BaseModel):
     # 關鍵參數預覽
     learning_rate: float | None = None
     num_leaves: int | None = None
+    lambda_l1: float | None = None
+    lambda_l2: float | None = None
 
 
 class HyperparamsDetail(BaseModel):

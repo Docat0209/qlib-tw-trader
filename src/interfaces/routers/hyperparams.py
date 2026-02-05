@@ -33,6 +33,8 @@ def _to_summary(hp) -> HyperparamsSummary:
         n_periods=hp.n_periods,
         learning_rate=params.get("learning_rate"),
         num_leaves=params.get("num_leaves"),
+        lambda_l1=params.get("lambda_l1"),
+        lambda_l2=params.get("lambda_l2"),
     )
 
 
