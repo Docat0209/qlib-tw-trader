@@ -155,6 +155,15 @@ export interface AvailableFieldsResponse {
   operators: string[]
 }
 
+export interface DeduplicateResponse {
+  success: boolean
+  total_factors: number
+  kept_factors: number
+  disabled_factors: number
+  disabled_names: string[]
+  message: string
+}
+
 export const factorApi = {
   list: (category?: string, enabled?: boolean) => {
     const params = new URLSearchParams()
@@ -174,6 +183,10 @@ export const factorApi = {
     return api.post<SeedResponse>(`/factors/seed${query}`, {})
   },
   available: () => api.get<AvailableFieldsResponse>('/factors/available'),
+  dedup: (threshold?: number) => {
+    const query = threshold ? `?threshold=${threshold}` : ''
+    return api.post<DeduplicateResponse>(`/factors/dedup${query}`, {})
+  },
 }
 
 // Model Types

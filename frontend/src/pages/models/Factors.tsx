@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { Plus, Edit2, ToggleLeft, ToggleRight, Brain, CheckCircle, Loader2, RefreshCw } from 'lucide-react'
-import { factorApi, Factor } from '@/api/client'
+import { Plus, Edit2, ToggleLeft, ToggleRight, Brain, CheckCircle, Loader2, RefreshCw, Zap } from 'lucide-react'
+import { factorApi, Factor, DeduplicateResponse } from '@/api/client'
 import { FactorFormDialog } from '@/components/factors/FactorFormDialog'
 import { useFetchOnChange } from '@/hooks/useFetchOnChange'
 
@@ -11,6 +11,8 @@ export function Factors() {
   const [error, setError] = useState<string | null>(null)
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [editingFactor, setEditingFactor] = useState<Factor | null>(null)
+  const [deduping, setDeduping] = useState(false)
+  const [dedupResult, setDedupResult] = useState<DeduplicateResponse | null>(null)
 
   const fetchFactors = useCallback(async () => {
     setLoading(true)
@@ -56,6 +58,23 @@ export function Factors() {
     fetchFactors()
   }
 
+  const handleDedup = async () => {
+    if (!confirm('This will disable redundant factors (correlation >= 0.99).\n\nContinue?')) {
+      return
+    }
+    setDeduping(true)
+    setDedupResult(null)
+    try {
+      const result = await factorApi.dedup(0.99)
+      setDedupResult(result)
+      fetchFactors()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Deduplication failed')
+    } finally {
+      setDeduping(false)
+    }
+  }
+
   const enabledCount = factors.filter(f => f.enabled).length
   const evaluatedFactors = factors.filter(f => f.times_evaluated > 0)
   const avgSelectionRate = evaluatedFactors.length > 0
@@ -90,11 +109,38 @@ export function Factors() {
           <h1 className="heading text-2xl">Factor Management</h1>
           <p className="subheading mt-1">Manage your alpha factors and expressions.</p>
         </div>
-        <button className="btn btn-primary" onClick={handleAdd}>
-          <Plus className="h-4 w-4" />
-          Add Factor
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            className="btn btn-secondary"
+            onClick={handleDedup}
+            disabled={deduping}
+          >
+            {deduping ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Zap className="h-4 w-4" />
+            )}
+            {deduping ? 'Deduping...' : 'Dedup'}
+          </button>
+          <button className="btn btn-primary" onClick={handleAdd}>
+            <Plus className="h-4 w-4" />
+            Add Factor
+          </button>
+        </div>
       </div>
+
+      {/* Dedup Result */}
+      {dedupResult && (
+        <div className={`p-4 rounded-lg ${dedupResult.disabled_factors > 0 ? 'bg-yellow/10 border border-yellow' : 'bg-green/10 border border-green'}`}>
+          <p className="font-medium">{dedupResult.message}</p>
+          {dedupResult.disabled_factors > 0 && (
+            <p className="text-sm text-muted-foreground mt-1">
+              Disabled: {dedupResult.disabled_names.slice(0, 5).join(', ')}
+              {dedupResult.disabled_names.length > 5 && ` and ${dedupResult.disabled_names.length - 5} more`}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
