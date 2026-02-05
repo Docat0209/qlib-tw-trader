@@ -136,6 +136,28 @@ def _rank_by_date(self, series: pd.Series) -> pd.Series:
 - [Learning to Rank 論文](https://arxiv.org/abs/2012.07149)：預測排名比預測收益更容易，Sharpe Ratio 提升 3 倍
 - [Qlib 官方配置](https://github.com/microsoft/qlib/blob/main/examples/benchmarks/GRU/workflow_config_gru_Alpha158.yaml)：GRU/LSTM/AdaRNN 都使用 CSRankNorm
 
+### Qlib 官方配置差異
+
+| 模型 | Qlib 官方 Label 標準化 | 我們的配置 |
+|------|----------------------|-----------|
+| **LightGBM** | CSZScoreNorm | CSRankNorm |
+| **LSTM/GRU** | CSRankNorm | - |
+
+**為什麼我們選擇 CSRankNorm（而非官方 LightGBM 的 CSZScoreNorm）？**
+
+1. **與評估指標一致**：我們使用 Spearman IC（排名相關），CSRankNorm 讓模型學習預測排名
+2. **更穩健**：CSRankNorm 對離群值不敏感，台股小型股常有極端收益
+3. **訓練-評估對齊**：模型學習排名 → IC 評估排名相關 → 選股基於排名
+
+**重要**：無論選擇哪種方法，**訓練、增量更新、預測必須使用相同的標準化**：
+
+| 階段 | 特徵標準化 | Label 標準化 |
+|------|-----------|-------------|
+| 訓練 | CSZScoreNorm | CSRankNorm |
+| 增量更新 | CSZScoreNorm | CSRankNorm |
+| 預測 | CSZScoreNorm | - |
+| Live IC 計算 | - | 原始收益（對 score 排名計算 Spearman）|
+
 ---
 
 ## 因子選擇流程
@@ -399,7 +421,9 @@ valid_mask = (dates >= valid_start) & (dates <= valid_end)
 
 ```python
 # 使用驗證期資料微調
-valid_data = lgb.Dataset(X_valid_norm.values, label=y_valid_zscore.values)
+# 重要：Label 使用 CSRankNorm（與主訓練流程一致）
+y_valid_rank = self._rank_by_date(y_valid_incr)
+valid_data = lgb.Dataset(X_valid_norm.values, label=y_valid_rank.values)
 
 incremented_model = lgb.train(
     incr_params,

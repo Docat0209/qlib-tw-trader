@@ -832,13 +832,15 @@ class ModelTrainer:
                 y_valid_incr = y_valid_incr.loc[common_idx]
 
                 if not X_valid_incr.empty:
-                    # 處理和標準化
+                    # 處理和標準化（與主訓練流程保持一致！）
                     X_valid_processed = self._process_inf(X_valid_incr)
                     X_valid_norm = self._zscore_by_date(X_valid_processed).fillna(0)
-                    y_valid_zscore = self._zscore_by_date(y_valid_incr.to_frame()).squeeze()
+                    # Label 使用 CSRankNorm（排名標準化），與主訓練流程一致
+                    # 不要用 _zscore_by_date，因為模型學習的是預測排名，不是 z-score
+                    y_valid_rank = self._rank_by_date(y_valid_incr)
 
                     # 增量更新：使用 init_model
-                    valid_data = lgb.Dataset(X_valid_norm.values, label=y_valid_zscore.values)
+                    valid_data = lgb.Dataset(X_valid_norm.values, label=y_valid_rank.values)
 
                     # 使用相同參數，但從 best_model 開始
                     incr_params = self._optimized_params or {
