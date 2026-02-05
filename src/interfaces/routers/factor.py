@@ -280,8 +280,10 @@ async def deduplicate_factors(
     from qlib.config import REG_CN
     from qlib.data import D
 
-    if not qlib.is_initialized():
+    try:
         qlib.init(provider_uri=str(qlib_dir), region=REG_CN)
+    except Exception:
+        pass  # Already initialized
 
     # 載入因子資料（使用最近一年的資料計算相關性）
     with open(cal_file) as f:
