@@ -632,10 +632,81 @@ QUALITY_ICIR_MIN = 0.5
 
 ---
 
+## 已知問題與修復
+
+### 2026-02-05 發現：標籤二次標準化導致 IC = 0
+
+**症狀**：
+- 模型 IC = 0（精確值）
+- Feature Importance 全為 0
+- LightGBM 樹只有 1 個葉節點（常數預測）
+
+**根本原因**：
+
+```
+標籤處理流程（錯誤）：
+1. _prepare_train_valid_data: y = _rank_by_date(y)  → 排名 [0, 1]
+2. _robust_factor_selection: y = _zscore_by_date(y)  → 二次標準化 ❌
+
+問題：對已排名的標籤再做 z-score，信號完全丟失
+```
+
+**修復**：
+
+```python
+# 修復前（錯誤）
+y_train_zscore = self._zscore_by_date(y_train_clean.to_frame()).squeeze()
+
+# 修復後（正確）
+y_train_final = y_train_clean  # 直接使用排名後的標籤
+```
+
+**位置**：`src/services/model_trainer.py` 第 1084-1091 行
+
+### 其他潛在問題（待驗證）
+
+| 問題 | 影響 | 優先級 |
+|------|------|--------|
+| NaN 填補為 0 | 污染訓練數據 | P1 |
+| 因子平均 IC 極低（~0.000024） | 基礎信號不足 | P1 |
+| 超參數與因子數不匹配 | 模型性能 | P2 |
+| qlib 日期延伸邏輯 | 標籤計算誤差 | P2 |
+
+### 診斷工具
+
+檢查模型是否正常：
+
+```python
+import pickle
+from pathlib import Path
+
+model_file = Path('data/models/{model_name}/model.pkl')
+with open(model_file, 'rb') as f:
+    model = pickle.load(f)
+
+# 檢查樹結構
+info = model.dump_model()
+print('num_trees:', info.get('num_trees'))
+print('first tree leaves:', info['tree_info'][0].get('num_leaves'))
+
+# 檢查特徵重要性
+imp = model.feature_importance()
+print('non-zero importances:', (imp > 0).sum(), '/', len(imp))
+```
+
+**正常模型應該**：
+- `num_trees` > 1
+- `first tree leaves` > 1
+- `non-zero importances` > 0
+
+---
+
 ## 更新歷史
 
 | 日期 | 變更 |
 |------|------|
+| 2026-02-05 | 修復：移除標籤二次標準化（IC = 0 問題） |
+| 2026-02-05 | 新增：已知問題與修復章節 |
 | 2026-02-04 | 重構：使用 RD-Agent IC 去重複替代 Bootstrap + CPCV |
 | 2026-02-04 | 新增：三種因子選擇模式（dedup、none、cpcv） |
 | 2026-02-04 | 新增：增量學習章節 |

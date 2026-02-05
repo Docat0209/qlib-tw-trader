@@ -1081,18 +1081,20 @@ class ModelTrainer:
             X_valid_clean = X_valid[valid_valid]
             y_valid_clean = y_valid[valid_valid]
 
-            # 標準化（訓練和驗證使用相同的標準化方式）
+            # 標準化特徵（不對標籤二次標準化，標籤已經是排名值）
             X_train_processed = self._process_inf(X_train_clean)
             X_train_norm = self._zscore_by_date(X_train_processed).fillna(0)
-            y_train_zscore = self._zscore_by_date(y_train_clean.to_frame()).squeeze()
+            # 標籤已經在 _prepare_train_valid_data 中用 _rank_by_date 標準化過
+            # 不要再做 _zscore_by_date，否則會導致信號丟失
+            y_train_final = y_train_clean
 
             X_valid_processed = self._process_inf(X_valid_clean)
             X_valid_norm = self._zscore_by_date(X_valid_processed).fillna(0)
-            y_valid_zscore = self._zscore_by_date(y_valid_clean.to_frame()).squeeze()
+            y_valid_final = y_valid_clean
 
             try:
-                train_data = lgb.Dataset(X_train_norm.values, label=y_train_zscore.values)
-                valid_data = lgb.Dataset(X_valid_norm.values, label=y_valid_zscore.values)
+                train_data = lgb.Dataset(X_train_norm.values, label=y_train_final.values)
+                valid_data = lgb.Dataset(X_valid_norm.values, label=y_valid_final.values)
 
                 best_model = lgb.train(
                     lgbm_params,
