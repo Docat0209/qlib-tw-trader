@@ -152,6 +152,7 @@ class ModelTrainer:
         self._last_ic_std: float | None = None  # 用於 ICIR 計算
         self._data_cache: dict[str, pd.DataFrame] = {}  # 資料快取
         self._optimized_params: dict | None = None  # Optuna 優化後的參數
+        self._auto_optuna: bool = False  # 是否需要自動運行 Optuna
 
     def _init_qlib(self, force: bool = False) -> None:
         """
@@ -754,15 +755,18 @@ class ModelTrainer:
                 cultivated_params["device"] = "gpu"
                 cultivated_params["gpu_use_dp"] = False
                 self._optimized_params = cultivated_params
+                self._auto_optuna = False  # 有培養超參數，不需要自動調參
                 if on_progress:
                     on_progress(10.0, f"Using hyperparams: {hp.name}")
             else:
-                # 無培養超參數，使用保守預設值（不再跑 Optuna）
+                # 無培養超參數，先用保守預設值進行因子選擇
+                # 因子選擇後會自動運行 Optuna 找最佳超參數
                 self._optimized_params = get_conservative_default_params(len(enabled_factors))
                 self._optimized_params["device"] = "gpu"
                 self._optimized_params["gpu_use_dp"] = False
+                self._auto_optuna = True  # 標記需要自動運行 Optuna
                 if on_progress:
-                    on_progress(10.0, "No cultivated params, using conservative defaults")
+                    on_progress(10.0, "No cultivated params, will auto-tune with Optuna")
 
             # 執行因子選擇（IC 去重複）
             selected_factors, all_results, best_model, selection_stats = self._robust_factor_selection(
@@ -1100,6 +1104,34 @@ class ModelTrainer:
             X_valid_processed = self._process_inf(X_valid_clean)
             X_valid_norm = self._zscore_by_date(X_valid_processed).fillna(0)
             y_valid_final = y_valid_clean
+
+            # 如果需要自動調參，在訓練前運行 Optuna
+            if self._auto_optuna:
+                if on_progress:
+                    on_progress(92.0, f"Auto-tuning hyperparameters with Optuna ({len(selected_factors)} factors)...")
+
+                # 定義 Optuna 進度回調
+                def optuna_progress(p: float, msg: str) -> None:
+                    if on_progress:
+                        # 92% ~ 94% 給 Optuna
+                        progress = 92.0 + p * 0.02
+                        on_progress(progress, msg)
+
+                # 運行 Optuna（使用選出的因子）
+                lgbm_params = self._optimize_hyperparameters(
+                    X_train=X_train_clean,
+                    y_train=y_train_final,
+                    X_valid=X_valid_clean,
+                    y_valid=y_valid_final,
+                    n_trials=30,  # 快速搜尋
+                    timeout=180,  # 3 分鐘超時
+                    on_progress=optuna_progress,
+                )
+                self._optimized_params = lgbm_params
+                logger.info(f"Optuna found best params: L1={lgbm_params.get('lambda_l1', 0):.3f}, L2={lgbm_params.get('lambda_l2', 0):.3f}")
+
+                if on_progress:
+                    on_progress(94.0, f"Optuna done: L1={lgbm_params.get('lambda_l1', 0):.2f}, L2={lgbm_params.get('lambda_l2', 0):.2f}")
 
             try:
                 train_data = lgb.Dataset(X_train_norm.values, label=y_train_final.values)
