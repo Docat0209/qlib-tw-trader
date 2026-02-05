@@ -112,6 +112,10 @@ class WalkForwardBacktester:
         self._session = session
         self._qlib_data_dir = qlib_data_dir or QLIB_DATA_DIR
         self._qlib_initialized = False
+        # 快取：避免重複查詢
+        self._features_cache: pd.DataFrame | None = None
+        self._price_cache: pd.DataFrame | None = None
+        self._instruments_cache: list[str] | None = None
 
     def _init_qlib(self, force: bool = False) -> None:
         """初始化 qlib"""
@@ -344,32 +348,46 @@ class WalkForwardBacktester:
         predict_end: date,
     ) -> pd.DataFrame:
         """
-        對指定週期進行預測
+        對指定週期進行預測（使用快取的特徵資料）
 
         Returns:
             DataFrame: index=date, columns=stock_id, values=score
         """
-        self._init_qlib()
-        from qlib.data import D
+        # 使用快取的特徵資料（如果有）
+        if self._features_cache is not None and not self._features_cache.empty:
+            # 從快取中切片
+            start_str = predict_start.strftime("%Y-%m-%d")
+            end_str = predict_end.strftime("%Y-%m-%d")
 
-        instruments = self._get_instruments()
-        if not instruments:
-            raise ValueError("No instruments found")
+            # 篩選日期範圍
+            df = self._features_cache.loc[
+                (self._features_cache.index.get_level_values("datetime") >= start_str) &
+                (self._features_cache.index.get_level_values("datetime") <= end_str)
+            ].copy()
+        else:
+            # 回退到直接查詢（兼容舊用法）
+            self._init_qlib()
+            from qlib.data import D
 
-        fields = [f["expression"] for f in factors]
-        names = [f["name"] for f in factors]
+            instruments = self._get_instruments()
+            if not instruments:
+                raise ValueError("No instruments found")
 
-        df = D.features(
-            instruments=instruments,
-            fields=fields,
-            start_time=predict_start.strftime("%Y-%m-%d"),
-            end_time=predict_end.strftime("%Y-%m-%d"),
-        )
+            fields = [f["expression"] for f in factors]
+            names = [f["name"] for f in factors]
+
+            df = D.features(
+                instruments=instruments,
+                fields=fields,
+                start_time=predict_start.strftime("%Y-%m-%d"),
+                end_time=predict_end.strftime("%Y-%m-%d"),
+            )
+
+            if not df.empty:
+                df.columns = names
 
         if df.empty:
             return pd.DataFrame()
-
-        df.columns = names
 
         # 處理數據
         df = self._process_inf(df)
@@ -387,14 +405,82 @@ class WalkForwardBacktester:
         return pred_df
 
     def _get_instruments(self) -> list[str]:
-        """取得股票清單"""
+        """取得股票清單（帶快取）"""
+        if self._instruments_cache is not None:
+            return self._instruments_cache
+
         instruments_file = self._qlib_data_dir / "instruments" / "all.txt"
 
         if instruments_file.exists():
             with open(instruments_file) as f:
-                return [line.strip().split()[0] for line in f if line.strip()]
+                self._instruments_cache = [line.strip().split()[0] for line in f if line.strip()]
+                return self._instruments_cache
 
         return []
+
+    def _preload_data(
+        self,
+        factors: list[dict],
+        start_date: date,
+        end_date: date,
+        on_progress: Callable[[float, str], None] | None = None,
+    ) -> None:
+        """
+        預載入所有特徵和價格資料（優化效能）
+
+        Args:
+            factors: 因子列表
+            start_date: 開始日期
+            end_date: 結束日期（會自動延伸以確保收益計算）
+        """
+        self._init_qlib()
+        from qlib.data import D
+
+        instruments = self._get_instruments()
+        if not instruments:
+            raise ValueError("No instruments found")
+
+        # 1. 預載入特徵資料
+        if on_progress:
+            on_progress(10, "Preloading features data (this may take a while)...")
+
+        fields = [f["expression"] for f in factors]
+        names = [f["name"] for f in factors]
+
+        self._features_cache = D.features(
+            instruments=instruments,
+            fields=fields,
+            start_time=start_date.strftime("%Y-%m-%d"),
+            end_time=end_date.strftime("%Y-%m-%d"),
+        )
+
+        if not self._features_cache.empty:
+            self._features_cache.columns = names
+
+        # 2. 預載入價格資料（延伸 7 天以確保收益計算）
+        if on_progress:
+            on_progress(13, "Preloading price data...")
+
+        extended_end = end_date + timedelta(days=10)
+
+        self._price_cache = D.features(
+            instruments=instruments,
+            fields=["$close"],
+            start_time=start_date.strftime("%Y-%m-%d"),
+            end_time=extended_end.strftime("%Y-%m-%d"),
+        )
+
+        if not self._price_cache.empty:
+            self._price_cache.columns = ["close"]
+
+        if on_progress:
+            on_progress(15, f"Data preloaded: {len(self._features_cache)} feature rows, {len(self._price_cache)} price rows")
+
+    def _clear_cache(self) -> None:
+        """清除快取"""
+        self._features_cache = None
+        self._price_cache = None
+        self._instruments_cache = None
 
     def _calculate_live_ic(
         self,
@@ -403,7 +489,7 @@ class WalkForwardBacktester:
         predict_end: date,
     ) -> float | None:
         """
-        計算 Live IC
+        計算 Live IC（使用快取的價格資料）
 
         Live IC = corr(預測分數, 實際收益)
 
@@ -419,27 +505,41 @@ class WalkForwardBacktester:
         Returns:
             Live IC 值
         """
-        self._init_qlib()
-        from qlib.data import D
-
         instruments = list(predictions.columns)
         if not instruments:
             return None
 
-        # 擴展查詢範圍：往後多取 5 天（確保能計算 T+1→T+2 收益）
+        # 擴展查詢範圍：往後多取 7 天（確保能計算 T+1→T+2 收益）
         extended_end = predict_end + timedelta(days=7)
 
-        price_df = D.features(
-            instruments=instruments,
-            fields=["$close"],
-            start_time=predict_start.strftime("%Y-%m-%d"),
-            end_time=extended_end.strftime("%Y-%m-%d"),
-        )
+        # 使用快取的價格資料（如果有）
+        if self._price_cache is not None and not self._price_cache.empty:
+            start_str = predict_start.strftime("%Y-%m-%d")
+            end_str = extended_end.strftime("%Y-%m-%d")
+
+            # 篩選日期範圍和股票
+            price_df = self._price_cache.loc[
+                (self._price_cache.index.get_level_values("datetime") >= start_str) &
+                (self._price_cache.index.get_level_values("datetime") <= end_str) &
+                (self._price_cache.index.get_level_values("instrument").isin(instruments))
+            ].copy()
+        else:
+            # 回退到直接查詢
+            self._init_qlib()
+            from qlib.data import D
+
+            price_df = D.features(
+                instruments=instruments,
+                fields=["$close"],
+                start_time=predict_start.strftime("%Y-%m-%d"),
+                end_time=extended_end.strftime("%Y-%m-%d"),
+            )
+
+            if not price_df.empty:
+                price_df.columns = ["close"]
 
         if price_df.empty:
             return None
-
-        price_df.columns = ["close"]
 
         # 計算 Label 對齊的收益：T+1 收盤 → T+2 收盤
         # 對於 T 日，計算 close[T+2] / close[T+1] - 1
@@ -550,8 +650,22 @@ class WalkForwardBacktester:
         )
         exporter.export(export_config)
 
+        # 初始化 Qlib（只做一次）
+        self._init_qlib()
+
+        # 載入第一個模型的因子列表（用於預載入特徵）
+        _, first_factors, _ = self._load_model(model_infos[0].model_name)
+
+        # 預載入所有特徵和價格資料（效能優化）
+        self._preload_data(
+            factors=first_factors,
+            start_date=first_predict,
+            end_date=last_predict,
+            on_progress=on_progress,
+        )
+
         if on_progress:
-            on_progress(15, "Qlib data ready, starting weekly backtests...")
+            on_progress(16, "Data preloaded, starting weekly backtests...")
 
         # 逐週回測
         weekly_results: list[WeekResult] = []
@@ -672,6 +786,9 @@ class WalkForwardBacktester:
         if on_progress:
             on_progress(100, "Walk-forward backtest completed")
 
+        # 清除快取釋放記憶體
+        self._clear_cache()
+
         return WalkForwardResult(
             ic_analysis=ic_analysis,
             return_metrics=return_metrics,
@@ -687,32 +804,45 @@ class WalkForwardBacktester:
         max_positions: int,
     ) -> tuple[float | None, float | None]:
         """
-        計算週收益
+        計算週收益（使用快取的價格資料）
 
         使用 Top-K 等權重策略
 
         Returns:
             (week_return, market_return) in percentage
         """
-        self._init_qlib()
-        from qlib.data import D
-
         instruments = list(predictions.columns)
         if not instruments:
             return None, None
 
-        # 取得價格資料
-        price_df = D.features(
-            instruments=instruments,
-            fields=["$close"],
-            start_time=predict_start.strftime("%Y-%m-%d"),
-            end_time=predict_end.strftime("%Y-%m-%d"),
-        )
+        # 使用快取的價格資料（如果有）
+        if self._price_cache is not None and not self._price_cache.empty:
+            start_str = predict_start.strftime("%Y-%m-%d")
+            end_str = predict_end.strftime("%Y-%m-%d")
+
+            price_df = self._price_cache.loc[
+                (self._price_cache.index.get_level_values("datetime") >= start_str) &
+                (self._price_cache.index.get_level_values("datetime") <= end_str) &
+                (self._price_cache.index.get_level_values("instrument").isin(instruments))
+            ].copy()
+        else:
+            # 回退到直接查詢
+            self._init_qlib()
+            from qlib.data import D
+
+            price_df = D.features(
+                instruments=instruments,
+                fields=["$close"],
+                start_time=predict_start.strftime("%Y-%m-%d"),
+                end_time=predict_end.strftime("%Y-%m-%d"),
+            )
+
+            if not price_df.empty:
+                price_df.columns = ["close"]
 
         if price_df.empty:
             return None, None
 
-        price_df.columns = ["close"]
         close_wide = price_df["close"].unstack(level="instrument")
 
         if close_wide.empty or len(close_wide) < 2:
