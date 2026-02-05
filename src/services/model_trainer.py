@@ -1042,7 +1042,9 @@ class ModelTrainer:
                 progress = 11.0 + p * 0.79
                 on_progress(progress, msg)
 
-        robust_selector = RobustFactorSelector()
+        # 使用 method="none"，因為因子去重已在因子頁面一次性完成
+        # 這樣可以大幅加速訓練（不用每次計算 NxN 相關矩陣）
+        robust_selector = RobustFactorSelector(method="none")
         result = robust_selector.select(
             factors=factors,
             X=X_train,

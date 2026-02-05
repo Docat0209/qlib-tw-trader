@@ -147,6 +147,16 @@ class FactorRepository:
         self._session.refresh(factor)
         return factor
 
+    def set_enabled(self, factor_id: int, enabled: bool) -> Factor | None:
+        """設定因子啟用狀態"""
+        factor = self.get_by_id(factor_id)
+        if not factor:
+            return None
+        factor.enabled = enabled
+        self._session.commit()
+        self._session.refresh(factor)
+        return factor
+
     def get_selection_stats(self, factor_id: int) -> dict:
         """取得因子入選統計"""
         # 計算 times_evaluated（參與過的訓練次數）

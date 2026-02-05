@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from src.interfaces.dependencies import get_db
 from src.interfaces.schemas.factor import (
     AvailableFieldsResponse,
+    DeduplicateResponse,
     FactorCreate,
     FactorDetailResponse,
     FactorListResponse,
@@ -226,4 +227,126 @@ async def get_available_fields():
     return AvailableFieldsResponse(
         fields=validator.get_available_fields(),
         operators=validator.get_available_operators(),
+    )
+
+
+@router.post("/dedup", response_model=DeduplicateResponse)
+async def deduplicate_factors(
+    threshold: float = Query(0.99, description="相關係數閾值 (0.95-0.99)"),
+    session: Session = Depends(get_db),
+):
+    """
+    一次性因子去重
+
+    計算啟用因子之間的相關性，禁用高度相關的冗餘因子。
+    這是一次性操作，執行後訓練時不再需要重新計算。
+
+    閾值說明：
+    - 0.99: RD-Agent 預設，只移除極度冗餘
+    - 0.95: 更積極去重
+    """
+    from pathlib import Path
+
+    import pandas as pd
+
+    from src.services.factor_selection.ic_dedup import ICDeduplicator
+    from src.services.qlib_exporter import ExportConfig, QlibExporter
+
+    repo = FactorRepository(session)
+    enabled_factors = repo.get_enabled()
+
+    if len(enabled_factors) < 2:
+        return DeduplicateResponse(
+            success=True,
+            total_factors=len(enabled_factors),
+            kept_factors=len(enabled_factors),
+            disabled_factors=0,
+            disabled_names=[],
+            message="Not enough factors to deduplicate.",
+        )
+
+    # 確保 Qlib 資料存在
+    qlib_dir = Path("data/qlib")
+    cal_file = qlib_dir / "calendars" / "day.txt"
+
+    if not cal_file.exists():
+        raise HTTPException(
+            status_code=400,
+            detail="Qlib data not found. Please export data first.",
+        )
+
+    # 初始化 Qlib
+    import qlib
+    from qlib.config import REG_CN
+    from qlib.data import D
+
+    if not qlib.is_initialized():
+        qlib.init(provider_uri=str(qlib_dir), region=REG_CN)
+
+    # 載入因子資料（使用最近一年的資料計算相關性）
+    with open(cal_file) as f:
+        dates = [line.strip() for line in f if line.strip()]
+
+    if len(dates) < 60:
+        raise HTTPException(
+            status_code=400,
+            detail="Not enough data for deduplication. Need at least 60 days.",
+        )
+
+    # 使用最近 252 天（約一年）
+    start_date = dates[max(0, len(dates) - 252)]
+    end_date = dates[-1]
+
+    # 載入資料
+    factor_exprs = {f.name: f.expression for f in enabled_factors}
+    fields = list(factor_exprs.values())
+    names = list(factor_exprs.keys())
+
+    instruments = D.instruments("all")
+    data = D.features(
+        instruments=instruments,
+        fields=fields,
+        start_time=start_date,
+        end_time=end_date,
+    )
+
+    # 重命名欄位
+    data.columns = names
+
+    # 計算 label（用於排序 IC）
+    close = D.features(
+        instruments=instruments,
+        fields=["Ref($close, -2) / Ref($close, -1) - 1"],
+        start_time=start_date,
+        end_time=end_date,
+    )
+    close.columns = ["label"]
+
+    # 合併
+    merged = data.join(close, how="inner")
+    X = merged[names]
+    y = merged["label"]
+
+    # 執行去重
+    deduplicator = ICDeduplicator(correlation_threshold=threshold)
+    kept_factors, stats = deduplicator.deduplicate(enabled_factors, X, y)
+
+    # 禁用被移除的因子
+    kept_names = {f.name for f in kept_factors}
+    disabled_names = []
+
+    for factor in enabled_factors:
+        if factor.name not in kept_names:
+            repo.set_enabled(factor.id, False)
+            disabled_names.append(factor.name)
+
+    await broadcast_data_updated("factors", "update")
+
+    return DeduplicateResponse(
+        success=True,
+        total_factors=len(enabled_factors),
+        kept_factors=len(kept_factors),
+        disabled_factors=len(disabled_names),
+        disabled_names=disabled_names,
+        message=f"Disabled {len(disabled_names)} redundant factors (correlation >= {threshold}).",
     )

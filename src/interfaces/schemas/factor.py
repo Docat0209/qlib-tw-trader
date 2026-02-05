@@ -95,3 +95,14 @@ class AvailableFieldsResponse(BaseModel):
 
     fields: list[str]
     operators: list[str]
+
+
+class DeduplicateResponse(BaseModel):
+    """因子去重回應"""
+
+    success: bool
+    total_factors: int
+    kept_factors: int
+    disabled_factors: int
+    disabled_names: list[str]
+    message: str
