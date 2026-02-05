@@ -1215,7 +1215,6 @@ export interface WalkForwardRequest {
   trade_price?: string
   enable_incremental?: boolean
   strategy?: string
-  hyperparams_id?: number
 }
 
 export interface WalkForwardRunResponse {

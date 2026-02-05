@@ -423,7 +423,6 @@ async def run_walk_forward_backtest(
         max_positions=request.max_positions,
         trade_price=request.trade_price,
         enable_incremental=request.enable_incremental,
-        hyperparams_id=request.hyperparams_id,
     )
 
     return WalkForwardRunResponse(
@@ -1169,7 +1168,6 @@ async def run_walk_forward_task(
     max_positions: int,
     trade_price: str = "open",
     enable_incremental: bool = False,
-    hyperparams_id: int | None = None,
 ):
     """Walk-Forward 回測任務"""
     import asyncio
@@ -1204,7 +1202,6 @@ async def run_walk_forward_task(
                     trade_price=trade_price,
                     enable_incremental=enable_incremental,
                     on_progress=sync_progress,
-                    hyperparams_id=hyperparams_id,
                 )
             finally:
                 bt_session.close()

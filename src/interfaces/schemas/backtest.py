@@ -213,7 +213,6 @@ class WalkForwardRequest(BaseModel):
     trade_price: str = "open"
     enable_incremental: bool = False
     strategy: str = "topk"
-    hyperparams_id: int | None = None  # 指定超參數組 ID
 
 
 class WalkForwardRunResponse(BaseModel):
