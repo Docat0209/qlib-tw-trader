@@ -417,7 +417,8 @@ class ModelTrainer:
         n_features = X_train.shape[1]
 
         # 動態計算搜索範圍
-        max_leaves = min(256, max(32, int(n_samples ** 0.4)))
+        # num_leaves 上限提高至 300（Qlib 基準使用 210）
+        max_leaves = min(300, max(32, int(n_samples ** 0.4)))
         max_min_data = max(100, n_samples // 100)
 
         best_ic = [0.0]  # 用 list 以便在閉包中修改
@@ -438,8 +439,10 @@ class ModelTrainer:
                 "feature_fraction": trial.suggest_float("feature_fraction", 0.5, 1.0),
                 "bagging_fraction": trial.suggest_float("bagging_fraction", 0.5, 1.0),
                 "bagging_freq": trial.suggest_int("bagging_freq", 1, 7),
-                "lambda_l1": trial.suggest_float("lambda_l1", 0.1, 50.0, log=True),
-                "lambda_l2": trial.suggest_float("lambda_l2", 0.1, 50.0, log=True),
+                # 正則化範圍擴大（Qlib 基準：L1=206, L2=581）
+                # 我們的因子更多(266 vs 158)、樣本更少(100 vs 300)，需要更強正則化
+                "lambda_l1": trial.suggest_float("lambda_l1", 0.1, 1000.0, log=True),
+                "lambda_l2": trial.suggest_float("lambda_l2", 0.1, 2000.0, log=True),
                 "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 20, max_min_data),
             }
 
