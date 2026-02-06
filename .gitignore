@@ -40,6 +40,9 @@ ENV/
 *.swp
 *.swo
 
+# TypeScript build cache
+*.tsbuildinfo
+
 # Testing
 .pytest_cache/
 .coverage
