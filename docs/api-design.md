@@ -191,11 +191,30 @@
 
 取得可用欄位和運算符。
 
+### POST /api/v1/factors/dedup ✅
+
+一次性因子去重複（基於 IC 相關性）。
+
+**Query Parameters:**
+- `threshold` (optional): 相關性閾值，預設 0.99
+
+**Response:**
+```json
+{
+  "success": true,
+  "total_factors": 263,
+  "kept_factors": 180,
+  "disabled_factors": 83,
+  "disabled_names": ["factor_1", "factor_2", ...],
+  "message": "Disabled 83 redundant factors (correlation >= 0.99)."
+}
+```
+
 ---
 
-## 3. Models API
+## 3. Models API ✅
 
-### GET /api/v1/models/current
+### GET /api/v1/models/current ✅
 
 取得當前 active 模型。
 
@@ -216,7 +235,7 @@
 }
 ```
 
-### GET /api/v1/models/history
+### GET /api/v1/models/history ✅
 
 取得歷史模型 metadata（用於比較）。
 
@@ -250,7 +269,7 @@
 }
 ```
 
-### GET /api/v1/models/comparison
+### GET /api/v1/models/comparison ✅
 
 取得模型指標比較（用於圖表）。
 
@@ -265,7 +284,7 @@
 }
 ```
 
-### GET /api/v1/models/status
+### GET /api/v1/models/status ✅
 
 取得訓練狀態（用於檢查是否需要重訓）。
 
@@ -280,7 +299,7 @@
 }
 ```
 
-### POST /api/v1/models/train
+### POST /api/v1/models/train ✅
 
 觸發模型訓練（非同步，透過 WebSocket 推送進度）。
 
@@ -300,6 +319,37 @@
   "message": "訓練任務已排入佇列"
 }
 ```
+
+### POST /api/v1/models/train-batch ✅
+
+批量訓練整年模型。
+
+**Request:**
+```json
+{
+  "year": 2024
+}
+```
+
+### GET /api/v1/models/weeks ✅
+
+取得可訓練週狀態（Walk Forward 用）。
+
+### GET /api/v1/models/data-range ✅
+
+取得資料庫日期範圍。
+
+**Response:**
+```json
+{
+  "min_date": "2022-01-03",
+  "max_date": "2026-02-05"
+}
+```
+
+### GET /api/v1/models/quality ✅
+
+取得模型品質監控指標。
 
 ---
 
@@ -328,10 +378,6 @@
   "total": 3
 }
 ```
-
-### GET /api/v1/hyperparams/current ✅
-
-取得當前使用的超參數組。
 
 ### GET /api/v1/hyperparams/{hp_id} ✅
 
@@ -402,10 +448,6 @@
 ```
 
 *進度透過 WebSocket 推送*
-
-### PATCH /api/v1/hyperparams/{hp_id}/current ✅
-
-設為當前使用的超參數組（會清除其他 is_current）。
 
 ### PATCH /api/v1/hyperparams/{hp_id} ✅
 
@@ -520,9 +562,89 @@
 
 ---
 
-## 5. Positions / Predictions API
+## 4.5 Walk-Forward 回測 API ✅
 
-### GET /api/v1/positions
+### POST /api/v1/backtest/walk-forward ✅
+
+執行 Walk-Forward 回測（多模型滾動驗證）。
+
+**Request:**
+```json
+{
+  "start_week_id": "2024W01",
+  "end_week_id": "2025W52",
+  "initial_capital": 1000000,
+  "max_positions": 10,
+  "trade_price": "open",
+  "enable_incremental": false,
+  "strategy": "topk"
+}
+```
+
+**Response:**
+```json
+{
+  "backtest_id": 1,
+  "job_id": "wf_abc123",
+  "status": "queued",
+  "message": "Walk-Forward 回測任務已排入佇列"
+}
+```
+
+### GET /api/v1/backtest/walk-forward ✅
+
+取得 Walk-Forward 回測列表。
+
+### GET /api/v1/backtest/walk-forward/{backtest_id} ✅
+
+取得 Walk-Forward 回測詳情（含 IC 分析、週詳情、權益曲線）。
+
+**Response:**
+```json
+{
+  "id": 1,
+  "start_week_id": "2024W01",
+  "end_week_id": "2025W52",
+  "status": "completed",
+  "config": {
+    "initial_capital": 1000000,
+    "max_positions": 10,
+    "trade_price": "open",
+    "enable_incremental": false,
+    "strategy": "topk"
+  },
+  "ic_analysis": {
+    "avg_valid_ic": 0.027,
+    "avg_live_ic": 0.005,
+    "ic_decay": 81.5,
+    "ic_correlation": -0.01
+  },
+  "return_metrics": {
+    "cumulative_return": 1.76,
+    "market_return": 0.84,
+    "excess_return": 0.92,
+    "sharpe_ratio": 1.2,
+    "max_drawdown": -0.15,
+    "win_rate": 0.62
+  },
+  "weekly_details": [...],
+  "equity_curve": [...]
+}
+```
+
+### GET /api/v1/backtest/walk-forward/available-weeks ✅
+
+取得可回測週列表（檢查模型可用性）。
+
+### DELETE /api/v1/backtest/walk-forward/{backtest_id} ✅
+
+刪除 Walk-Forward 回測紀錄。
+
+---
+
+## 5. Positions / Predictions API [部分未實現]
+
+### GET /api/v1/positions [未實現]
 
 取得當前持倉。
 
@@ -548,7 +670,7 @@
 }
 ```
 
-### GET /api/v1/predictions/latest
+### GET /api/v1/predictions/latest [未實現]
 
 取得最新預測信號。
 
@@ -578,7 +700,7 @@
 }
 ```
 
-### GET /api/v1/predictions/history
+### GET /api/v1/predictions/history [未實現]
 
 取得歷史預測紀錄。
 
@@ -717,9 +839,9 @@
 
 ---
 
-## 7. Performance API
+## 7. Performance API [未實現]
 
-### GET /api/v1/performance/summary
+### GET /api/v1/performance/summary [未實現]
 
 取得收益摘要。
 
@@ -747,7 +869,7 @@
 }
 ```
 
-### GET /api/v1/performance/equity-curve
+### GET /api/v1/performance/equity-curve [未實現]
 
 取得權益曲線。
 
@@ -775,7 +897,7 @@
 }
 ```
 
-### GET /api/v1/performance/monthly
+### GET /api/v1/performance/monthly [未實現]
 
 取得月報酬。
 

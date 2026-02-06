@@ -24,25 +24,6 @@ curl -X POST http://localhost:8000/api/v1/qlib/export/sync \
   -d '{"start_date":"2022-01-01","end_date":"2025-01-01"}'
 ```
 
-## 已完成
-
-- [x] 資料同步（9 種資料集，TWSE/FinMind/yfinance）
-- [x] Qlib 導出器（30 個欄位，PIT 月營收）
-- [x] 因子管理（266 個預設因子，CRUD，驗證）
-- [x] 前端（8 個頁面）
-- [x] **模型訓練**（LightGBM，IC 增量選擇，按單因子 IC 排序）
-- [x] **即時更新**（WebSocket + Zustand，CRUD 後自動刷新）
-- [x] **超參數培養**（Walk Forward Optimization + Optuna）
-- [x] **超參數管理 UI**（培養、選擇、刪除）
-- [x] **因子數量自適應縮放**（sqrt(ratio) 縮放公式）
-- [x] **回測系統**（backtrader 整合，Equity Curve，績效指標，K-line 圖表）
-- [x] **預測推薦**（選擇模型 + 日期，產生 Top K 股票推薦）
-
-## 待完成
-
-- [ ] **增量學習**（每日微調模型權重，詳見 [設計文檔](docs/incremental-learning-design.md)）
-- [ ] **排程系統**（每日自動同步+訓練）
-
 ## 關鍵規則
 
 - 時間：`Asia/Taipei` (UTC+8)
@@ -132,7 +113,7 @@ exporter.export(ExportConfig(
 
 ### 核心洞察
 
-超參數培養時使用全部因子（目前 266 個），但訓練時 IC 增量選擇只會選出部分因子。
+超參數培養時使用全部因子（目前 263 個），但訓練時 IC 增量選擇只會選出部分因子。
 **超參數需要根據實際因子數量動態調整。**
 
 ### 為什麼可以縮放？
@@ -215,7 +196,7 @@ df.sort_values(by=["score", "symbol"], ascending=[False, True]).head(top_k)
 
 ### 因子擴充（已實施）
 
-已將因子從 30 個擴充至 266 個，包含：
+已將因子從 30 個擴充至 263 個，包含：
 - Alpha158 純 K 線因子（109 個）
 - 台股籌碼因子（107 個）
 - 交互因子（50 個）
@@ -231,11 +212,3 @@ df.sort_values(by=["score", "symbol"], ascending=[False, True]).head(top_k)
 | 3 | yfinance | 無限制 |
 
 **注意**：不要用 TWSE OpenAPI（`openapi.twse.com.tw`）
-
-## 詳細文檔
-
-- [API 設計](docs/api-design.md)
-- [資料集](docs/datasets.md)
-- [原始欄位](docs/raw-fields.md)
-- [需求規格](docs/requirements.md)
-- [增量學習設計](docs/incremental-learning-design.md) - **重要：訓練配置與工作流程**
