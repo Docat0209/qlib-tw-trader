@@ -51,6 +51,41 @@ curl -X POST http://localhost:8000/api/v1/qlib/export/sync \
 - **禁止自行啟動伺服器**
 - **資料庫路徑**：`data/data.db`（不是 `data/trader.db`）
 
+## DVC 資料版本控制
+
+使用 DVC 管理大型檔案，透過 Google Drive Desktop 自動同步雲端。
+
+### 追蹤的檔案
+
+| 檔案 | 大小 | 說明 |
+|------|------|------|
+| `data/data.db` | ~131MB | SQLite 資料庫 |
+| `data/models/` | ~19MB | 訓練好的模型（156 週） |
+
+### 常用指令
+
+```bash
+# 上傳變更（訓練新模型或更新資料庫後）
+python -m dvc push
+
+# 下載資料（在新電腦或 clone 後）
+python -m dvc pull
+
+# 檢查狀態
+python -m dvc status
+```
+
+### 雲端位置
+
+- 本地：`G:\My Drive\qlib-tw-trader`
+- Google Drive Desktop 自動同步至雲端
+
+### 新電腦設定
+
+1. 安裝 Google Drive Desktop 並登入
+2. 確認同步資料夾掛載為 `G:\My Drive`
+3. Clone repo 後執行 `python -m dvc pull`
+
 ## Qlib 資料架構
 
 **重要**：Qlib `.bin` 檔案是從資料庫動態導出的，不是靜態資料。
