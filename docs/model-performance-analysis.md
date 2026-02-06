@@ -37,38 +37,53 @@
 
 | 項目 | 實現方式 | 代碼位置 |
 |------|---------|---------|
-| **相關方法** | Spearman 秩相關 | `model_trainer.py:616` |
+| **相關方法** | Spearman 秩相關 | `walk_forward_backtester.py:576` |
 | **計算頻率** | 每日截面 → 取平均 | `groupby("datetime")` |
-| **Label 定義** | `close[T+2]/close[T+1] - 1` | `model_trainer.py:256` |
-| **Label 標準化** | CSRankNorm（排名百分位 [0,1]） | `model_trainer.py:314` |
+| **X 軸** | 預測分數（模型輸出） | `pred_row[common_stocks].values` |
+| **Y 軸** | 實際收益（原始值） | `ret_row[common_stocks].values` |
+| **收益定義** | `close[T+2]/close[T+1] - 1` | T+1→T+2 收盤價收益 |
 | **最小股票數** | 10 支 | `if len(group) < 10: return nan` |
 
 **計算公式**：
+```python
+# walk_forward_backtester.py:576-579
+ic, _ = stats.spearmanr(
+    pred_row[common_stocks].values,  # 預測分數
+    ret_row[common_stocks].values,   # 實際收益（原始值，非排名）
+)
 ```
-IC = E[Spearman(預測排名, 實際排名)]
-   = 平均(每日截面的 Spearman 相關係數)
-```
 
-### 1.2 與文獻定義的差異
+**Spearman 會自動將兩邊轉換為排名**，所以：
+- IC = Spearman(預測分數, 實際收益)
+- = Pearson(預測分數的排名, 實際收益的排名)
+- = **業界標準的 Rank IC**
 
-| 定義來源 | 相關方法 | 頻率 | Label | 可比較性 |
-|---------|---------|------|-------|---------|
-| **Grinold & Kahn** | Pearson | 年級 | 原始收益 | ❌ 不可比 |
-| **Qlib 論文** | Spearman | 日級 | 原始收益 | ⚠️ 部分可比 |
-| **我們** | Spearman | 日級 | 排名標準化 | - |
+### 1.2 與業界標準的可比性確認
 
-### 1.3 定義差異的數值影響
+| 定義來源 | 方法 | X 軸 | Y 軸 | 可比較性 |
+|---------|------|------|------|---------|
+| **業界標準 (Rank IC)** | Spearman | Factor scores | Forward returns | - |
+| **我們** | Spearman | 預測分數 | 實際收益 | ✅ **完全一致** |
+| **Grinold & Kahn** | Pearson | 預測收益 | 實際收益 | ⚠️ 方法不同 |
 
-| 差異來源 | 對 IC 數值的影響 |
-|---------|-----------------|
-| Spearman vs Pearson | Spearman ↑ 5-15%（對離群值更穩健） |
-| 日級 vs 年級 | 日級 ↓ 50-70%（噪音更多） |
-| 排名 vs 收益 | 排名預測可提升 Sharpe 3 倍 |
+**文獻確認**（[arXiv](https://arxiv.org/pdf/2010.08601), [BagelQuant](https://bagelquant.com/predictability-measure/)）：
+> 「Spearman rank IC is the Pearson correlation coefficient between the **ranked factor scores** and **ranked forward returns**.」
 
-**關鍵結論**：
-- 我們的 IC 數值**不能直接與年級 IC 比較**
-- 日級 IC 0.01-0.03 ≈ 年級 IC 0.03-0.10（等效換算）
-- 應使用 **ICIR**（去隨機性指標）而非絕對 IC 值比較
+> 「Rank IC is common because it is less affected by extreme values and allows fair comparison across different types of signals.」
+
+### 1.3 業界 IC 基準
+
+| IC 水平 | 業界評價 | 來源 |
+|--------|---------|------|
+| **0.02 - 0.10** | 典型實際範圍 | [arXiv](https://arxiv.org/pdf/2010.08601) |
+| **0.05 - 0.06** | 非常強（月度） | [FE Training](https://www.fe.training/free-resources/portfolio-management/information-coefficient-ic/) |
+| **> 0.15** | 極罕見，疑似過擬合 | 業界共識 |
+| **接近 0 但穩定正值** | 仍有價值 | [arXiv](https://arxiv.org/pdf/2010.08601) |
+
+**我們的 Live IC = 0.005**：
+- 偏低，但在「接近 0 但正值」的可接受邊緣
+- 業界認為「即使 IC 只有 +0.02 到 +0.10，只要保持相對一致，就是重要的信號」
+- 關鍵問題不是 IC 低，而是**不穩定**（正值率僅 54.6%）
 
 ---
 
@@ -512,6 +527,103 @@ price_df = D.features(..., fields=["$close"])  # 第 468, 533, 835 行
 
 ---
 
+## 10. 策略定位與 Alpha 本質
+
+### 10.1 這是「篩選機制」而非「預測模型」
+
+**核心洞察**：模型並沒有真正學會「預測」股票排名（Live IC ≈ 0），但 Top-K 機制在牛市中能「過濾掉最差的股票」。
+
+| 定位 | 說明 | 我們的專案 |
+|------|------|-----------|
+| **預測模型** | 精準預測個股報酬/排名 | ❌ Live IC 不顯著 |
+| **篩選機制** | 過濾最差標的，提升平均品質 | ✅ 超額報酬顯著 |
+
+這與 **Smart Beta / Factor ETF** 的運作邏輯一致：
+
+| 特徵 | Smart Beta ETF | 我們的專案 |
+|------|---------------|-----------|
+| 核心邏輯 | 篩選，非預測 | ✅ 相同 |
+| 方法 | Overweight 高分股 | ✅ Top-K 選股 |
+| 假設 | 市場長期上漲 + 因子溢價 | ✅ 相同 |
+| IC 要求 | 低但穩定正值即可 | ✅ 符合邊緣 |
+
+**文獻支持**（[SSGA](https://www.ssga.com/library-content/pdfs/insights/Quant-Investing-Comparing-and-Contrasting-Part-1-of-3.pdf), [MSCI](https://www.msci.com/documents/1296102/1336482/Foundations_of_Factor_Investing.pdf)）：
+> 「量化策略在 breadth（廣度）上優秀，分析大量數據點，但 IC 可能較低。」
+> 「Information Ratio = IC × √Breadth × TC」——即使 IC 低，高 Breadth 仍可產生 Alpha。
+
+### 10.2 Alpha 的本質：真實存在還是資金創造？
+
+#### 傳統 Alpha 正在消失
+
+| 原因 | 說明 | 來源 |
+|------|------|------|
+| **市場效率化** | 傳統數據集被商品化 | [Resonanz Capital](https://resonanzcapital.com/insights/the-great-alpha-migration-how-passive-investing-redrew-the-map) |
+| **策略擁擠** | 大家用相似模型處理相同數據 | [arXiv](https://arxiv.org/html/2512.11913v1) |
+| **被動投資主導** | 資金流取代基本面成為價格驅動力 | [Resonanz Capital](https://resonanzcapital.com/insights/the-great-alpha-migration-how-passive-investing-redrew-the-map) |
+
+#### Momentum Feedback Loop
+
+```
+被動資金流入 → 大型股上漲 → 指數權重增加 → 更多資金流入
+        ↑                                      ↓
+        └──────── 形成正向循環 ←─────────────────┘
+```
+
+> 「隨著數萬億美元流入指數基金和 ETF，市場不再對敘事作出反應，而是對**資金流**作出反應。」
+
+**我們的專案可能受益於這個循環**：TW100（市值前 100 大）本身就是被動資金偏好的標的。
+
+### 10.3 機構會保護 Alpha 嗎？
+
+**答案：絕對會**（[Institutional Investor](https://www.institutionalinvestor.com/article/2bsxcauvaxemsstdidedc/portfolio/is-hedge-fund-secrecy-a-sign-of-skill-or-a-red-flag)）
+
+| 保護方式 | 說明 |
+|---------|------|
+| 高度保密 | 算法和策略被視為商業機密 |
+| 非競爭條款 | 員工必須簽署嚴格禁止競爭協議 |
+| 另類數據 | 使用衛星圖像、社交媒體等非公開數據 |
+
+**一旦策略被發現**：
+- 更多人使用 → Alpha 稀釋 → 策略失效
+- Crowding 預測的是**尾部風險**，而非平均報酬
+
+### 10.4 消失的 Alpha 可能在「事件」上
+
+**假說**：傳統因子 Alpha 消失，事件驅動 Alpha 興起
+
+| 來源 | 說明 | 優勢 |
+|------|------|------|
+| **新聞情緒** | NLP 分析新聞 tone | 比價格更早反映變化 |
+| **財報/業績** | 成交量在事件周圍集中 | 資訊不對稱最大 |
+| **另類數據** | 衛星圖像、社交媒體 | 獨特資訊源 |
+
+**文獻支持**（[ScienceDirect](https://www.sciencedirect.com/science/article/pii/S1386418125000102)）：
+> 「市場行為呈現**預期性而非反應性**——前瞻性隱含情緒在股價反映之前，就捕捉到了大量的報酬變異。」
+
+**這與用戶洞察一致**：
+> 「抗事件型風險能力很弱，regime 變更會改變規則。消失的 Alpha 就在事件上。」
+
+### 10.5 策略定位總結
+
+**本質上類似投資 ETF**：
+```
+被動 ETF：買整個市場（Beta）
+Smart Beta：買篩選後的市場（Beta + 因子 Alpha）
+我們的專案：買 Top-K 篩選後的市場（Beta + 模型 Alpha）
+```
+
+**這個定位是合理的**：
+1. 不需要精準預測——「篩選」即可
+2. 依賴市場長期上漲——與 Smart Beta 相同
+3. 超額報酬來自「略優於平均」的累積效應
+
+**但需注意風險**：
+- 熊市時「篩選」的價值降低
+- 未經 2022 年等下跌年份驗證
+- 事件因子可能是提升的關鍵方向
+
+---
+
 ## 附錄
 
 ### A. IC 計算代碼位置
@@ -526,23 +638,43 @@ price_df = D.features(..., fields=["$close"])  # 第 468, 533, 835 行
 
 ### B. 文獻引用
 
+#### IC 與因子投資
+
 1. **Grinold, R. C., & Kahn, R. N. (2000)**. *Active Portfolio Management*. McGraw-Hill.
-   - IC/ICIR 標準定義
-   - ICIR > 0.5 為可用基準
+   - IC/ICIR 標準定義，ICIR > 0.5 為可用基準
 
-2. **Microsoft Qlib (2020)**. *Qlib: An AI-oriented Quantitative Investment Platform*. arXiv:2009.11189.
-   - 日級 Spearman IC
-   - CSRankNorm 標準化
+2. **arXiv (2020)**. [Information Coefficient as a Performance Measure of Stock Selection Models](https://arxiv.org/pdf/2010.08601).
+   - IC 0.02-0.10 為典型範圍，> 0.15 疑似過擬合
 
-3. **Poh, D., et al. (2021)**. *Building Cross-Sectional Systematic Strategies By Learning to Rank*. Journal of Financial Data Science.
-   - 排名預測優於收益預測
+3. **SSGA**. [Quantitative vs. Fundamental Equity Investing](https://www.ssga.com/library-content/pdfs/insights/Quant-Investing-Comparing-and-Contrasting-Part-1-of-3.pdf).
+   - IR = IC × √Breadth × TC
 
-4. **López de Prado, M. (2018)**. *Advances in Financial Machine Learning*. Wiley.
-   - Walk-Forward 驗證
-   - IC Decay 分析
+4. **MSCI**. [Foundations of Factor Investing](https://www.msci.com/documents/1296102/1336482/Foundations_of_Factor_Investing.pdf).
+   - 因子投資基礎理論
 
-5. **Harvey, C. R., Liu, Y., & Zhu, H. (2016)**. *...and the Cross-Section of Expected Returns*. Review of Financial Studies.
-   - 統計顯著性標準
+#### Alpha 與市場結構
+
+5. **Resonanz Capital**. [The Great Alpha Migration](https://resonanzcapital.com/insights/the-great-alpha-migration-how-passive-investing-redrew-the-map).
+   - 被動投資如何改變市場結構
+
+6. **arXiv (2024)**. [Not All Factors Crowd Equally](https://arxiv.org/html/2512.11913v1).
+   - Crowding 與 Alpha Decay
+
+7. **Maven Securities**. [Alpha Decay](https://www.mavensecurities.com/alpha-decay-what-does-it-look-like-and-what-does-it-mean-for-systematic-traders/).
+   - 系統性策略的衰減分析
+
+#### 事件驅動與情緒
+
+8. **ScienceDirect (2025)**. [Investor Sentiment and Stock Returns](https://www.sciencedirect.com/science/article/pii/S1386418125000102).
+   - 新聞情緒的預期性 vs 反應性
+
+#### 機器學習與過擬合
+
+9. **López de Prado, M. (2018)**. *Advances in Financial Machine Learning*. Wiley.
+   - Walk-Forward 驗證，IC Decay 分析
+
+10. **Harvey, C. R., et al. (2016)**. *...and the Cross-Section of Expected Returns*. Review of Financial Studies.
+    - 統計顯著性標準
 
 ### C. 原始數據表（156 週，2023-2025）
 
