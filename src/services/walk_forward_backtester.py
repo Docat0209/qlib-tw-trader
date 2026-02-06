@@ -423,6 +423,7 @@ class WalkForwardBacktester:
         factors: list[dict],
         start_date: date,
         end_date: date,
+        trade_price: str = "open",
         on_progress: Callable[[float, str], None] | None = None,
     ) -> None:
         """
@@ -432,6 +433,7 @@ class WalkForwardBacktester:
             factors: 因子列表
             start_date: 開始日期
             end_date: 結束日期（會自動延伸以確保收益計算）
+            trade_price: 交易價格（"open" 或 "close"）
         """
         self._init_qlib()
         from qlib.data import D
@@ -457,7 +459,10 @@ class WalkForwardBacktester:
         if not self._features_cache.empty:
             self._features_cache.columns = names
 
-        # 2. 預載入價格資料（延伸 7 天以確保收益計算）
+        # 2. 預載入價格資料（延伸 10 天以確保收益計算）
+        # 載入 open 和 close 兩個欄位：
+        # - close: 用於 Live IC 計算（與 Label 定義一致）
+        # - open/close: 用於週報酬計算（根據 trade_price 參數）
         if on_progress:
             on_progress(13, "Preloading price data...")
 
@@ -465,16 +470,16 @@ class WalkForwardBacktester:
 
         self._price_cache = D.features(
             instruments=instruments,
-            fields=["$close"],
+            fields=["$open", "$close"],
             start_time=start_date.strftime("%Y-%m-%d"),
             end_time=extended_end.strftime("%Y-%m-%d"),
         )
 
         if not self._price_cache.empty:
-            self._price_cache.columns = ["close"]
+            self._price_cache.columns = ["open", "close"]
 
         if on_progress:
-            on_progress(15, f"Data preloaded: {len(self._features_cache)} feature rows, {len(self._price_cache)} price rows")
+            on_progress(15, f"Data preloaded: {len(self._features_cache)} feature rows, {len(self._price_cache)} price rows (trade_price={trade_price})")
 
     def _clear_cache(self) -> None:
         """清除快取"""
@@ -661,6 +666,7 @@ class WalkForwardBacktester:
             factors=first_factors,
             start_date=first_predict,
             end_date=last_predict,
+            trade_price=trade_price,
             on_progress=on_progress,
         )
 
@@ -740,7 +746,7 @@ class WalkForwardBacktester:
 
                 # 計算週收益（簡化版：Top-K 等權重）
                 week_return, market_return = self._calculate_week_return(
-                    predictions, predict_start, predict_end, max_positions
+                    predictions, predict_start, predict_end, max_positions, trade_price
                 )
 
                 weekly_results.append(WeekResult(
@@ -802,11 +808,19 @@ class WalkForwardBacktester:
         predict_start: date,
         predict_end: date,
         max_positions: int,
+        trade_price: str = "open",
     ) -> tuple[float | None, float | None]:
         """
         計算週收益（使用快取的價格資料）
 
         使用 Top-K 等權重策略
+
+        Args:
+            predictions: 預測分數 DataFrame
+            predict_start: 預測期開始日期
+            predict_end: 預測期結束日期
+            max_positions: 最大持倉數
+            trade_price: 交易價格（"open" 或 "close"）
 
         Returns:
             (week_return, market_return) in percentage
@@ -814,6 +828,9 @@ class WalkForwardBacktester:
         instruments = list(predictions.columns)
         if not instruments:
             return None, None
+
+        # 選擇價格欄位
+        price_col = "open" if trade_price == "open" else "close"
 
         # 使用快取的價格資料（如果有）
         if self._price_cache is not None and not self._price_cache.empty:
@@ -830,27 +847,35 @@ class WalkForwardBacktester:
             self._init_qlib()
             from qlib.data import D
 
+            qlib_field = f"${price_col}"
             price_df = D.features(
                 instruments=instruments,
-                fields=["$close"],
+                fields=[qlib_field],
                 start_time=predict_start.strftime("%Y-%m-%d"),
                 end_time=predict_end.strftime("%Y-%m-%d"),
             )
 
             if not price_df.empty:
-                price_df.columns = ["close"]
+                price_df.columns = [price_col]
 
         if price_df.empty:
             return None, None
 
-        close_wide = price_df["close"].unstack(level="instrument")
+        # 檢查價格欄位是否存在
+        if price_col not in price_df.columns:
+            # 回退到 close（相容舊快取）
+            price_col = "close"
+            if price_col not in price_df.columns:
+                return None, None
 
-        if close_wide.empty or len(close_wide) < 2:
+        price_wide = price_df[price_col].unstack(level="instrument")
+
+        if price_wide.empty or len(price_wide) < 2:
             return None, None
 
         # 期初和期末價格
-        start_prices = close_wide.iloc[0]
-        end_prices = close_wide.iloc[-1]
+        start_prices = price_wide.iloc[0]
+        end_prices = price_wide.iloc[-1]
 
         # 計算所有股票收益
         all_returns = (end_prices - start_prices) / start_prices
